@@ -1,7 +1,7 @@
 <script lang="ts">
   import { store, applyTheme } from "./state.svelte";
   import { setTheme, openDashboard, resolvePermission } from "./bridge";
-  import { tokens, pct, activityIcon, activitySuffix } from "./format";
+  import { tokens, pct, activitySuffix } from "./format";
   import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
@@ -166,7 +166,7 @@
 
     {#if c.session?.activity}
       <div class="session-activity {c.session.activityKind}">
-        <span class="act-ic">{activityIcon(c.session.activityKind)}</span>
+        <span class="act-dot"></span>
         <span class="act-text">{c.session.activity}</span>
         {#if activitySuffix(c.session.activityKind)}
           <span class="act-suffix">· {activitySuffix(c.session.activityKind)}</span>
@@ -397,12 +397,12 @@
   .ucard {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 12px;
+    gap: 11px;
+    padding: 15px 14px;
     border-radius: var(--r-md);
     background: var(--bg-raised);
     border: 1px solid var(--border-soft);
-    margin-bottom: 7px;
+    margin-bottom: 10px;
     transition: border-color 0.2s var(--ease);
   }
   .ucard:hover {
@@ -542,17 +542,22 @@
   /* live activity preview (window-render) */
   .session-activity {
     display: flex;
-    align-items: baseline;
-    gap: 5px;
+    align-items: center;
+    gap: 8px;
+    margin-top: 3px;
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--ink-dim);
     white-space: nowrap;
     overflow: hidden;
   }
-  .session-activity .act-ic {
+  /* LED status dot, colored per kind (no glyph/emoji) */
+  .session-activity .act-dot {
     flex-shrink: 0;
-    font-size: 10px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--ink-faint);
   }
   .session-activity .act-text {
     overflow: hidden;
@@ -562,25 +567,27 @@
     flex-shrink: 0;
     color: var(--ink-faint);
   }
-  /* working: amber, gently pulsing bolt so it reads as live */
+  /* working: amber dot, gently pulsing so it reads as live */
   .session-activity.working {
     color: var(--ink);
   }
-  .session-activity.working .act-ic {
-    color: var(--amber);
+  .session-activity.working .act-dot {
+    background: var(--amber);
+    box-shadow: 0 0 7px var(--amber);
     animation: act-pulse 1.6s var(--ease) infinite;
   }
-  /* waiting for you: calm sage tick */
-  .session-activity.waiting .act-ic {
-    color: var(--sage);
+  /* waiting for you: calm sage dot */
+  .session-activity.waiting .act-dot {
+    background: var(--sage);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--sage) 70%, transparent);
   }
-  .session-activity.thinking .act-ic {
-    color: var(--ink-faint);
+  .session-activity.thinking .act-dot {
+    background: var(--ink-faint);
   }
   @keyframes act-pulse {
     0%,
     100% {
-      opacity: 0.5;
+      opacity: 0.45;
     }
     50% {
       opacity: 1;

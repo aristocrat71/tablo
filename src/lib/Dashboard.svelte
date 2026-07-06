@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "./state.svelte";
-  import { pct, planTier, activityIcon, activitySuffix } from "./format";
+  import { pct, planTier, activitySuffix } from "./format";
   import { prefs, byMode } from "./prefs.svelte";
   import { hookStatus, setHookEnabled, resolvePermission } from "./bridge";
   import type { HookStatus, PermDecision, PendingRequest, SessionView } from "./types";
@@ -131,7 +131,7 @@
                 <div class="path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
                 {#if c.session?.activity}
                   <div class="activity {c.session.activityKind}">
-                    <span class="act-ic">{activityIcon(c.session.activityKind)}</span>
+                    <span class="act-dot"></span>
                     <span class="act-text">{c.session.activity}</span>
                     {#if activitySuffix(c.session.activityKind)}
                       <span class="act-suffix">· {activitySuffix(c.session.activityKind)}</span>
@@ -287,7 +287,7 @@
 
   /* one session block: its context row + any pending requests, unified */
   .scard {
-    padding: 11px 0;
+    padding: 16px 0;
     border-bottom: 1px solid var(--border-soft);
   }
   .scard:last-child {
@@ -398,7 +398,7 @@
   .drow {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     padding: 3px 0;
   }
   .drow .st {
@@ -448,22 +448,27 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    margin-top: 3px;
   }
   /* live activity preview (window-render) */
   .drow .info .activity {
     display: flex;
-    align-items: baseline;
-    gap: 5px;
-    margin-top: 3px;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--ink-dim);
     white-space: nowrap;
     overflow: hidden;
   }
-  .drow .info .activity .act-ic {
+  /* LED status dot, colored per kind (no glyph/emoji) */
+  .drow .info .activity .act-dot {
     flex-shrink: 0;
-    font-size: 10px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--ink-faint);
   }
   .drow .info .activity .act-text {
     overflow: hidden;
@@ -476,20 +481,22 @@
   .drow .info .activity.working {
     color: var(--ink);
   }
-  .drow .info .activity.working .act-ic {
-    color: var(--amber);
+  .drow .info .activity.working .act-dot {
+    background: var(--amber);
+    box-shadow: 0 0 7px var(--amber);
     animation: act-pulse 1.6s var(--ease) infinite;
   }
-  .drow .info .activity.waiting .act-ic {
-    color: var(--sage);
+  .drow .info .activity.waiting .act-dot {
+    background: var(--sage);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--sage) 70%, transparent);
   }
-  .drow .info .activity.thinking .act-ic {
-    color: var(--ink-faint);
+  .drow .info .activity.thinking .act-dot {
+    background: var(--ink-faint);
   }
   @keyframes act-pulse {
     0%,
     100% {
-      opacity: 0.5;
+      opacity: 0.45;
     }
     50% {
       opacity: 1;
