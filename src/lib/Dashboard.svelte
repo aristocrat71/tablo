@@ -1,8 +1,11 @@
 <script lang="ts">
   import { store } from "./state.svelte";
   import { pct } from "./format";
+  import { prefs, sortSessions } from "./prefs.svelte";
 
   let snap = $derived(store.snap);
+  // Follows the sort chosen in the panel (shared across windows via localStorage).
+  let sessions = $derived(sortSessions(snap.sessions, prefs.sort));
   let lead = $derived.by(() => {
     if (!snap.hasProjectsDir) return "No Claude Code sessions found yet";
     const n = snap.sessions.length;
@@ -35,7 +38,7 @@
       {#if snap.sessions.length === 0}
         <div class="dash-empty">Nothing running. Tablo is watching.</div>
       {:else}
-        {#each snap.sessions as s (s.id)}
+        {#each sessions as s (s.id)}
           <div class="drow">
             <span class="st {s.state === 'ask' ? 'ask' : 'run'}"></span>
             <div class="info">

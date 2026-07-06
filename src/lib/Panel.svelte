@@ -2,14 +2,24 @@
   import { store, applyTheme } from "./state.svelte";
   import { setTheme, openDashboard } from "./bridge";
   import { tokens, pct } from "./format";
+  import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
   import type { SessionView } from "./types";
 
   let snap = $derived(store.snap);
-  let asks = $derived(snap.sessions.filter((s) => s.state === "ask"));
-  let works = $derived(snap.sessions.filter((s) => s.state === "run"));
+  let total = $derived(snap.sessions.length);
+
+  // Sessions grouped by state, each group ordered by the chosen sort mode.
+  // Grouping keeps "Input requested" ahead of "Working" regardless of sort.
+  let asks = $derived(snap.sessions.filter((s) => s.state === "ask").sort(byMode(prefs.sort)));
+  let works = $derived(snap.sessions.filter((s) => s.state === "run").sort(byMode(prefs.sort)));
+
+  // Compact mode collapses the list to a single "lead" bar: the most urgent ask
+  // if any, else the top-ranked working session. Only meaningful with >1 session.
+  let lead = $derived<SessionView | undefined>([...asks, ...works][0]);
+  let compact = $derived(prefs.panelMode === "compact" && total > 1);
 
   let sub = $derived.by(() => {
-    const n = snap.sessions.length;
+    const n = total;
     if (!snap.hasProjectsDir) return "Claude Code hasn't run yet";
     if (n === 0) return "no active sessions";
     const base = `${n} session${n > 1 ? "s" : ""}`;
@@ -35,13 +45,35 @@
       <button class="mini" title="Toggle theme" onclick={toggleTheme}>☾</button>
     </div>
 
+    {#if total > 1}
+      <div class="panel-toolbar">
+        <div class="seg" role="group" aria-label="Sort sessions">
+          <button class:on={prefs.sort === "context"} onclick={() => setSort("context")}>context</button>
+          <button class:on={prefs.sort === "recent"} onclick={() => setSort("recent")}>recent</button>
+        </div>
+        <div class="seg" role="group" aria-label="View mode">
+          <button class:on={!compact} onclick={() => setPanelMode("expanded")}>list</button>
+          <button class:on={compact} onclick={() => setPanelMode("compact")}>compact</button>
+        </div>
+      </div>
+    {/if}
+
     <div class="panel-body">
-      {#if snap.sessions.length === 0}
+      {#if total === 0}
         <div class="empty">
           <div class="empty-glyph">I</div>
           <p>{snap.hasProjectsDir ? "Nothing running right now." : "No Claude Code sessions found yet."}</p>
           <span>Tablo wakes up when an agent starts working.</span>
         </div>
+      {:else if compact && lead}
+        <div class="group-head">
+          <span class="group-dot {lead.state === 'ask' ? 'attn' : 'work'}"></span>
+          <span class="group-name">{lead.state === "ask" ? "Input requested" : "Working"}</span>
+        </div>
+        {@render sessionRow(lead)}
+        <button class="more" onclick={() => setPanelMode("expanded")}>
+          +{total - 1} more session{total - 1 > 1 ? "s" : ""}
+        </button>
       {:else}
         {#if asks.length}
           <div class="group-head">
@@ -163,6 +195,63 @@
     transition: all 0.2s var(--ease);
   }
   .mini:hover {
+    color: var(--ink);
+    border-color: var(--ink-faint);
+  }
+
+  .panel-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 18px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-inset);
+  }
+  .seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+  }
+  .seg button {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 4px 9px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
+  }
+  .seg button:hover {
+    color: var(--ink-dim);
+  }
+  .seg button.on {
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
+
+  .more {
+    width: 100%;
+    margin-top: 4px;
+    padding: 10px;
+    border-radius: var(--r-md);
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--ink-dim);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
+  }
+  .more:hover {
     color: var(--ink);
     border-color: var(--ink-faint);
   }
