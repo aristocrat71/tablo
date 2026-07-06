@@ -1,30 +1,32 @@
 <script lang="ts">
   import { store, applyTheme } from "./state.svelte";
-  import { setTheme, openDashboard } from "./bridge";
+  import { setTheme, openDashboard, resolvePermission } from "./bridge";
   import { tokens, pct } from "./format";
   import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
-  import type { SessionView } from "./types";
+  import type { SessionView, PermDecision } from "./types";
 
   let snap = $derived(store.snap);
-  let total = $derived(snap.sessions.length);
+  // Pending tool approvals (Phase 4) — always shown, never collapsed.
+  let pending = $derived(snap.pending);
+  // Every active session is "working"; order it by the chosen sort mode.
+  let works = $derived(snap.sessions.slice().sort(byMode(prefs.sort)));
+  let total = $derived(works.length);
 
-  // Sessions grouped by state, each group ordered by the chosen sort mode.
-  // Grouping keeps "Input requested" ahead of "Working" regardless of sort.
-  let asks = $derived(snap.sessions.filter((s) => s.state === "ask").sort(byMode(prefs.sort)));
-  let works = $derived(snap.sessions.filter((s) => s.state === "run").sort(byMode(prefs.sort)));
-
-  // Compact mode collapses the list to a single "lead" bar: the most urgent ask
-  // if any, else the top-ranked working session. Only meaningful with >1 session.
-  let lead = $derived<SessionView | undefined>([...asks, ...works][0]);
+  // Compact mode collapses the working list to a single "lead" bar. Approvals
+  // are never collapsed, so compact only affects the session list.
+  let lead = $derived<SessionView | undefined>(works[0]);
   let compact = $derived(prefs.panelMode === "compact" && total > 1);
 
   let sub = $derived.by(() => {
-    const n = total;
     if (!snap.hasProjectsDir) return "Claude Code hasn't run yet";
-    if (n === 0) return "no active sessions";
-    const base = `${n} session${n > 1 ? "s" : ""}`;
+    if (total === 0 && pending.length === 0) return "no active sessions";
+    const base = total > 0 ? `${total} session${total > 1 ? "s" : ""}` : "idle";
     return snap.waiting > 0 ? `${base} · ${snap.waiting} waiting on you` : base;
   });
+
+  function decide(id: string, decision: PermDecision) {
+    resolvePermission(id, decision);
+  }
 
   function toggleTheme() {
     const next = store.config.theme === "dark" ? "light" : "dark";
@@ -59,42 +61,40 @@
     {/if}
 
     <div class="panel-body">
-      {#if total === 0}
+      {#if total === 0 && pending.length === 0}
         <div class="empty">
           <div class="empty-glyph">I</div>
           <p>{snap.hasProjectsDir ? "Nothing running right now." : "No Claude Code sessions found yet."}</p>
           <span>Tablo wakes up when an agent starts working.</span>
         </div>
-      {:else if compact && lead}
-        <div class="group-head">
-          <span class="group-dot {lead.state === 'ask' ? 'attn' : 'work'}"></span>
-          <span class="group-name">{lead.state === "ask" ? "Input requested" : "Working"}</span>
-        </div>
-        {@render sessionRow(lead)}
-        <button class="more" onclick={() => setPanelMode("expanded")}>
-          +{total - 1} more session{total - 1 > 1 ? "s" : ""}
-        </button>
       {:else}
-        {#if asks.length}
+        {#if pending.length}
           <div class="group-head">
             <span class="group-dot attn"></span>
             <span class="group-name">Input requested</span>
-            <span class="group-count">{asks.length}</span>
+            <span class="group-count">{pending.length}</span>
           </div>
-          {#each asks as s (s.id)}
-            {@render sessionRow(s)}
+          {#each pending as p (p.id)}
+            {@render approvalRow(p)}
           {/each}
         {/if}
 
-        {#if works.length}
+        {#if total > 0}
           <div class="group-head">
             <span class="group-dot work"></span>
             <span class="group-name">Working</span>
-            <span class="group-count">{works.length}</span>
+            <span class="group-count">{total}</span>
           </div>
-          {#each works as s (s.id)}
-            {@render sessionRow(s)}
-          {/each}
+          {#if compact && lead}
+            {@render sessionRow(lead)}
+            <button class="more" onclick={() => setPanelMode("expanded")}>
+              +{total - 1} more session{total - 1 > 1 ? "s" : ""}
+            </button>
+          {:else}
+            {#each works as s (s.id)}
+              {@render sessionRow(s)}
+            {/each}
+          {/if}
         {/if}
       {/if}
     </div>
@@ -127,6 +127,23 @@
         <div class="ctx-fill {s.level}" style="width:{s.pct}%"></div>
       </div>
       <span class="ctx-cap">{tokens(s.used)} / {tokens(s.limit)}</span>
+    </div>
+  </div>
+{/snippet}
+
+{#snippet approvalRow(p: import("./types").PendingRequest)}
+  <div class="session needs approval">
+    <div class="session-line1">
+      <span class="session-proj">{p.project}</span>
+      <span class="session-badge ask">{p.tool}</span>
+    </div>
+    {#if p.detail}
+      <div class="approval-detail">{p.detail}</div>
+    {/if}
+    <div class="session-path">{p.path}</div>
+    <div class="approval-actions">
+      <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
+      <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
     </div>
   </div>
 {/snippet}
@@ -313,6 +330,51 @@
   }
   .session.needs {
     border-color: color-mix(in srgb, var(--coral) 40%, var(--border-soft));
+  }
+  .session.approval {
+    background: color-mix(in srgb, var(--coral) 8%, var(--bg-raised));
+    border-color: color-mix(in srgb, var(--coral) 45%, var(--border-soft));
+  }
+  .approval-detail {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-sm);
+    padding: 7px 9px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 84px;
+    overflow-y: auto;
+  }
+  .approval-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 1px;
+  }
+  .act {
+    flex: 1;
+    padding: 8px;
+    border-radius: var(--r-sm);
+    font-family: var(--font-round);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: transform 0.12s var(--ease), opacity 0.2s var(--ease);
+  }
+  .act:hover {
+    transform: translateY(-1px);
+  }
+  .act.deny {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--coral) 45%, var(--border));
+    color: var(--coral);
+  }
+  .act.allow {
+    background: var(--sage);
+    color: var(--bg-surface);
   }
 
   .session-line1 {

@@ -10,11 +10,13 @@
 //! keep only the cat interactive.
 
 mod config;
+mod permission;
 mod scanner;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -25,6 +27,7 @@ use tauri::{
 };
 
 use config::Config;
+use permission::{PendingRequest, PermDecision};
 use scanner::{ClaudeConfigCache, FileState, Snapshot};
 
 // Interaction/timing tuning (not domain data — window geometry lives in
@@ -42,8 +45,8 @@ const EVENT_DEBOUNCE: Duration = Duration::from_millis(150);
 const PANEL_DISMISS_GUARD: Duration = Duration::from_millis(250);
 
 /// Shared, thread-safe application state.
-struct AppState {
-    config: Mutex<Config>,
+pub(crate) struct AppState {
+    pub(crate) config: Mutex<Config>,
     config_dir: PathBuf,
     snapshot: Mutex<Snapshot>,
     files: Mutex<HashMap<PathBuf, FileState>>,
@@ -56,6 +59,16 @@ struct AppState {
     /// When the panel was last auto-hidden on blur, to debounce the tap that
     /// caused it against an immediate re-open.
     panel_last_hidden: Mutex<Option<Instant>>,
+    /// Phase 4 — tool calls awaiting approval, and the channels that unblock
+    /// their held hook requests (keyed by pending id).
+    pub(crate) pending: Mutex<Vec<PendingRequest>>,
+    pub(crate) responders: Mutex<HashMap<String, Sender<PermDecision>>>,
+    /// Monotonic source of pending-request ids.
+    pub(crate) perm_seq: AtomicU64,
+    /// Whether the loopback approval server bound this run.
+    pub(crate) perm_server_up: AtomicBool,
+    /// Pending ids already notified, so each approval notifies once.
+    prev_pending: Mutex<HashSet<String>>,
 }
 
 #[derive(Serialize)]
@@ -241,18 +254,30 @@ fn place_panel(app: &AppHandle) {
 
 // ============================ background loops ============================
 
-/// One scan → notify → emit cycle.
-fn tick(app: &AppHandle) {
+/// One scan → attach pending → notify → emit cycle. Called both by the watcher
+/// loop and by the permission threads (so approvals surface instantly), hence
+/// `pub(crate)`.
+pub(crate) fn recompute_and_emit(app: &AppHandle) {
     let state = app.state::<AppState>();
     let cfg = state.config.lock().unwrap().clone();
 
-    let snap = {
+    let mut snap = {
         let mut files = state.files.lock().unwrap();
         let mut claude_cfg = state.claude_cfg.lock().unwrap();
         scanner::scan(&cfg, &mut files, &mut claude_cfg)
     };
 
+    // Overlay pending approvals: they drive the "waiting" count and force the
+    // avatar to its attention (alarmed) state regardless of context fill.
+    let pending = state.pending.lock().unwrap().clone();
+    if !pending.is_empty() {
+        snap.waiting = pending.len() as u32;
+        snap.state = "alarmed".into();
+    }
+    snap.pending = pending;
+
     fire_notifications(app, &state, &cfg, &snap);
+    fire_permission_notifications(app, &state, &cfg, &snap);
 
     let changed = {
         let mut cur = state.snapshot.lock().unwrap();
@@ -291,6 +316,35 @@ fn fire_notifications(app: &AppHandle, state: &State<'_, AppState>, cfg: &Config
     *prev = next;
 }
 
+/// Notify once per newly-arrived approval request (Phase 4).
+fn fire_permission_notifications(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    cfg: &Config,
+    snap: &Snapshot,
+) {
+    use tauri_plugin_notification::NotificationExt;
+    let mut prev = state.prev_pending.lock().unwrap();
+    if cfg.notify_on_permission {
+        for p in &snap.pending {
+            if !prev.contains(&p.id) {
+                let body = if p.detail.is_empty() {
+                    p.project.clone()
+                } else {
+                    format!("{} · {}", p.project, p.detail)
+                };
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title(format!("tablo — approve {}?", p.tool))
+                    .body(body)
+                    .show();
+            }
+        }
+    }
+    *prev = snap.pending.iter().map(|p| p.id.clone()).collect();
+}
+
 /// Tail the transcripts. Uses `notify` for responsiveness and a 1s timeout so
 /// sessions still age to idle without new writes.
 fn spawn_watcher(app: AppHandle) {
@@ -305,7 +359,7 @@ fn spawn_watcher(app: AppHandle) {
             let _ = w.watch(&dir, notify::RecursiveMode::Recursive);
         }
 
-        tick(&app); // initial paint
+        recompute_and_emit(&app); // initial paint
         loop {
             match rx.recv_timeout(SCAN_INTERVAL) {
                 Ok(_) => {
@@ -318,7 +372,7 @@ fn spawn_watcher(app: AppHandle) {
                     std::thread::sleep(SCAN_INTERVAL);
                 }
             }
-            tick(&app);
+            recompute_and_emit(&app);
         }
     });
 }
@@ -372,6 +426,8 @@ pub fn run() {
                 .app_config_dir()
                 .unwrap_or_else(|_| std::env::temp_dir().join("tablo"));
             let cfg = Config::load(&config_dir);
+            // Capture hook params before `cfg` is moved into managed state.
+            let (hook_port, hook_timeout) = (cfg.permission_port, cfg.hook_timeout_secs);
 
             if let Some(avatar) = app.get_webview_window("avatar") {
                 let _ = avatar.set_ignore_cursor_events(true);
@@ -409,7 +465,18 @@ pub fn run() {
                 prev_levels: Mutex::new(HashMap::new()),
                 dragging: AtomicBool::new(false),
                 panel_last_hidden: Mutex::new(None),
+                pending: Mutex::new(Vec::new()),
+                responders: Mutex::new(HashMap::new()),
+                perm_seq: AtomicU64::new(0),
+                perm_server_up: AtomicBool::new(false),
+                prev_pending: Mutex::new(HashSet::new()),
             });
+
+            // Keep the hook script in sync with the current port/timeout (safe,
+            // idempotent — it's Tablo's own file). Enabling approvals, which
+            // edits ~/.claude/settings.json, stays an explicit UI action.
+            let _ = permission::write_hook_script(hook_port, hook_timeout);
+            permission::spawn_server(handle.clone());
 
             spawn_watcher(handle.clone());
             spawn_hittest(handle);
@@ -424,6 +491,9 @@ pub fn run() {
             begin_drag,
             move_avatar,
             end_drag,
+            permission::resolve_permission,
+            permission::hook_status,
+            permission::set_hook_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

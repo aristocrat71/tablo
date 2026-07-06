@@ -52,6 +52,9 @@ pub struct Snapshot {
     /// Raw subscription tier (e.g. "default_claude_max_5x"), or None if absent.
     /// Static account metadata — not live quota. Frontend renders a chip.
     pub plan_tier: Option<String>,
+    /// Tool calls awaiting a human approve/deny (Phase 4). Populated in the emit
+    /// path, not by the scan itself — `scan` always leaves it empty.
+    pub pending: Vec<crate::permission::PendingRequest>,
 }
 
 impl Default for Snapshot {
@@ -65,6 +68,7 @@ impl Default for Snapshot {
             generated_at: 0,
             has_projects_dir: true,
             plan_tier: None,
+            pending: Vec::new(),
         }
     }
 }
@@ -501,6 +505,7 @@ pub fn scan(
         generated_at: now,
         has_projects_dir: true,
         plan_tier: claude_cfg.plan_tier.clone(),
+        pending: Vec::new(),
     }
 }
 

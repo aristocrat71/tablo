@@ -1,12 +1,41 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { store } from "./state.svelte";
   import { pct, planTier } from "./format";
   import { prefs, sortSessions } from "./prefs.svelte";
+  import { hookStatus, setHookEnabled, resolvePermission } from "./bridge";
+  import type { HookStatus, PermDecision } from "./types";
 
   let snap = $derived(store.snap);
   let tier = $derived(planTier(snap.planTier));
+  let pending = $derived(snap.pending);
   // Follows the sort chosen in the panel (shared across windows via localStorage).
   let sessions = $derived(sortSessions(snap.sessions, prefs.sort));
+
+  // ---- Phase 4: approvals hook status ----
+  let hook = $state<HookStatus | null>(null);
+  let busy = $state(false);
+
+  onMount(() => {
+    hookStatus().then((s) => (hook = s)).catch(() => {});
+  });
+
+  async function toggleApprovals() {
+    if (busy) return;
+    busy = true;
+    try {
+      hook = await setHookEnabled(!(hook?.installed ?? false));
+    } catch {
+      /* leave prior status */
+    } finally {
+      busy = false;
+    }
+  }
+
+  function decide(id: string, decision: PermDecision) {
+    resolvePermission(id, decision);
+  }
+
   let lead = $derived.by(() => {
     if (!snap.hasProjectsDir) return "No Claude Code sessions found yet";
     const n = snap.sessions.length;
@@ -22,6 +51,20 @@
       <p>{lead}</p>
     </div>
     <div class="head-meta">
+      {#if hook}
+        <button
+          class="approvals-toggle"
+          class:on={hook.installed}
+          disabled={busy}
+          title={hook.serverUp
+            ? `Intercepts ${hook.tools.join(", ")} on :${hook.port}`
+            : "Approval server not running"}
+          onclick={toggleApprovals}
+        >
+          <span class="dot"></span>
+          approvals {hook.installed ? "on" : "off"}
+        </button>
+      {/if}
       {#if tier}
         <div class="plan-chip" title="Subscription tier (live quota isn't exposed locally)">
           {tier} <span>plan</span>
@@ -41,6 +84,25 @@
   </div>
 
   <div class="dash-grid">
+    {#if pending.length}
+      <div class="card attn-card">
+        <h3>Input requested <span class="n">{pending.length}</span></h3>
+        {#each pending as p (p.id)}
+          <div class="arow">
+            <div class="ainfo">
+              <div class="atool"><span class="tag">{p.tool}</span> {p.project}</div>
+              {#if p.detail}<div class="adetail">{p.detail}</div>{/if}
+              <div class="apath">{p.path}</div>
+            </div>
+            <div class="aacts">
+              <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
+              <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
     <div class="card">
       <h3>Sessions <span class="n">{snap.sessions.length}</span></h3>
       {#if snap.sessions.length === 0}
@@ -128,6 +190,124 @@
   .plan-chip span {
     color: var(--ink-faint);
     font-weight: 500;
+  }
+  .approvals-toggle {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-faint);
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 11px;
+    cursor: pointer;
+    transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
+  }
+  .approvals-toggle:hover {
+    color: var(--ink-dim);
+  }
+  .approvals-toggle:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .approvals-toggle .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--ink-faint);
+  }
+  .approvals-toggle.on {
+    color: var(--sage);
+    border-color: color-mix(in srgb, var(--sage) 40%, var(--border));
+  }
+  .approvals-toggle.on .dot {
+    background: var(--sage);
+    box-shadow: 0 0 7px var(--sage);
+  }
+
+  .attn-card {
+    border-color: color-mix(in srgb, var(--coral) 40%, var(--border-soft));
+    background: color-mix(in srgb, var(--coral) 6%, var(--bg-raised));
+  }
+  .arow {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .arow:last-child {
+    border-bottom: none;
+  }
+  .ainfo {
+    flex: 1;
+    min-width: 0;
+  }
+  .atool {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .atool .tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--coral);
+    background: var(--coral-soft);
+    padding: 2px 6px;
+    border-radius: 5px;
+    margin-right: 4px;
+  }
+  .adetail {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-sm);
+    padding: 7px 9px;
+    margin: 6px 0 5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 90px;
+    overflow-y: auto;
+  }
+  .apath {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .aacts {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .aacts .act {
+    padding: 7px 16px;
+    border-radius: var(--r-sm);
+    font-family: var(--font-round);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: transform 0.12s var(--ease);
+  }
+  .aacts .act:hover {
+    transform: translateY(-1px);
+  }
+  .aacts .deny {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--coral) 45%, var(--border));
+    color: var(--coral);
+  }
+  .aacts .allow {
+    background: var(--sage);
+    color: var(--bg-surface);
   }
   .live {
     font-family: var(--font-mono);
