@@ -1,3 +1,16 @@
+import type { ActivityKind } from "./types";
+
+// Leading glyph for a session's live activity, keyed by its kind.
+export function activityIcon(k: ActivityKind): string {
+  return k === "waiting" ? "✓" : k === "thinking" ? "⋯" : "⚡";
+}
+
+// Trailing state label for the activity line ("working" / "waiting for you").
+// Thinking needs none — the activity text already reads "thinking…".
+export function activitySuffix(k: ActivityKind): string {
+  return k === "waiting" ? "waiting for you" : k === "working" ? "working" : "";
+}
+
 // Compact token counts: 46000 -> "46k", 1000000 -> "1M".
 export function tokens(n: number): string {
   if (n >= 1_000_000) {

@@ -34,6 +34,14 @@ pub struct SessionView {
     pub level: String,
     /// Transcript mtime, ms since epoch.
     pub last_active: i64,
+    /// Claude Code's AI-generated one-line title for the session (window-render).
+    /// Disambiguates same-project sessions; None until Claude Code writes one.
+    pub title: Option<String>,
+    /// One-line preview of the session's current activity, e.g. "editing
+    /// scanner.rs", "running cargo check". Empty until an assistant line lands.
+    pub activity: String,
+    /// UI hint for the activity: "working" | "waiting" | "thinking" | "".
+    pub activity_kind: String,
 }
 
 /// Full aggregate pushed to every window as the `state-update` event.
@@ -85,6 +93,13 @@ pub struct FileState {
     session_id: String,
     /// Sticky once we've inferred the 1M window for this session.
     is_1m: bool,
+    /// Live activity preview (window-render): a one-line summary of what the
+    /// session is doing right now, plus its kind for UI styling, and Claude
+    /// Code's own AI-generated title for the session.
+    title: Option<String>,
+    activity: String,
+    /// "working" | "waiting" | "thinking" | "" (unknown / no assistant line yet).
+    activity_kind: String,
 }
 
 pub fn now_ms() -> i64 {
@@ -334,15 +349,188 @@ fn ingest(state: &mut FileState, lines: &[String]) {
         if let Some(sid) = v.get("sessionId").and_then(|x| x.as_str()) {
             state.session_id = sid.to_string();
         }
-        // Context occupancy comes from the *latest* assistant usage block.
-        if v.get("type").and_then(|x| x.as_str()) == Some("assistant") {
-            if let Some(usage) = v.get("message").and_then(|m| m.get("usage")) {
-                state.used = usage_total(usage);
+        match v.get("type").and_then(|x| x.as_str()) {
+            // Context occupancy comes from the *latest* assistant usage block;
+            // the same line also updates the live activity preview.
+            Some("assistant") => {
+                if let Some(msg) = v.get("message") {
+                    if let Some(usage) = msg.get("usage") {
+                        state.used = usage_total(usage);
+                    }
+                    if let Some(model) = msg.get("model").and_then(|x| x.as_str()) {
+                        state.model = model.to_string();
+                    }
+                    update_activity(state, msg);
+                }
             }
-            if let Some(model) = v.get("message").and_then(|m| m.get("model")).and_then(|x| x.as_str()) {
-                state.model = model.to_string();
+            // Claude Code's own AI-generated session title.
+            Some("ai-title") => {
+                if let Some(t) = v.get("aiTitle").and_then(|x| x.as_str()) {
+                    let t = t.trim();
+                    if !t.is_empty() {
+                        state.title = Some(t.to_string());
+                    }
+                }
+            }
+            // A fresh user prompt means the agent is about to work again — clear a
+            // stale "waiting for you" until the next assistant line lands. Tool
+            // results (content is a list of tool_result blocks) are not prompts.
+            Some("user") => {
+                if is_user_prompt(v.get("message")) {
+                    state.activity = "thinking…".into();
+                    state.activity_kind = "working".into();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// True when a `user` line is a real human prompt, not a tool_result carrier.
+fn is_user_prompt(msg: Option<&serde_json::Value>) -> bool {
+    match msg.and_then(|m| m.get("content")) {
+        Some(serde_json::Value::String(s)) => !s.trim().is_empty(),
+        Some(serde_json::Value::Array(blocks)) => !blocks.iter().any(|b| {
+            b.get("type").and_then(|t| t.as_str()) == Some("tool_result")
+        }),
+        _ => false,
+    }
+}
+
+/// Derive the live activity from an assistant message's last meaningful content
+/// block. Claude Code writes thinking / text / tool_use as their own lines, so
+/// the newest assistant line is the current action; within a line, the last
+/// block wins (e.g. a preamble followed by a tool call ⇒ the tool call).
+fn update_activity(state: &mut FileState, msg: &serde_json::Value) {
+    let end_turn = msg.get("stop_reason").and_then(|v| v.as_str()) == Some("end_turn");
+    let mut found: Option<(&'static str, String)> = None;
+    match msg.get("content") {
+        Some(serde_json::Value::String(s)) => {
+            let sn = snippet(s);
+            if !sn.is_empty() {
+                found = Some(("text", sn));
             }
         }
+        Some(serde_json::Value::Array(blocks)) => {
+            for b in blocks {
+                match b.get("type").and_then(|t| t.as_str()) {
+                    Some("tool_use") => {
+                        let name = b.get("name").and_then(|x| x.as_str()).unwrap_or("tool");
+                        let input = b.get("input").cloned().unwrap_or(serde_json::Value::Null);
+                        found = Some(("tool", summarize_activity(name, &input)));
+                    }
+                    Some("text") => {
+                        let sn = snippet(b.get("text").and_then(|x| x.as_str()).unwrap_or(""));
+                        if !sn.is_empty() {
+                            found = Some(("text", sn));
+                        }
+                    }
+                    Some("thinking") => found = Some(("thinking", "thinking…".into())),
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    if let Some((kind, text)) = found {
+        state.activity = text;
+        state.activity_kind = match kind {
+            "tool" => "working",
+            "thinking" => "thinking",
+            // A finished text turn means the agent handed back to the user.
+            _ if end_turn => "waiting",
+            _ => "working",
+        }
+        .into();
+    } else if end_turn {
+        state.activity_kind = "waiting".into();
+    }
+}
+
+const ACTIVITY_MAX: usize = 52;
+
+fn base_name(p: &str) -> &str {
+    Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p)
+}
+
+fn url_host(u: &str) -> &str {
+    let after = u.split_once("://").map(|(_, r)| r).unwrap_or(u);
+    after.split('/').next().unwrap_or(after)
+}
+
+fn arg<'a>(input: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    input.get(key).and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// Human, verb-led one-liner for a tool call ("editing scanner.rs", "running
+/// cargo check"). Richer than the permission card's raw preview — this is the
+/// at-a-glance "what's happening" line. The leading icon/state suffix are added
+/// by the UI from `activity_kind`, so this returns just the phrase.
+fn summarize_activity(tool: &str, input: &serde_json::Value) -> String {
+    let s: String = match tool {
+        "Bash" => arg(input, "description")
+            .map(str::to_string)
+            .or_else(|| arg(input, "command").map(|c| format!("running {c}")))
+            .unwrap_or_else(|| "running a command".into()),
+        "Read" => arg(input, "file_path")
+            .map(|p| format!("reading {}", base_name(p)))
+            .unwrap_or_else(|| "reading a file".into()),
+        "Edit" | "MultiEdit" => arg(input, "file_path")
+            .map(|p| format!("editing {}", base_name(p)))
+            .unwrap_or_else(|| "editing a file".into()),
+        "Write" => arg(input, "file_path")
+            .map(|p| format!("writing {}", base_name(p)))
+            .unwrap_or_else(|| "writing a file".into()),
+        "NotebookEdit" => arg(input, "notebook_path")
+            .map(|p| format!("editing {}", base_name(p)))
+            .unwrap_or_else(|| "editing a notebook".into()),
+        "Grep" => arg(input, "pattern")
+            .map(|p| format!("searching \"{p}\""))
+            .unwrap_or_else(|| "searching the code".into()),
+        "Glob" => arg(input, "pattern")
+            .map(|p| format!("finding {p}"))
+            .unwrap_or_else(|| "finding files".into()),
+        "Task" | "Agent" => arg(input, "description")
+            .or_else(|| arg(input, "subagent_type"))
+            .map(|d| format!("agent: {d}"))
+            .unwrap_or_else(|| "running an agent".into()),
+        "WebFetch" => arg(input, "url")
+            .map(|u| format!("fetching {}", url_host(u)))
+            .unwrap_or_else(|| "fetching a page".into()),
+        "WebSearch" => arg(input, "query")
+            .map(|q| format!("searching the web: {q}"))
+            .unwrap_or_else(|| "searching the web".into()),
+        "TodoWrite" => "updating the plan".into(),
+        "ExitPlanMode" => "presenting a plan".into(),
+        "AskUserQuestion" => "asking you a question".into(),
+        t if t.starts_with("Task") => "planning".into(),
+        t if t.starts_with("mcp__") => {
+            let mut it = t.splitn(3, "__");
+            match (it.next(), it.next(), it.next()) {
+                (_, Some(server), Some(name)) => format!("{server}: {}", name.replace('_', " ")),
+                _ => t.to_string(),
+            }
+        }
+        other => other.to_string(),
+    };
+    truncate_activity(&s, ACTIVITY_MAX)
+}
+
+/// Collapse whitespace and trim leading markdown so a text block reads as one
+/// clean line.
+fn snippet(s: &str) -> String {
+    let cleaned = s.trim_start_matches(|c: char| "#*->` \t".contains(c));
+    let one_line = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_activity(&one_line, ACTIVITY_MAX)
+}
+
+fn truncate_activity(s: &str, max: usize) -> String {
+    let s = s.trim();
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{}…", head.trim_end())
     }
 }
 
@@ -464,6 +652,9 @@ pub fn scan(
                 state: "run".into(), // Phase 4 will surface "ask"
                 level: level_for(pct, cfg).into(),
                 last_active: mtime,
+                title: st.title.clone(),
+                activity: st.activity.clone(),
+                activity_kind: st.activity_kind.clone(),
             });
         }
     }
@@ -528,8 +719,12 @@ mod tests {
         );
         for s in &snap.sessions {
             println!(
-                "  {:<22} [{:^4}] {:>5}%  {:>8}/{:<9} model={:<20} branch={:?}",
-                s.project, s.level, s.pct, s.used, s.limit, s.model, s.branch
+                "  {:<22} [{:^4}] {:>5}%  {:>8}/{:<9} branch={:?}",
+                s.project, s.level, s.pct, s.used, s.limit, s.branch
+            );
+            println!(
+                "      title={:?}\n      activity=[{}] {}",
+                s.title, s.activity_kind, s.activity
             );
         }
         // Every reported session must have a sane percentage.
@@ -537,5 +732,65 @@ mod tests {
             assert!(s.pct >= 0.0 && s.pct <= 100.0, "pct out of range: {}", s.pct);
             assert!(s.limit > 0, "limit must be positive");
         }
+    }
+
+    #[test]
+    fn activity_summaries_are_human() {
+        use serde_json::json;
+        // Bash prefers the human description, falls back to the command.
+        assert_eq!(
+            summarize_activity("Bash", &json!({ "command": "cargo check", "description": "Type-check the crate" })),
+            "Type-check the crate"
+        );
+        assert_eq!(summarize_activity("Bash", &json!({ "command": "ls -la" })), "running ls -la");
+        // File tools show just the basename with a verb.
+        assert_eq!(
+            summarize_activity("Edit", &json!({ "file_path": "/Users/x/proj/src/scanner.rs" })),
+            "editing scanner.rs"
+        );
+        assert_eq!(
+            summarize_activity("Read", &json!({ "file_path": "/a/b/Panel.svelte" })),
+            "reading Panel.svelte"
+        );
+        // MCP tools decode server + tool name.
+        assert_eq!(
+            summarize_activity("mcp__wel__list_projects", &json!({})),
+            "wel: list projects"
+        );
+    }
+
+    #[test]
+    fn activity_tracks_tool_then_waits_on_end_turn() {
+        let mut st = FileState::default();
+        // A tool call ⇒ working.
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/x/lib.rs"}}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "working");
+        assert_eq!(st.activity, "reading lib.rs");
+
+        // A finished text turn ⇒ waiting for the user.
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"All done — tests pass."}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "waiting");
+        assert_eq!(st.activity, "All done — tests pass.");
+
+        // The AI title rides along; a new user prompt clears the stale "waiting".
+        ingest(&mut st, &[r#"{"type":"ai-title","aiTitle":"Fix the scanner"}"#.into()]);
+        assert_eq!(st.title.as_deref(), Some("Fix the scanner"));
+        ingest(&mut st, &[r#"{"type":"user","message":{"content":"now do X"}}"#.into()]);
+        assert_eq!(st.activity_kind, "working");
+
+        // A tool_result is NOT a prompt — it must not reset activity.
+        st.activity = "editing a.rs".into();
+        st.activity_kind = "working".into();
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#.into()],
+        );
+        assert_eq!(st.activity, "editing a.rs", "tool_result should not overwrite activity");
     }
 }

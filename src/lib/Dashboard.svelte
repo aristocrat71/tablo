@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "./state.svelte";
-  import { pct, planTier } from "./format";
+  import { pct, planTier, activityIcon, activitySuffix } from "./format";
   import { prefs, byMode } from "./prefs.svelte";
   import { hookStatus, setHookEnabled, resolvePermission } from "./bridge";
   import type { HookStatus, PermDecision, PendingRequest, SessionView } from "./types";
@@ -121,8 +121,23 @@
             <div class="drow">
               <span class="st {c.requests.length ? 'ask' : 'run'}"></span>
               <div class="info">
-                <div class="p">{c.project}</div>
+                <div class="p">
+                  <span class="pname">{c.project}</span>
+                  {#if c.session?.title}
+                    <span class="psep">·</span>
+                    <span class="ptitle">{c.session.title}</span>
+                  {/if}
+                </div>
                 <div class="path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
+                {#if c.session?.activity}
+                  <div class="activity {c.session.activityKind}">
+                    <span class="act-ic">{activityIcon(c.session.activityKind)}</span>
+                    <span class="act-text">{c.session.activity}</span>
+                    {#if activitySuffix(c.session.activityKind)}
+                      <span class="act-suffix">· {activitySuffix(c.session.activityKind)}</span>
+                    {/if}
+                  </div>
+                {/if}
               </div>
               {#if c.session}
                 <div class="gauge">
@@ -405,9 +420,24 @@
     min-width: 0;
   }
   .drow .info .p {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
     font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
+    overflow: hidden;
+  }
+  .drow .info .p .pname {
+    flex-shrink: 0;
+  }
+  .drow .info .p .psep {
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+  .drow .info .p .ptitle {
+    font-weight: 500;
+    color: var(--ink-dim);
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -418,6 +448,52 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* live activity preview (window-render) */
+  .drow .info .activity {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    margin-top: 3px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .drow .info .activity .act-ic {
+    flex-shrink: 0;
+    font-size: 10px;
+  }
+  .drow .info .activity .act-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .drow .info .activity .act-suffix {
+    flex-shrink: 0;
+    color: var(--ink-faint);
+  }
+  .drow .info .activity.working {
+    color: var(--ink);
+  }
+  .drow .info .activity.working .act-ic {
+    color: var(--amber);
+    animation: act-pulse 1.6s var(--ease) infinite;
+  }
+  .drow .info .activity.waiting .act-ic {
+    color: var(--sage);
+  }
+  .drow .info .activity.thinking .act-ic {
+    color: var(--ink-faint);
+  }
+  @keyframes act-pulse {
+    0%,
+    100% {
+      opacity: 0.5;
+    }
+    50% {
+      opacity: 1;
+    }
   }
   .drow .gauge {
     width: 108px;

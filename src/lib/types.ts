@@ -16,7 +16,12 @@ export interface SessionView {
   state: SessionState;
   level: Level;
   lastActive: number; // ms epoch
+  title: string | null; // Claude Code's AI session title (disambiguates rows)
+  activity: string; // live one-liner: "editing scanner.rs", "" if unknown
+  activityKind: ActivityKind; // UI hint for icon + state suffix
 }
+
+export type ActivityKind = "working" | "waiting" | "thinking" | "";
 
 // A tool call awaiting a human approve/deny (Phase 4). Mirrors Rust
 // `permission::PendingRequest`.

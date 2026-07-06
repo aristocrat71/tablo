@@ -1,7 +1,7 @@
 <script lang="ts">
   import { store, applyTheme } from "./state.svelte";
   import { setTheme, openDashboard, resolvePermission } from "./bridge";
-  import { tokens, pct } from "./format";
+  import { tokens, pct, activityIcon, activitySuffix } from "./format";
   import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
@@ -145,6 +145,10 @@
   <div class="ucard" class:needs={c.requests.length > 0}>
     <div class="session-line1">
       <span class="session-proj">{c.project}</span>
+      {#if c.session?.title}
+        <span class="session-sep">·</span>
+        <span class="session-title">{c.session.title}</span>
+      {/if}
       {#if c.session}
         <span class="session-badge run">RUN</span>
         <span
@@ -159,6 +163,16 @@
       {/if}
     </div>
     <div class="session-path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
+
+    {#if c.session?.activity}
+      <div class="session-activity {c.session.activityKind}">
+        <span class="act-ic">{activityIcon(c.session.activityKind)}</span>
+        <span class="act-text">{c.session.activity}</span>
+        {#if activitySuffix(c.session.activityKind)}
+          <span class="act-suffix">· {activitySuffix(c.session.activityKind)}</span>
+        {/if}
+      </div>
+    {/if}
 
     {#if c.session}
       <div class="ctx">
@@ -463,6 +477,22 @@
     font-weight: 600;
     letter-spacing: -0.01em;
     white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-sep {
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+  /* aiTitle — grows to fill, ellipsizes, so RUN + % stay pinned right */
+  .session-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -507,6 +537,54 @@
     overflow: hidden;
     text-overflow: ellipsis;
     margin-top: -2px;
+  }
+
+  /* live activity preview (window-render) */
+  .session-activity {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .session-activity .act-ic {
+    flex-shrink: 0;
+    font-size: 10px;
+  }
+  .session-activity .act-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-activity .act-suffix {
+    flex-shrink: 0;
+    color: var(--ink-faint);
+  }
+  /* working: amber, gently pulsing bolt so it reads as live */
+  .session-activity.working {
+    color: var(--ink);
+  }
+  .session-activity.working .act-ic {
+    color: var(--amber);
+    animation: act-pulse 1.6s var(--ease) infinite;
+  }
+  /* waiting for you: calm sage tick */
+  .session-activity.waiting .act-ic {
+    color: var(--sage);
+  }
+  .session-activity.thinking .act-ic {
+    color: var(--ink-faint);
+  }
+  @keyframes act-pulse {
+    0%,
+    100% {
+      opacity: 0.5;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
   .ctx {
