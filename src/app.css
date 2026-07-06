@@ -1,0 +1,93 @@
+/* ============ Tablo design tokens (ported from tablo-mockups-v3.html) ============ */
+:root {
+  --font-round: "Quicksand", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --r-lg: 20px;
+  --r-md: 14px;
+  --r-sm: 9px;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* ---- DARK: warm lamp-lit desk at night (hero mode) ---- */
+[data-theme="dark"] {
+  --bg-room: #14110e;
+  --bg-surface: #201b16;
+  --bg-raised: #2a231c;
+  --bg-inset: #191410;
+  --border: #372e25;
+  --border-soft: #2c241d;
+  --ink: #f3e8dc;
+  --ink-dim: #b7a794;
+  --ink-faint: #7d6f5f;
+
+  --amber: #e0a458;
+  --amber-soft: #3a2c1a;
+  --sage: #8faa7e;
+  --sage-soft: #29301f;
+  --coral: #e08267;
+  --coral-soft: #3a231c;
+
+  --shadow-panel: 0 24px 60px -12px rgba(0, 0, 0, 0.7),
+    0 8px 20px -8px rgba(0, 0, 0, 0.6);
+}
+
+/* ---- LIGHT: soft warm paper by day ---- */
+[data-theme="light"] {
+  --bg-room: #ddd3c4;
+  --bg-surface: #faf5ec;
+  --bg-raised: #fffcf6;
+  --bg-inset: #f0e8da;
+  --border: #e2d6c4;
+  --border-soft: #ece2d2;
+  --ink: #3a3128;
+  --ink-dim: #7a6e5e;
+  --ink-faint: #a99b87;
+
+  --amber: #c67f2c;
+  --amber-soft: #f5e6cf;
+  --sage: #5f7f4e;
+  --sage-soft: #e4ecda;
+  --coral: #c85a3c;
+  --coral-soft: #f6ddd2;
+
+  --shadow-panel: 0 20px 44px -14px rgba(90, 70, 45, 0.32),
+    0 6px 16px -8px rgba(90, 70, 45, 0.24);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-round);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  /* Transparent by default so the avatar/panel windows show only their art;
+     surfaces that need a background paint their own. */
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+/* The dashboard is a normal window and wants the "room" backdrop. */
+body[data-surface="dashboard"] {
+  background: var(--bg-room);
+  overflow: auto;
+}
+
+/* Avatar window: center the cat in a transparent frame. */
+body[data-surface="avatar"] {
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
