@@ -18,6 +18,20 @@ export interface SessionView {
   lastActive: number; // ms epoch
 }
 
+// A tool call awaiting a human approve/deny (Phase 4). Mirrors Rust
+// `permission::PendingRequest`.
+export interface PendingRequest {
+  id: string;
+  tool: string;
+  detail: string;
+  sessionId: string;
+  project: string;
+  path: string;
+  createdAt: number;
+}
+
+export type PermDecision = "allow" | "deny" | "ask";
+
 export interface Snapshot {
   state: AvatarState;
   agentCount: number;
@@ -26,6 +40,17 @@ export interface Snapshot {
   sessions: SessionView[];
   generatedAt: number;
   hasProjectsDir: boolean;
+  planTier: string | null; // raw account tier, e.g. "default_claude_max_5x"
+  pending: PendingRequest[];
+}
+
+// Mirrors Rust `permission::HookStatus`.
+export interface HookStatus {
+  installed: boolean;
+  serverUp: boolean;
+  scriptPath: string;
+  port: number;
+  tools: string[];
 }
 
 // Mirrors the Rust `config::Config` — the single source of truth. The frontend
@@ -70,4 +95,6 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   sessions: [],
   generatedAt: 0,
   hasProjectsDir: true,
+  planTier: null,
+  pending: [],
 };

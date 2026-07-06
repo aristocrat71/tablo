@@ -1,20 +1,67 @@
 <script lang="ts">
   import { store, applyTheme } from "./state.svelte";
-  import { setTheme, openDashboard } from "./bridge";
+  import { setTheme, openDashboard, resolvePermission } from "./bridge";
   import { tokens, pct } from "./format";
-  import type { SessionView } from "./types";
+  import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
+  import type { SessionView, PermDecision, PendingRequest } from "./types";
+
+  // One card per session, unifying its working/context state with any pending
+  // tool approvals it owns — so it's obvious which session is asking.
+  type Card = {
+    key: string;
+    project: string;
+    path: string;
+    branch: string | null;
+    session: SessionView | null; // null = orphan request (no active session)
+    requests: PendingRequest[];
+  };
 
   let snap = $derived(store.snap);
-  let asks = $derived(snap.sessions.filter((s) => s.state === "ask"));
-  let works = $derived(snap.sessions.filter((s) => s.state === "run"));
+  let pending = $derived(snap.pending);
+
+  let cards = $derived.by(() => {
+    const byId = new Map<string, Card>();
+    // Seed from active sessions — their resolved project/path/branch win over a
+    // request's raw shell-cwd basename.
+    for (const s of snap.sessions) {
+      byId.set(s.id, { key: s.id, project: s.project, path: s.path, branch: s.branch, session: s, requests: [] });
+    }
+    // Attach each request to its session by id; an orphan gets a minimal card.
+    for (const p of pending) {
+      let c = byId.get(p.sessionId);
+      if (!c) {
+        c = { key: p.sessionId, project: p.project, path: p.path, branch: null, session: null, requests: [] };
+        byId.set(p.sessionId, c);
+      }
+      c.requests.push(p);
+    }
+    // Needs-input sessions first, then the chosen sort among the rest.
+    const cmp = byMode(prefs.sort);
+    return [...byId.values()].sort((a, b) => {
+      const an = a.requests.length ? 0 : 1;
+      const bn = b.requests.length ? 0 : 1;
+      if (an !== bn) return an - bn;
+      if (a.session && b.session) return cmp(a.session, b.session);
+      return a.session ? -1 : b.session ? 1 : 0;
+    });
+  });
+
+  let needsCards = $derived(cards.filter((c) => c.requests.length > 0));
+  let workCards = $derived(cards.filter((c) => c.requests.length === 0));
+  // Compact collapses only the purely-working sessions; requests never hide.
+  let compact = $derived(prefs.panelMode === "compact" && workCards.length > 1);
 
   let sub = $derived.by(() => {
-    const n = snap.sessions.length;
     if (!snap.hasProjectsDir) return "Claude Code hasn't run yet";
-    if (n === 0) return "no active sessions";
-    const base = `${n} session${n > 1 ? "s" : ""}`;
+    const n = snap.sessions.length;
+    if (n === 0 && pending.length === 0) return "no active sessions";
+    const base = n > 0 ? `${n} session${n > 1 ? "s" : ""}` : "idle";
     return snap.waiting > 0 ? `${base} · ${snap.waiting} waiting on you` : base;
   });
+
+  function decide(id: string, decision: PermDecision) {
+    resolvePermission(id, decision);
+  }
 
   function toggleTheme() {
     const next = store.config.theme === "dark" ? "light" : "dark";
@@ -32,70 +79,108 @@
         <div class="name">tablo</div>
         <div class="sub">{sub}</div>
       </div>
-      <button class="mini" title="Toggle theme" onclick={toggleTheme}>☾</button>
+      <div class="panel-actions">
+        <button class="dash-link" title="Open dashboard" onclick={() => openDashboard()}>
+          dashboard <span class="arr">↗</span>
+        </button>
+        <button class="mini" title="Toggle theme" onclick={toggleTheme} aria-label="Toggle theme">☾</button>
+      </div>
     </div>
 
+    {#if snap.sessions.length > 1}
+      <div class="panel-toolbar">
+        <div class="seg" role="group" aria-label="Sort sessions">
+          <button class:on={prefs.sort === "context"} onclick={() => setSort("context")}>context</button>
+          <button class:on={prefs.sort === "recent"} onclick={() => setSort("recent")}>recent</button>
+        </div>
+        <div class="seg" role="group" aria-label="View mode">
+          <button class:on={!compact} onclick={() => setPanelMode("expanded")}>list</button>
+          <button class:on={compact} onclick={() => setPanelMode("compact")}>compact</button>
+        </div>
+      </div>
+    {/if}
+
     <div class="panel-body">
-      {#if snap.sessions.length === 0}
+      {#if cards.length === 0}
         <div class="empty">
           <div class="empty-glyph">I</div>
           <p>{snap.hasProjectsDir ? "Nothing running right now." : "No Claude Code sessions found yet."}</p>
           <span>Tablo wakes up when an agent starts working.</span>
         </div>
       {:else}
-        {#if asks.length}
+        {#if needsCards.length}
           <div class="group-head">
             <span class="group-dot attn"></span>
             <span class="group-name">Input requested</span>
-            <span class="group-count">{asks.length}</span>
+            <span class="group-count">{pending.length}</span>
           </div>
-          {#each asks as s (s.id)}
-            {@render sessionRow(s)}
+          {#each needsCards as c (c.key)}
+            {@render sessionCard(c)}
           {/each}
         {/if}
 
-        {#if works.length}
+        {#if workCards.length}
           <div class="group-head">
             <span class="group-dot work"></span>
             <span class="group-name">Working</span>
-            <span class="group-count">{works.length}</span>
+            <span class="group-count">{workCards.length}</span>
           </div>
-          {#each works as s (s.id)}
-            {@render sessionRow(s)}
-          {/each}
+          {#if compact}
+            {@render sessionCard(workCards[0])}
+            <button class="more" onclick={() => setPanelMode("expanded")}>
+              +{workCards.length - 1} more session{workCards.length - 1 > 1 ? "s" : ""}
+            </button>
+          {:else}
+            {#each workCards as c (c.key)}
+              {@render sessionCard(c)}
+            {/each}
+          {/if}
         {/if}
       {/if}
-    </div>
-
-    <div class="panel-foot">
-      <button class="dash-btn" onclick={() => openDashboard()}>
-        Open dashboard
-        <span class="host">the deep view</span>
-      </button>
     </div>
   </div>
 </div>
 
-{#snippet sessionRow(s: SessionView)}
-  <div class="session" class:needs={s.state === "ask"}>
+{#snippet sessionCard(c: Card)}
+  <div class="ucard" class:needs={c.requests.length > 0}>
     <div class="session-line1">
-      <span class="session-proj">{s.project}</span>
-      <span class="session-badge {s.state === 'ask' ? 'ask' : 'run'}">
-        {s.state === "ask" ? "ASK" : "RUN"}
-      </span>
-      <span class="session-pct" class:warn={s.level === "warn"} class:crit={s.level === "crit"}>
-        {pct(s.pct)}
-      </span>
+      <span class="session-proj">{c.project}</span>
+      {#if c.session}
+        <span class="session-badge run">RUN</span>
+        <span
+          class="session-pct"
+          class:warn={c.session.level === "warn"}
+          class:crit={c.session.level === "crit"}
+        >
+          {pct(c.session.pct)}
+        </span>
+      {:else}
+        <span class="session-badge ask">WAITING</span>
+      {/if}
     </div>
-    <div class="session-path">
-      {s.path}{s.branch ? ` · ${s.branch}` : ""}
-    </div>
-    <div class="ctx">
-      <div class="ctx-track">
-        <div class="ctx-fill {s.level}" style="width:{s.pct}%"></div>
+    <div class="session-path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
+
+    {#if c.session}
+      <div class="ctx">
+        <div class="ctx-track">
+          <div class="ctx-fill {c.session.level}" style="width:{c.session.pct}%"></div>
+        </div>
+        <span class="ctx-cap">{tokens(c.session.used)} / {tokens(c.session.limit)}</span>
       </div>
-      <span class="ctx-cap">{tokens(s.used)} / {tokens(s.limit)}</span>
-    </div>
+    {/if}
+
+    {#each c.requests as p (p.id)}
+      <div class="req">
+        <div class="req-top">
+          <span class="session-badge ask">{p.tool}</span>
+          <div class="approval-actions">
+            <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
+            <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
+          </div>
+        </div>
+        {#if p.detail}<div class="approval-detail">{p.detail}</div>{/if}
+      </div>
+    {/each}
   </div>
 {/snippet}
 
@@ -166,6 +251,94 @@
     color: var(--ink);
     border-color: var(--ink-faint);
   }
+  .panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dash-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 8px;
+    border: none;
+    background: var(--ink);
+    color: var(--bg-surface);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    transition: transform 0.15s var(--ease), opacity 0.2s var(--ease);
+  }
+  .dash-link:hover {
+    transform: translateY(-1px);
+    opacity: 0.92;
+  }
+  .dash-link .arr {
+    font-size: 12.5px;
+    line-height: 1;
+  }
+
+  .panel-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 18px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-inset);
+  }
+  .seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+  }
+  .seg button {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 4px 9px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
+  }
+  .seg button:hover {
+    color: var(--ink-dim);
+  }
+  .seg button.on {
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
+
+  .more {
+    width: 100%;
+    margin-top: 4px;
+    padding: 10px;
+    border-radius: var(--r-md);
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--ink-dim);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
+  }
+  .more:hover {
+    color: var(--ink);
+    border-color: var(--ink-faint);
+  }
 
   .panel-body {
     flex: 1;
@@ -207,7 +380,7 @@
     margin-left: auto;
   }
 
-  .session {
+  .ucard {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -216,14 +389,68 @@
     background: var(--bg-raised);
     border: 1px solid var(--border-soft);
     margin-bottom: 7px;
-    transition: border-color 0.2s var(--ease), transform 0.12s var(--ease);
+    transition: border-color 0.2s var(--ease);
   }
-  .session:hover {
+  .ucard:hover {
     border-color: var(--border);
-    transform: translateX(2px);
   }
-  .session.needs {
-    border-color: color-mix(in srgb, var(--coral) 40%, var(--border-soft));
+  /* a session with pending approvals — coral card, sorted to the top */
+  .ucard.needs {
+    background: color-mix(in srgb, var(--coral) 8%, var(--bg-raised));
+    border-color: color-mix(in srgb, var(--coral) 42%, var(--border-soft));
+  }
+  /* one pending request inside a session card, divided from what's above */
+  .req {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-top: 9px;
+    border-top: 1px solid color-mix(in srgb, var(--coral) 18%, var(--border-soft));
+  }
+  .req-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .approval-detail {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-sm);
+    padding: 7px 9px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 84px;
+    overflow-y: auto;
+  }
+  .approval-actions {
+    display: flex;
+    gap: 7px;
+    margin-left: auto;
+  }
+  .act {
+    padding: 6px 14px;
+    border-radius: var(--r-sm);
+    font-family: var(--font-round);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: transform 0.12s var(--ease), opacity 0.2s var(--ease);
+  }
+  .act:hover {
+    transform: translateY(-1px);
+  }
+  .act.deny {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--coral) 45%, var(--border));
+    color: var(--coral);
+  }
+  .act.allow {
+    background: var(--sage);
+    color: var(--bg-surface);
   }
 
   .session-line1 {
@@ -322,41 +549,6 @@
     font-size: 9.5px;
     color: var(--ink-faint);
     white-space: nowrap;
-  }
-
-  .panel-foot {
-    padding: 12px;
-    border-top: 1px solid var(--border-soft);
-    background: var(--bg-inset);
-  }
-  .dash-btn {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    padding: 11px;
-    border-radius: var(--r-md);
-    background: var(--ink);
-    color: var(--bg-surface);
-    border: none;
-    cursor: pointer;
-    font-family: var(--font-round);
-    font-size: 13.5px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    transition: transform 0.15s var(--ease), opacity 0.2s var(--ease);
-  }
-  .dash-btn:hover {
-    transform: translateY(-1px);
-    opacity: 0.92;
-  }
-  .dash-btn .host {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 500;
-    opacity: 0.6;
-    letter-spacing: 0;
   }
 
   .empty {

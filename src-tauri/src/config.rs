@@ -46,10 +46,24 @@ pub struct Config {
     /// (we only need recent messages + the file's end).
     pub initial_tail_cap_bytes: u64,
 
+    // ---- permissions (Phase 4) ----
+    /// Loopback port the PreToolUse hook posts to for approve/deny decisions.
+    pub permission_port: u16,
+    /// Tools the hook intercepts for human approval — used to build the
+    /// settings.json matcher. Read-only tools are intentionally left out so
+    /// they never pay the round-trip. `["*"]` would intercept everything.
+    pub intercept_tools: Vec<String>,
+    /// Per-hook timeout written into settings.json (seconds), and the window the
+    /// server waits for a decision. A long window (approvals fail **closed** —
+    /// deny — if it elapses). Capped by Claude Code's own max hook timeout.
+    pub hook_timeout_secs: u64,
+
     // ---- misc ----
     /// Fire a one-time OS notification when a session first crosses `warn_pct`
     /// (Open Question #5, default off for Phase 1).
     pub notify_on_warn: bool,
+    /// Fire an OS notification when a new tool approval is requested (Phase 4).
+    pub notify_on_permission: bool,
     /// "dark" (hero) or "light".
     pub theme: String,
 }
@@ -67,7 +81,17 @@ impl Default for Config {
             warn_pct: 60.0,
             crit_pct: 85.0,
             initial_tail_cap_bytes: 2_000_000,
+            permission_port: 8577,
+            intercept_tools: vec![
+                "Bash".into(),
+                "Write".into(),
+                "Edit".into(),
+                "MultiEdit".into(),
+                "NotebookEdit".into(),
+            ],
+            hook_timeout_secs: 600,
             notify_on_warn: false,
+            notify_on_permission: true,
             theme: "dark".into(),
         }
     }
