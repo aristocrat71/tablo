@@ -3,24 +3,59 @@
   import { setTheme, openDashboard, resolvePermission } from "./bridge";
   import { tokens, pct } from "./format";
   import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
-  import type { SessionView, PermDecision } from "./types";
+  import type { SessionView, PermDecision, PendingRequest } from "./types";
+
+  // One card per session, unifying its working/context state with any pending
+  // tool approvals it owns — so it's obvious which session is asking.
+  type Card = {
+    key: string;
+    project: string;
+    path: string;
+    branch: string | null;
+    session: SessionView | null; // null = orphan request (no active session)
+    requests: PendingRequest[];
+  };
 
   let snap = $derived(store.snap);
-  // Pending tool approvals (Phase 4) — always shown, never collapsed.
   let pending = $derived(snap.pending);
-  // Every active session is "working"; order it by the chosen sort mode.
-  let works = $derived(snap.sessions.slice().sort(byMode(prefs.sort)));
-  let total = $derived(works.length);
 
-  // Compact mode collapses the working list to a single "lead" bar. Approvals
-  // are never collapsed, so compact only affects the session list.
-  let lead = $derived<SessionView | undefined>(works[0]);
-  let compact = $derived(prefs.panelMode === "compact" && total > 1);
+  let cards = $derived.by(() => {
+    const byId = new Map<string, Card>();
+    // Seed from active sessions — their resolved project/path/branch win over a
+    // request's raw shell-cwd basename.
+    for (const s of snap.sessions) {
+      byId.set(s.id, { key: s.id, project: s.project, path: s.path, branch: s.branch, session: s, requests: [] });
+    }
+    // Attach each request to its session by id; an orphan gets a minimal card.
+    for (const p of pending) {
+      let c = byId.get(p.sessionId);
+      if (!c) {
+        c = { key: p.sessionId, project: p.project, path: p.path, branch: null, session: null, requests: [] };
+        byId.set(p.sessionId, c);
+      }
+      c.requests.push(p);
+    }
+    // Needs-input sessions first, then the chosen sort among the rest.
+    const cmp = byMode(prefs.sort);
+    return [...byId.values()].sort((a, b) => {
+      const an = a.requests.length ? 0 : 1;
+      const bn = b.requests.length ? 0 : 1;
+      if (an !== bn) return an - bn;
+      if (a.session && b.session) return cmp(a.session, b.session);
+      return a.session ? -1 : b.session ? 1 : 0;
+    });
+  });
+
+  let needsCards = $derived(cards.filter((c) => c.requests.length > 0));
+  let workCards = $derived(cards.filter((c) => c.requests.length === 0));
+  // Compact collapses only the purely-working sessions; requests never hide.
+  let compact = $derived(prefs.panelMode === "compact" && workCards.length > 1);
 
   let sub = $derived.by(() => {
     if (!snap.hasProjectsDir) return "Claude Code hasn't run yet";
-    if (total === 0 && pending.length === 0) return "no active sessions";
-    const base = total > 0 ? `${total} session${total > 1 ? "s" : ""}` : "idle";
+    const n = snap.sessions.length;
+    if (n === 0 && pending.length === 0) return "no active sessions";
+    const base = n > 0 ? `${n} session${n > 1 ? "s" : ""}` : "idle";
     return snap.waiting > 0 ? `${base} · ${snap.waiting} waiting on you` : base;
   });
 
@@ -47,7 +82,7 @@
       <button class="mini" title="Toggle theme" onclick={toggleTheme}>☾</button>
     </div>
 
-    {#if total > 1}
+    {#if snap.sessions.length > 1}
       <div class="panel-toolbar">
         <div class="seg" role="group" aria-label="Sort sessions">
           <button class:on={prefs.sort === "context"} onclick={() => setSort("context")}>context</button>
@@ -61,38 +96,38 @@
     {/if}
 
     <div class="panel-body">
-      {#if total === 0 && pending.length === 0}
+      {#if cards.length === 0}
         <div class="empty">
           <div class="empty-glyph">I</div>
           <p>{snap.hasProjectsDir ? "Nothing running right now." : "No Claude Code sessions found yet."}</p>
           <span>Tablo wakes up when an agent starts working.</span>
         </div>
       {:else}
-        {#if pending.length}
+        {#if needsCards.length}
           <div class="group-head">
             <span class="group-dot attn"></span>
             <span class="group-name">Input requested</span>
             <span class="group-count">{pending.length}</span>
           </div>
-          {#each pending as p (p.id)}
-            {@render approvalRow(p)}
+          {#each needsCards as c (c.key)}
+            {@render sessionCard(c)}
           {/each}
         {/if}
 
-        {#if total > 0}
+        {#if workCards.length}
           <div class="group-head">
             <span class="group-dot work"></span>
             <span class="group-name">Working</span>
-            <span class="group-count">{total}</span>
+            <span class="group-count">{workCards.length}</span>
           </div>
-          {#if compact && lead}
-            {@render sessionRow(lead)}
+          {#if compact}
+            {@render sessionCard(workCards[0])}
             <button class="more" onclick={() => setPanelMode("expanded")}>
-              +{total - 1} more session{total - 1 > 1 ? "s" : ""}
+              +{workCards.length - 1} more session{workCards.length - 1 > 1 ? "s" : ""}
             </button>
           {:else}
-            {#each works as s (s.id)}
-              {@render sessionRow(s)}
+            {#each workCards as c (c.key)}
+              {@render sessionCard(c)}
             {/each}
           {/if}
         {/if}
@@ -108,43 +143,46 @@
   </div>
 </div>
 
-{#snippet sessionRow(s: SessionView)}
-  <div class="session" class:needs={s.state === "ask"}>
+{#snippet sessionCard(c: Card)}
+  <div class="ucard" class:needs={c.requests.length > 0}>
     <div class="session-line1">
-      <span class="session-proj">{s.project}</span>
-      <span class="session-badge {s.state === 'ask' ? 'ask' : 'run'}">
-        {s.state === "ask" ? "ASK" : "RUN"}
-      </span>
-      <span class="session-pct" class:warn={s.level === "warn"} class:crit={s.level === "crit"}>
-        {pct(s.pct)}
-      </span>
+      <span class="session-proj">{c.project}</span>
+      {#if c.session}
+        <span class="session-badge run">RUN</span>
+        <span
+          class="session-pct"
+          class:warn={c.session.level === "warn"}
+          class:crit={c.session.level === "crit"}
+        >
+          {pct(c.session.pct)}
+        </span>
+      {:else}
+        <span class="session-badge ask">WAITING</span>
+      {/if}
     </div>
-    <div class="session-path">
-      {s.path}{s.branch ? ` · ${s.branch}` : ""}
-    </div>
-    <div class="ctx">
-      <div class="ctx-track">
-        <div class="ctx-fill {s.level}" style="width:{s.pct}%"></div>
-      </div>
-      <span class="ctx-cap">{tokens(s.used)} / {tokens(s.limit)}</span>
-    </div>
-  </div>
-{/snippet}
+    <div class="session-path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
 
-{#snippet approvalRow(p: import("./types").PendingRequest)}
-  <div class="session needs approval">
-    <div class="session-line1">
-      <span class="session-proj">{p.project}</span>
-      <span class="session-badge ask">{p.tool}</span>
-    </div>
-    {#if p.detail}
-      <div class="approval-detail">{p.detail}</div>
+    {#if c.session}
+      <div class="ctx">
+        <div class="ctx-track">
+          <div class="ctx-fill {c.session.level}" style="width:{c.session.pct}%"></div>
+        </div>
+        <span class="ctx-cap">{tokens(c.session.used)} / {tokens(c.session.limit)}</span>
+      </div>
     {/if}
-    <div class="session-path">{p.path}</div>
-    <div class="approval-actions">
-      <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
-      <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
-    </div>
+
+    {#each c.requests as p (p.id)}
+      <div class="req">
+        <div class="req-top">
+          <span class="session-badge ask">{p.tool}</span>
+          <div class="approval-actions">
+            <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
+            <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
+          </div>
+        </div>
+        {#if p.detail}<div class="approval-detail">{p.detail}</div>{/if}
+      </div>
+    {/each}
   </div>
 {/snippet}
 
@@ -313,7 +351,7 @@
     margin-left: auto;
   }
 
-  .session {
+  .ucard {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -322,18 +360,28 @@
     background: var(--bg-raised);
     border: 1px solid var(--border-soft);
     margin-bottom: 7px;
-    transition: border-color 0.2s var(--ease), transform 0.12s var(--ease);
+    transition: border-color 0.2s var(--ease);
   }
-  .session:hover {
+  .ucard:hover {
     border-color: var(--border);
-    transform: translateX(2px);
   }
-  .session.needs {
-    border-color: color-mix(in srgb, var(--coral) 40%, var(--border-soft));
-  }
-  .session.approval {
+  /* a session with pending approvals — coral card, sorted to the top */
+  .ucard.needs {
     background: color-mix(in srgb, var(--coral) 8%, var(--bg-raised));
-    border-color: color-mix(in srgb, var(--coral) 45%, var(--border-soft));
+    border-color: color-mix(in srgb, var(--coral) 42%, var(--border-soft));
+  }
+  /* one pending request inside a session card, divided from what's above */
+  .req {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-top: 9px;
+    border-top: 1px solid color-mix(in srgb, var(--coral) 18%, var(--border-soft));
+  }
+  .req-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   .approval-detail {
     font-family: var(--font-mono);
@@ -350,15 +398,14 @@
   }
   .approval-actions {
     display: flex;
-    gap: 8px;
-    margin-top: 1px;
+    gap: 7px;
+    margin-left: auto;
   }
   .act {
-    flex: 1;
-    padding: 8px;
+    padding: 6px 14px;
     border-radius: var(--r-sm);
     font-family: var(--font-round);
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     border: 1px solid transparent;

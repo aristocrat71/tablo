@@ -53,8 +53,9 @@ pub struct Config {
     /// settings.json matcher. Read-only tools are intentionally left out so
     /// they never pay the round-trip. `["*"]` would intercept everything.
     pub intercept_tools: Vec<String>,
-    /// Per-hook timeout written into settings.json (seconds). The blocked tool
-    /// call defers to Claude Code's normal flow if no decision lands in time.
+    /// Per-hook timeout written into settings.json (seconds), and the window the
+    /// server waits for a decision. A long window (approvals fail **closed** —
+    /// deny — if it elapses). Capped by Claude Code's own max hook timeout.
     pub hook_timeout_secs: u64,
 
     // ---- misc ----
@@ -88,7 +89,7 @@ impl Default for Config {
                 "MultiEdit".into(),
                 "NotebookEdit".into(),
             ],
-            hook_timeout_secs: 120,
+            hook_timeout_secs: 600,
             notify_on_warn: false,
             notify_on_permission: true,
             theme: "dark".into(),

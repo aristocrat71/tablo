@@ -15,6 +15,9 @@
   let s = $derived(store.snap.state);
   let count = $derived(store.snap.agentCount);
   let showCount = $derived(s !== "idle" && count >= 1);
+  // Pending tool approvals (Phase 4) — drive the extra-prominent "needs input"
+  // shake, distinct from the gentler context-alarm.
+  let needsInput = $derived(store.snap.waiting > 0);
 
   // --- tap vs. drag ---
   const DRAG_THRESHOLD = 6; // px of movement before a press becomes a drag
@@ -93,8 +96,10 @@
   onpointermove={onMove}
   onpointerup={onUp}
 >
-  <div class="tablo-wrap">
-    <div class="tablo {CLASS[s]}"><span class="glyph">{GLYPH[s]}</span></div>
+  <div class="tablo-wrap" class:needs-input={needsInput}>
+    <div class="tablo {CLASS[s]}" class:needs-input={needsInput}>
+      <span class="glyph">{GLYPH[s]}</span>
+    </div>
     {#if showCount}
       <span class="count" class:alarmed={s === "alarmed"}>{count}</span>
     {/if}
@@ -229,6 +234,52 @@
     }
     75% {
       transform: translateX(1.5px);
+    }
+  }
+
+  /* needs-input: a pending tool approval — much more agitated than the context
+     alarm. The shake lives on the wrap so the count badge rattles along with the
+     hex; the hex itself does a hard coral flush. */
+  .tablo-wrap.needs-input {
+    animation: shake 0.5s var(--ease) infinite;
+  }
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) rotate(0deg);
+    }
+    15% {
+      transform: translate3d(-3px, 1px, 0) rotate(-4deg);
+    }
+    30% {
+      transform: translate3d(3px, -1px, 0) rotate(4deg);
+    }
+    45% {
+      transform: translate3d(-3px, 1px, 0) rotate(-3deg);
+    }
+    60% {
+      transform: translate3d(3px, -1px, 0) rotate(3deg);
+    }
+    75% {
+      transform: translate3d(-2px, 0, 0) rotate(-2deg);
+    }
+    90% {
+      transform: translate3d(1px, 0, 0) rotate(1deg);
+    }
+  }
+  /* Overrides the .alarmed animation with a harder, faster coral pulse. */
+  .tablo.needs-input {
+    color: var(--coral);
+    background: color-mix(in srgb, var(--coral) 70%, var(--border));
+    animation: needs-glow 0.85s var(--ease) infinite;
+  }
+  @keyframes needs-glow {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 11px color-mix(in srgb, var(--coral) 60%, transparent));
+    }
+    50% {
+      filter: drop-shadow(0 0 24px color-mix(in srgb, var(--coral) 95%, transparent));
     }
   }
 </style>

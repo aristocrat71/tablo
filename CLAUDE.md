@@ -281,9 +281,18 @@ allow/deny), which unblocks or blocks the tool.
 - Any pending approval forces the avatar to **alarmed** and drives the `waiting`
   count; a one-shot OS notification fires per new request (`notify_on_permission`).
 
-**Fail-safe by design:** if Tablo is down / the port is busy / the user doesn't
-decide within `hook_timeout_secs`, the hook emits `{}` → Claude Code falls back
-to its normal permission flow. Nothing ever hangs a session.
+**Decision surface — Tablo widget only.** A dual-decide variant (also prompt in
+the terminal via `/dev/tty`) was built and tested, but Claude Code's TUI fully
+owns the terminal (raw mode, own stdin), so the hook's prompt neither renders nor
+reads a key inside a live session — verified empirically. It was removed; the
+widget is the sole decision surface.
+
+**Timeout is fail-closed (deny) with a long window.** The server holds the
+request for `hook_timeout_secs` (~10 min, capped by Claude Code's own max hook
+timeout). If the user never decides, it **denies** (blocks the tool) rather than
+auto-approving. Distinct from Tablo being *down*: then the hook's `curl` fails
+before reaching the server and prints `{}` → Claude Code's normal flow (never
+hangs). So: reachable-but-ignored ⇒ deny; unreachable ⇒ defer.
 
 **Consent:** the hook script is written on launch (Tablo's own dir, harmless),
 but editing `~/.claude/settings.json` to actually intercept tools only happens

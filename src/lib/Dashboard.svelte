@@ -2,15 +2,46 @@
   import { onMount } from "svelte";
   import { store } from "./state.svelte";
   import { pct, planTier } from "./format";
-  import { prefs, sortSessions } from "./prefs.svelte";
+  import { prefs, byMode } from "./prefs.svelte";
   import { hookStatus, setHookEnabled, resolvePermission } from "./bridge";
-  import type { HookStatus, PermDecision } from "./types";
+  import type { HookStatus, PermDecision, PendingRequest, SessionView } from "./types";
+
+  type Card = {
+    key: string;
+    project: string;
+    path: string;
+    branch: string | null;
+    session: SessionView | null;
+    requests: PendingRequest[];
+  };
 
   let snap = $derived(store.snap);
   let tier = $derived(planTier(snap.planTier));
-  let pending = $derived(snap.pending);
-  // Follows the sort chosen in the panel (shared across windows via localStorage).
-  let sessions = $derived(sortSessions(snap.sessions, prefs.sort));
+
+  // One card per session, its context gauge unified with any pending requests
+  // it owns. Needs-input sessions sort first, then the panel's chosen sort.
+  let cards = $derived.by(() => {
+    const byId = new Map<string, Card>();
+    for (const s of snap.sessions) {
+      byId.set(s.id, { key: s.id, project: s.project, path: s.path, branch: s.branch, session: s, requests: [] });
+    }
+    for (const p of snap.pending) {
+      let c = byId.get(p.sessionId);
+      if (!c) {
+        c = { key: p.sessionId, project: p.project, path: p.path, branch: null, session: null, requests: [] };
+        byId.set(p.sessionId, c);
+      }
+      c.requests.push(p);
+    }
+    const cmp = byMode(prefs.sort);
+    return [...byId.values()].sort((a, b) => {
+      const an = a.requests.length ? 0 : 1;
+      const bn = b.requests.length ? 0 : 1;
+      if (an !== bn) return an - bn;
+      if (a.session && b.session) return cmp(a.session, b.session);
+      return a.session ? -1 : b.session ? 1 : 0;
+    });
+  });
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -84,46 +115,43 @@
   </div>
 
   <div class="dash-grid">
-    {#if pending.length}
-      <div class="card attn-card">
-        <h3>Input requested <span class="n">{pending.length}</span></h3>
-        {#each pending as p (p.id)}
-          <div class="arow">
-            <div class="ainfo">
-              <div class="atool"><span class="tag">{p.tool}</span> {p.project}</div>
-              {#if p.detail}<div class="adetail">{p.detail}</div>{/if}
-              <div class="apath">{p.path}</div>
-            </div>
-            <div class="aacts">
-              <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
-              <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
-            </div>
-          </div>
-        {/each}
-      </div>
-    {/if}
-
     <div class="card">
-      <h3>Sessions <span class="n">{snap.sessions.length}</span></h3>
-      {#if snap.sessions.length === 0}
+      <h3>Sessions <span class="n">{cards.length}</span></h3>
+      {#if cards.length === 0}
         <div class="dash-empty">Nothing running. Tablo is watching.</div>
       {:else}
-        {#each sessions as s (s.id)}
-          <div class="drow">
-            <span class="st {s.state === 'ask' ? 'ask' : 'run'}"></span>
-            <div class="info">
-              <div class="p">{s.project}</div>
-              <div class="path">{s.path}{s.branch ? ` · ${s.branch}` : ""}</div>
-            </div>
-            <div class="gauge">
-              <div class="lab">
-                <span>context</span>
-                <span class="val" class:warn={s.level === "warn"} class:crit={s.level === "crit"}>
-                  {pct(s.pct)}
-                </span>
+        {#each cards as c (c.key)}
+          <div class="scard" class:needs={c.requests.length > 0}>
+            <div class="drow">
+              <span class="st {c.requests.length ? 'ask' : 'run'}"></span>
+              <div class="info">
+                <div class="p">{c.project}</div>
+                <div class="path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
               </div>
-              <div class="tk"><i class={s.level} style="width:{s.pct}%"></i></div>
+              {#if c.session}
+                <div class="gauge">
+                  <div class="lab">
+                    <span>context</span>
+                    <span class="val" class:warn={c.session.level === "warn"} class:crit={c.session.level === "crit"}>
+                      {pct(c.session.pct)}
+                    </span>
+                  </div>
+                  <div class="tk"><i class={c.session.level} style="width:{c.session.pct}%"></i></div>
+                </div>
+              {/if}
             </div>
+            {#each c.requests as p (p.id)}
+              <div class="arow">
+                <div class="ainfo">
+                  <div class="atool"><span class="tag">{p.tool}</span></div>
+                  {#if p.detail}<div class="adetail">{p.detail}</div>{/if}
+                </div>
+                <div class="aacts">
+                  <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
+                  <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
+                </div>
+              </div>
+            {/each}
           </div>
         {/each}
       {/if}
@@ -228,19 +256,28 @@
     box-shadow: 0 0 7px var(--sage);
   }
 
-  .attn-card {
-    border-color: color-mix(in srgb, var(--coral) 40%, var(--border-soft));
-    background: color-mix(in srgb, var(--coral) 6%, var(--bg-raised));
+  /* one session block: its context row + any pending requests, unified */
+  .scard {
+    padding: 11px 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .scard:last-child {
+    border-bottom: none;
+  }
+  .scard.needs {
+    border: 1px solid color-mix(in srgb, var(--coral) 38%, var(--border-soft));
+    background: color-mix(in srgb, var(--coral) 6%, transparent);
+    border-radius: var(--r-md);
+    padding: 6px 12px 8px;
+    margin: 8px 0;
   }
   .arow {
     display: flex;
     align-items: flex-start;
     gap: 14px;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--border-soft);
-  }
-  .arow:last-child {
-    border-bottom: none;
+    padding: 10px 0 2px;
+    margin-top: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--coral) 15%, var(--border-soft));
   }
   .ainfo {
     flex: 1;
@@ -258,7 +295,6 @@
     background: var(--coral-soft);
     padding: 2px 6px;
     border-radius: 5px;
-    margin-right: 4px;
   }
   .adetail {
     font-family: var(--font-mono);
@@ -273,14 +309,6 @@
     word-break: break-word;
     max-height: 90px;
     overflow-y: auto;
-  }
-  .apath {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--ink-faint);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .aacts {
     display: flex;
@@ -404,11 +432,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 11px 0;
-    border-bottom: 1px solid var(--border-soft);
-  }
-  .drow:last-child {
-    border-bottom: none;
+    padding: 3px 0;
   }
   .drow .st {
     width: 8px;
