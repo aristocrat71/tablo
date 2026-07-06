@@ -26,6 +26,7 @@ export interface Snapshot {
   sessions: SessionView[];
   generatedAt: number;
   hasProjectsDir: boolean;
+  planTier: string | null; // raw account tier, e.g. "default_claude_max_5x"
 }
 
 // Mirrors the Rust `config::Config` — the single source of truth. The frontend
@@ -70,4 +71,5 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   sessions: [],
   generatedAt: 0,
   hasProjectsDir: true,
+  planTier: null,
 };

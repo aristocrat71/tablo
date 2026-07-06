@@ -49,6 +49,9 @@ pub struct Snapshot {
     pub generated_at: i64,
     /// False when `~/.claude/projects` doesn't exist (friendly empty state).
     pub has_projects_dir: bool,
+    /// Raw subscription tier (e.g. "default_claude_max_5x"), or None if absent.
+    /// Static account metadata — not live quota. Frontend renders a chip.
+    pub plan_tier: Option<String>,
 }
 
 impl Default for Snapshot {
@@ -61,6 +64,7 @@ impl Default for Snapshot {
             sessions: Vec::new(),
             generated_at: 0,
             has_projects_dir: true,
+            plan_tier: None,
         }
     }
 }
@@ -111,6 +115,11 @@ pub struct ClaudeConfigCache {
     /// Whether the user predominantly runs the extended window across all
     /// projects with history — the fallback for a project with no record.
     global_ext: Option<bool>,
+    /// Raw subscription tier from `oauthAccount.organizationRateLimitTier`
+    /// (e.g. "default_claude_max_5x"). The one plan fact that lives on disk —
+    /// live 5h/weekly quota does not (Phase 3 was otherwise cancelled). The
+    /// frontend maps this to a friendly label.
+    plan_tier: Option<String>,
 }
 
 fn claude_json_path() -> Option<PathBuf> {
@@ -160,6 +169,12 @@ fn refresh_claude_config(cache: &mut ClaudeConfigCache) {
     } else {
         None
     };
+    cache.plan_tier = v
+        .get("oauthAccount")
+        .and_then(|o| o.get("organizationRateLimitTier"))
+        .and_then(|t| t.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
     cache.loaded = true;
     cache.mtime = mtime;
     cache.windows = windows;
@@ -485,6 +500,7 @@ pub fn scan(
         sessions,
         generated_at: now,
         has_projects_dir: true,
+        plan_tier: claude_cfg.plan_tier.clone(),
     }
 }
 

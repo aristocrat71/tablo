@@ -1,9 +1,10 @@
 <script lang="ts">
   import { store } from "./state.svelte";
-  import { pct } from "./format";
+  import { pct, planTier } from "./format";
   import { prefs, sortSessions } from "./prefs.svelte";
 
   let snap = $derived(store.snap);
+  let tier = $derived(planTier(snap.planTier));
   // Follows the sort chosen in the panel (shared across windows via localStorage).
   let sessions = $derived(sortSessions(snap.sessions, prefs.sort));
   let lead = $derived.by(() => {
@@ -20,7 +21,14 @@
       <h2><span class="g">a</span> tablo</h2>
       <p>{lead}</p>
     </div>
-    <div class="live">live</div>
+    <div class="head-meta">
+      {#if tier}
+        <div class="plan-chip" title="Subscription tier (live quota isn't exposed locally)">
+          {tier} <span>plan</span>
+        </div>
+      {/if}
+      <div class="live">live</div>
+    </div>
   </div>
 
   <div class="stats">
@@ -99,6 +107,26 @@
     font-size: 13px;
     color: var(--ink-dim);
     margin-top: 5px;
+    font-weight: 500;
+  }
+  .head-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .plan-chip {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--amber);
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
+    border-radius: 999px;
+    padding: 4px 11px;
+    white-space: nowrap;
+  }
+  .plan-chip span {
+    color: var(--ink-faint);
     font-weight: 500;
   }
   .live {

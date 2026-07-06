@@ -235,11 +235,25 @@ Set up a working Tauri app with the two-window (avatar + panel) shell and nothin
 
 ---
 
-## Phase 3 — Plan / session usage
+## Phase 3 — Plan / session usage — **CANCELLED**
 
-- Add the second data source: Anthropic `anthropic-ratelimit-*` headers and/or the `~/.claude/` usage cache.
-- Show session-window and weekly plan utilization alongside context %.
-- Reference existing usage widgets for header-reading approach.
+**Status: cancelled.** The core deliverable (live session-window / weekly plan
+utilization) is not buildable from local data. Verified against disk: there is no
+`anthropic-ratelimit-*`, resets-in, or quota-% anywhere under `~/.claude`
+(`~/.claude.json`, `sessions/`, `cache/`, `stats-cache.json`, transcripts). The
+live quota rides API response headers Claude Code keeps only in memory; obtaining
+it would mean replaying the subscription OAuth token against the API — a ToS grey
+area we chose not to enter. A token-rollup proxy was prototyped and deleted
+(commit `2b3b163`).
+
+**What was salvaged instead:** the one plan fact that *is* on disk — the static
+subscription tier (`oauthAccount.organizationRateLimitTier`, e.g.
+`default_claude_max_5x`) — is surfaced as a small "Max 5×" chip in the dashboard
+header. No quota, no ToS issue. That's the entirety of Phase 3 that ships.
+
+Original (unbuilt) intent, kept for context:
+- ~~Add the second data source: Anthropic `anthropic-ratelimit-*` headers and/or the `~/.claude/` usage cache.~~
+- ~~Show session-window and weekly plan utilization alongside context %.~~
 
 ---
 
@@ -266,7 +280,7 @@ Set up a working Tauri app with the two-window (avatar + panel) shell and nothin
 | 0 | Avatar + panel two-window scaffold | — |
 | 1 | Animated cat (state + agent count) + live context-% panel | Tail JSONL |
 | 2 | Multi-session list in panel | — (render only) |
-| 3 | Plan/session usage | Rate-limit headers / usage cache |
+| 3 | ~~Plan/session usage~~ **cancelled** (only static plan-tier chip shipped) | — (no live quota on disk) |
 | 4 | Permission approve/deny | Claude Code hooks + IPC |
 | 5 | Dashboard | — (aggregation) |
 
