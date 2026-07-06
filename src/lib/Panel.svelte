@@ -79,7 +79,12 @@
         <div class="name">tablo</div>
         <div class="sub">{sub}</div>
       </div>
-      <button class="mini" title="Toggle theme" onclick={toggleTheme}>☾</button>
+      <div class="panel-actions">
+        <button class="dash-link" title="Open dashboard" onclick={() => openDashboard()}>
+          dashboard <span class="arr">↗</span>
+        </button>
+        <button class="mini" title="Toggle theme" onclick={toggleTheme} aria-label="Toggle theme">☾</button>
+      </div>
     </div>
 
     {#if snap.sessions.length > 1}
@@ -132,13 +137,6 @@
           {/if}
         {/if}
       {/if}
-    </div>
-
-    <div class="panel-foot">
-      <button class="dash-btn" onclick={() => openDashboard()}>
-        Open dashboard
-        <span class="host">the deep view</span>
-      </button>
     </div>
   </div>
 </div>
@@ -252,6 +250,37 @@
   .mini:hover {
     color: var(--ink);
     border-color: var(--ink-faint);
+  }
+  .panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dash-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 8px;
+    border: none;
+    background: var(--ink);
+    color: var(--bg-surface);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    transition: transform 0.15s var(--ease), opacity 0.2s var(--ease);
+  }
+  .dash-link:hover {
+    transform: translateY(-1px);
+    opacity: 0.92;
+  }
+  .dash-link .arr {
+    font-size: 12.5px;
+    line-height: 1;
   }
 
   .panel-toolbar {
@@ -520,41 +549,6 @@
     font-size: 9.5px;
     color: var(--ink-faint);
     white-space: nowrap;
-  }
-
-  .panel-foot {
-    padding: 12px;
-    border-top: 1px solid var(--border-soft);
-    background: var(--bg-inset);
-  }
-  .dash-btn {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    padding: 11px;
-    border-radius: var(--r-md);
-    background: var(--ink);
-    color: var(--bg-surface);
-    border: none;
-    cursor: pointer;
-    font-family: var(--font-round);
-    font-size: 13.5px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    transition: transform 0.15s var(--ease), opacity 0.2s var(--ease);
-  }
-  .dash-btn:hover {
-    transform: translateY(-1px);
-    opacity: 0.92;
-  }
-  .dash-btn .host {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 500;
-    opacity: 0.6;
-    letter-spacing: 0;
   }
 
   .empty {
