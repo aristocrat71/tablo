@@ -113,9 +113,39 @@ fn toggle_panel(app: AppHandle, state: State<'_, AppState>) -> Result<(), String
     Ok(())
 }
 
+/// Keep a window alive across the OS close button: hide instead of destroy, so
+/// it can be reopened.
+fn install_hide_on_close(app: &AppHandle, window: &WebviewWindow, label: &'static str) {
+    let h = app.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            if let Some(w) = h.get_webview_window(label) {
+                let _ = w.hide();
+            }
+        }
+    });
+}
+
 #[tauri::command]
 fn open_dashboard(app: AppHandle) -> Result<(), String> {
-    let dash = win(&app, "dashboard")?;
+    // Recreate the window if it was ever destroyed (belt-and-suspenders — the
+    // close handler normally hides it instead).
+    let dash = match app.get_webview_window("dashboard") {
+        Some(w) => w,
+        None => {
+            let w = tauri::WebviewWindowBuilder::new(&app, "dashboard", tauri::WebviewUrl::default())
+                .title("tablo — dashboard")
+                .inner_size(980.0, 720.0)
+                .min_inner_size(640.0, 480.0)
+                .resizable(true)
+                .visible(false)
+                .build()
+                .map_err(|e| e.to_string())?;
+            install_hide_on_close(&app, &w, "dashboard");
+            w
+        }
+    };
     let _ = dash.unminimize();
     dash.show().map_err(|e| e.to_string())?;
     dash.set_focus().map_err(|e| e.to_string())?;
@@ -363,6 +393,11 @@ pub fn run() {
                         }
                     }
                 });
+            }
+
+            // Dashboard hides (not destroys) on close so it can reopen.
+            if let Some(dash) = app.get_webview_window("dashboard") {
+                install_hide_on_close(&handle, &dash, "dashboard");
             }
 
             app.manage(AppState {
