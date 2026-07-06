@@ -66,20 +66,25 @@
   function decide(id: string, decision: PermDecision) {
     resolvePermission(id, decision);
   }
-
-  let lead = $derived.by(() => {
-    if (!snap.hasProjectsDir) return "No Claude Code sessions found yet";
-    const n = snap.sessions.length;
-    if (n === 0) return "No active sessions right now";
-    return `Watching ${n} Claude Code session${n > 1 ? "s" : ""} across ${snap.projects} project${snap.projects > 1 ? "s" : ""}`;
-  });
 </script>
 
 <div class="dash">
   <div class="dash-head">
     <div class="lead">
       <h2><span class="g">a</span> tablo</h2>
-      <p>{lead}</p>
+      {#if !snap.hasProjectsDir}
+        <p class="statline muted">No Claude Code sessions found yet</p>
+      {:else if snap.agentCount === 0 && snap.waiting === 0}
+        <p class="statline muted">No active sessions right now</p>
+      {:else}
+        <p class="statline">
+          <span><b>{snap.agentCount}</b> active</span>
+          <span class="sep">·</span>
+          <span class:warn={snap.waiting > 0}><b>{snap.waiting}</b> waiting</span>
+          <span class="sep">·</span>
+          <span><b>{snap.projects}</b> project{snap.projects === 1 ? "" : "s"}</span>
+        </p>
+      {/if}
     </div>
     <div class="head-meta">
       {#if hook}
@@ -101,18 +106,9 @@
           {tier} <span>plan</span>
         </div>
       {/if}
-      <div class="live">live</div>
     </div>
   </div>
 
-  <div class="stats">
-    <div class="stat"><div class="v">{snap.agentCount}</div><div class="k">Active</div></div>
-    <div class="stat">
-      <div class="v" style={snap.waiting ? "color:var(--coral)" : ""}>{snap.waiting}</div>
-      <div class="k">Waiting</div>
-    </div>
-    <div class="stat"><div class="v">{snap.projects}</div><div class="k">Projects</div></div>
-  </div>
 
   <div class="dash-grid">
     <div class="card">
@@ -193,11 +189,29 @@
     font-weight: 700;
     clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
   }
-  .lead p {
-    font-size: 13px;
-    color: var(--ink-dim);
-    margin-top: 5px;
+  .statline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
     font-weight: 500;
+    color: var(--ink-dim);
+  }
+  .statline b {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .statline .sep {
+    color: var(--ink-faint);
+  }
+  .statline .warn,
+  .statline .warn b {
+    color: var(--coral);
+  }
+  .statline.muted {
+    color: var(--ink-faint);
   }
   .head-meta {
     display: flex;
@@ -337,72 +351,10 @@
     background: var(--sage);
     color: var(--bg-surface);
   }
-  .live {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--sage);
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-weight: 600;
-  }
-  .live::before {
-    content: "";
-    width: 7px;
-    height: 7px;
-    border-radius: 999px;
-    background: var(--sage);
-    box-shadow: 0 0 8px var(--sage);
-    animation: pulse 2s infinite;
-  }
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.4;
-    }
-  }
-
-  .stats {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-  .stat {
-    flex: 1;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    padding: 10px 14px;
-  }
-  .stat .v {
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: -0.03em;
-    line-height: 1;
-  }
-  .stat .k {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    color: var(--ink-faint);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-
   .dash-grid {
     display: grid;
     grid-template-columns: 1fr;
     gap: 18px;
-  }
-  @media (max-width: 720px) {
-    .stats {
-      flex-wrap: wrap;
-    }
   }
 
   .card {
