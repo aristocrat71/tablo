@@ -48,16 +48,25 @@ Rust pushes one `state-update` event carrying the full `Snapshot`; each window
 takes what it needs. A newly opened window fetches the current snapshot via the
 `get_snapshot` command, then subscribes.
 
-## Context-limit note (Open Question #4)
+## Context-window detection (Open Question #4)
 
 The transcript records the model (e.g. `claude-opus-4-8`) but **not** whether the
-1M-token beta window is active. Tablo therefore:
+1M-token beta window is active. That signal *is* on disk though —
+`~/.claude.json` records each project's last-used model string **with** its
+`[1m]` marker under `projects[<cwd>].lastModelUsage`. So Tablo resolves each
+session's window in priority order:
 
-1. defaults to a **200k** denominator (correct for most sessions),
-2. **sticks to 1M** for any session ever observed above 200k tokens (a standard
-   session compacts before it could get there), and
-3. exposes `defaultContextLimit` in the config file, and a **`200k`/`1M` toggle
-   chip in the panel header** — flip it if you primarily run the extended window.
+1. **Certain**: usage already past the standard window, a `[1m]` marker, or a
+   session previously seen extended (a standard session compacts before it could
+   exceed 200k, so exceeding it *is* proof of the extended window).
+2. **Per-project** from `~/.claude.json` (cached, re-read on change): a `[1m]`
+   model ⇒ 1M, otherwise the standard window.
+3. **Global lean**: for a project with no record, the majority window across all
+   projects that do.
+4. **Fallback**: `defaultContextLimit` from config.
+
+All window sizes are config values. This is fully automatic — no manual toggle;
+the per-session `used / limit` readout (e.g. `354k / 1M`) shows what was detected.
 
 Config lives at the Tauri app-config dir (macOS:
 `~/Library/Application Support/com.projektdreamscape.tablo/config.json`).

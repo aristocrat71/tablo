@@ -1,6 +1,6 @@
 <script lang="ts">
   import { store, applyTheme } from "./state.svelte";
-  import { setTheme, setDefaultLimit, openDashboard } from "./bridge";
+  import { setTheme, openDashboard } from "./bridge";
   import { tokens, pct } from "./format";
   import type { SessionView } from "./types";
 
@@ -22,21 +22,6 @@
     applyTheme(next);
     setTheme(next);
   }
-
-  // Default context window for sessions whose extended beta can't be inferred
-  // from the transcript. Toggles between the configured standard/extended sizes.
-  let isExtended = $derived(
-    store.config.extendedContextLimit > 0 &&
-      store.config.defaultContextLimit >= store.config.extendedContextLimit
-  );
-  function toggleWindow() {
-    if (!store.ready) return;
-    const next = isExtended
-      ? store.config.standardContextLimit
-      : store.config.extendedContextLimit;
-    store.config.defaultContextLimit = next;
-    setDefaultLimit(next);
-  }
 </script>
 
 <div class="panel-shell">
@@ -47,15 +32,6 @@
         <div class="name">tablo</div>
         <div class="sub">{sub}</div>
       </div>
-      {#if store.ready}
-        <button
-          class="win-chip"
-          title="Default context window for sessions whose extended beta can't be detected — tap to toggle"
-          onclick={toggleWindow}
-        >
-          {tokens(store.config.defaultContextLimit)}
-        </button>
-      {/if}
       <button class="mini" title="Toggle theme" onclick={toggleTheme}>☾</button>
     </div>
 
@@ -210,24 +186,6 @@
   .mini:hover {
     color: var(--ink);
     border-color: var(--ink-faint);
-  }
-  .win-chip {
-    height: 28px;
-    padding: 0 9px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--ink-dim);
-    cursor: pointer;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    transition: all 0.2s var(--ease);
-  }
-  .win-chip:hover {
-    color: var(--amber);
-    border-color: var(--amber);
   }
 
   .panel-body {

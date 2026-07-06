@@ -135,6 +135,73 @@ pub fn projects_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("projects"))
 }
 
+/// Cached view of `~/.claude.json`: which project dirs last ran an extended
+/// (1M) model. This is the reliable on-disk source for the context window that
+/// the transcript itself omits — Claude Code records the model string *with* its
+/// `[1m]` marker under `projects[cwd].lastModelUsage`.
+#[derive(Default)]
+pub struct ClaudeConfigCache {
+    loaded: bool,
+    mtime: i64,
+    /// project cwd -> last session used a `[1m]` model.
+    windows: HashMap<String, bool>,
+    /// Whether the user predominantly runs the extended window across all
+    /// projects with history — the fallback for a project with no record.
+    global_ext: Option<bool>,
+}
+
+fn claude_json_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".claude.json"))
+}
+
+/// Re-read `~/.claude.json` when it changes and rebuild the per-project window
+/// map from each project's `lastModelUsage` keys.
+fn refresh_claude_config(cache: &mut ClaudeConfigCache) {
+    let path = match claude_json_path() {
+        Some(p) => p,
+        None => return,
+    };
+    let mtime = std::fs::metadata(&path).ok().map(|m| mtime_ms(&m)).unwrap_or(0);
+    if cache.loaded && mtime == cache.mtime {
+        return; // unchanged since last parse
+    }
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    let v: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(_) => return, // mid-write / malformed — keep the previous map
+    };
+    let mut windows = HashMap::new();
+    if let Some(projects) = v.get("projects").and_then(|p| p.as_object()) {
+        for (cwd, entry) in projects {
+            if let Some(usage) = entry.get("lastModelUsage").and_then(|m| m.as_object()) {
+                if usage.is_empty() {
+                    continue;
+                }
+                let extended = usage.keys().any(|k| {
+                    let kl = k.to_lowercase();
+                    kl.contains("[1m]") || kl.contains("-1m")
+                });
+                windows.insert(cwd.clone(), extended);
+            }
+        }
+    }
+    // Global lean: is at least half of the projects-with-history on the extended
+    // window? Used when a specific project has no record.
+    let total = windows.len();
+    cache.global_ext = if total > 0 {
+        let ext = windows.values().filter(|v| **v).count();
+        Some(ext * 2 >= total)
+    } else {
+        None
+    };
+    cache.loaded = true;
+    cache.mtime = mtime;
+    cache.windows = windows;
+}
+
 /// Read bytes appended after `from`. Returns `(new_offset, complete_lines)`.
 /// A partial trailing line (mid-write) is left unconsumed for the next scan.
 fn read_new_lines(path: &Path, from: u64) -> (u64, Vec<String>) {
@@ -218,21 +285,37 @@ fn build_plan(five: u64, week: u64, cfg: &Config) -> PlanUsage {
     }
 }
 
-/// Pick the context denominator (Open Question #4). Bumps (stickily) to the
-/// extended window when the model advertises it or observed usage exceeds the
-/// standard window — a standard session compacts before it could get there, so
-/// exceeding it reliably implies the extended window. All sizes come from config.
-fn resolve_limit(model: &str, used: u64, sticky_ext: bool, cfg: &Config) -> (u64, bool) {
+/// Pick the context denominator (Open Question #4). Priority:
+/// 1. **Certain** extended signals — already-sticky, a `[1m]` marker in the
+///    model string, or usage past the standard window (a standard session
+///    compacts before it could get there).
+/// 2. A `window_hint` from `~/.claude.json` — the project's last-used model, or
+///    the user's global lean — the reliable on-disk answer for the ambiguous
+///    sub-standard case.
+/// 3. Otherwise fall back to `default_context_limit`.
+/// All sizes come from config.
+fn resolve_limit(
+    model: &str,
+    used: u64,
+    sticky_ext: bool,
+    window_hint: Option<bool>,
+    cfg: &Config,
+) -> (u64, bool) {
     let m = model.to_lowercase();
     let marker = cfg
         .extended_window_markers
         .iter()
         .any(|mk| !mk.is_empty() && m.contains(&mk.to_lowercase()));
-    let is_ext = sticky_ext || marker || used > cfg.standard_context_limit;
-    (
-        if is_ext { cfg.extended_context_limit } else { cfg.default_context_limit },
-        is_ext,
-    )
+    let certain_ext = sticky_ext || marker || used > cfg.standard_context_limit;
+    let is_ext = certain_ext || window_hint == Some(true);
+    let limit = if is_ext {
+        cfg.extended_context_limit
+    } else if window_hint == Some(false) {
+        cfg.standard_context_limit // definitively on the standard window
+    } else {
+        cfg.default_context_limit // no signal at all — configured fallback
+    };
+    (limit, is_ext)
 }
 
 /// Claude Code names each project slug dir after the launch cwd, encoding
@@ -336,7 +419,12 @@ fn ingest(state: &mut FileState, lines: &[String]) {
 
 /// One full pass: refresh tail state for every active transcript and build the
 /// aggregate snapshot. `files` is retained across calls for incremental reads.
-pub fn scan(cfg: &Config, files: &mut HashMap<PathBuf, FileState>) -> Snapshot {
+pub fn scan(
+    cfg: &Config,
+    files: &mut HashMap<PathBuf, FileState>,
+    claude_cfg: &mut ClaudeConfigCache,
+) -> Snapshot {
+    refresh_claude_config(claude_cfg);
     let dir = match projects_dir() {
         Some(d) => d,
         None => {
@@ -418,7 +506,19 @@ pub fn scan(cfg: &Config, files: &mut HashMap<PathBuf, FileState>) -> Snapshot {
                 continue; // recent enough for the rollup, but not a live session
             }
 
-            let (limit, is_ext) = resolve_limit(&st.model, st.used, st.is_1m, cfg);
+            let slug = pdir.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            let (project, root) = resolve_project(slug, &st.cwd);
+            // Definitive window from ~/.claude.json, keyed by the project root
+            // (falling back to the raw cwd).
+            let project_ext = claude_cfg
+                .windows
+                .get(&root)
+                .or_else(|| claude_cfg.windows.get(&st.cwd))
+                .copied();
+            // Per-project record wins; else the user's global lean.
+            let window_hint = project_ext.or(claude_cfg.global_ext);
+
+            let (limit, is_ext) = resolve_limit(&st.model, st.used, st.is_1m, window_hint, cfg);
             st.is_1m = is_ext;
             let pct = if limit > 0 {
                 ((st.used as f64 / limit as f64) * 100.0).clamp(0.0, 100.0)
@@ -432,8 +532,6 @@ pub fn scan(cfg: &Config, files: &mut HashMap<PathBuf, FileState>) -> Snapshot {
             } else {
                 st.session_id.clone()
             };
-            let slug = pdir.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            let (project, root) = resolve_project(slug, &st.cwd);
 
             sessions.push(SessionView {
                 id: session_id,
@@ -516,7 +614,8 @@ mod tests {
     fn scan_real_transcripts() {
         let cfg = Config::default();
         let mut files = HashMap::new();
-        let snap = scan(&cfg, &mut files);
+        let mut claude_cfg = ClaudeConfigCache::default();
+        let snap = scan(&cfg, &mut files, &mut claude_cfg);
         println!(
             "\nsnapshot: state={} active={} projects={} waiting={} has_dir={}",
             snap.state, snap.agent_count, snap.projects, snap.waiting, snap.has_projects_dir

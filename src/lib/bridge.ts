@@ -19,7 +19,6 @@ export function currentLabel(): string {
 export const getSnapshot = () => invoke<Snapshot>("get_snapshot");
 export const getConfig = () => invoke<Config>("get_config");
 export const setTheme = (theme: string) => invoke("set_theme", { theme });
-export const setDefaultLimit = (limit: number) => invoke("set_default_limit", { limit });
 export const togglePanel = () => invoke("toggle_panel");
 export const openDashboard = () => invoke("open_dashboard");
 export const beginDrag = () => invoke<{ x: number; y: number }>("begin_drag");

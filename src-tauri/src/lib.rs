@@ -25,7 +25,7 @@ use tauri::{
 };
 
 use config::Config;
-use scanner::{FileState, Snapshot};
+use scanner::{ClaudeConfigCache, FileState, Snapshot};
 
 // Interaction/timing tuning (not domain data — window geometry lives in
 // tauri.conf.json, all business values in `config::Config`).
@@ -47,6 +47,8 @@ struct AppState {
     config_dir: PathBuf,
     snapshot: Mutex<Snapshot>,
     files: Mutex<HashMap<PathBuf, FileState>>,
+    /// Cached per-project window map from `~/.claude.json`.
+    claude_cfg: Mutex<ClaudeConfigCache>,
     /// Last emitted level per session id, for one-shot warning notifications.
     prev_levels: Mutex<HashMap<String, String>>,
     /// True while the avatar is being dragged (keeps it interactive).
@@ -84,20 +86,6 @@ fn set_theme(state: State<'_, AppState>, theme: String) {
     let mut cfg = state.config.lock().unwrap();
     cfg.theme = theme;
     cfg.save(&state.config_dir);
-}
-
-/// Set the default context denominator for sessions whose 1M window can't be
-/// inferred (see `config::Config::default_context_limit`). Takes effect on the
-/// next scan and persists.
-#[tauri::command]
-fn set_default_limit(app: AppHandle, state: State<'_, AppState>, limit: u64) {
-    {
-        let mut cfg = state.config.lock().unwrap();
-        cfg.default_context_limit = limit;
-        cfg.save(&state.config_dir);
-    }
-    // Recompute immediately so the UI reflects the change without waiting.
-    tick(&app);
 }
 
 /// Toggle the panel open/closed, anchored near the avatar.
@@ -230,7 +218,8 @@ fn tick(app: &AppHandle) {
 
     let snap = {
         let mut files = state.files.lock().unwrap();
-        scanner::scan(&cfg, &mut files)
+        let mut claude_cfg = state.claude_cfg.lock().unwrap();
+        scanner::scan(&cfg, &mut files, &mut claude_cfg)
     };
 
     fire_notifications(app, &state, &cfg, &snap);
@@ -381,6 +370,7 @@ pub fn run() {
                 config_dir,
                 snapshot: Mutex::new(Snapshot::default()),
                 files: Mutex::new(HashMap::new()),
+                claude_cfg: Mutex::new(ClaudeConfigCache::default()),
                 prev_levels: Mutex::new(HashMap::new()),
                 dragging: AtomicBool::new(false),
                 panel_last_hidden: Mutex::new(None),
@@ -394,7 +384,6 @@ pub fn run() {
             get_snapshot,
             get_config,
             set_theme,
-            set_default_limit,
             toggle_panel,
             open_dashboard,
             begin_drag,
