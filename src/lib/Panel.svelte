@@ -67,27 +67,6 @@
       {/if}
     </div>
 
-    <div class="plan-strip">
-      <div class="plan-head">
-        <span class="group-name">Plan usage</span>
-        <span class="plan-basis">tokens · rollup</span>
-      </div>
-      <div class="plan-row">
-        <span class="plan-lab">5h</span>
-        <div class="plan-track">
-          <div class="plan-fill {snap.plan.fiveHourLevel}" style="width:{snap.plan.fiveHourPct}%"></div>
-        </div>
-        <span class="plan-val">{tokens(snap.plan.fiveHourTokens)}</span>
-      </div>
-      <div class="plan-row">
-        <span class="plan-lab">7d</span>
-        <div class="plan-track">
-          <div class="plan-fill {snap.plan.weekLevel}" style="width:{snap.plan.weekPct}%"></div>
-        </div>
-        <span class="plan-val">{tokens(snap.plan.weekTokens)}</span>
-      </div>
-    </div>
-
     <div class="panel-foot">
       <button class="dash-btn" onclick={() => openDashboard()}>
         Open dashboard
@@ -343,78 +322,6 @@
     font-size: 9.5px;
     color: var(--ink-faint);
     white-space: nowrap;
-  }
-
-  .plan-strip {
-    padding: 10px 14px 12px;
-    border-top: 1px solid var(--border-soft);
-    background: var(--bg-inset);
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-  }
-  .plan-head {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-bottom: 1px;
-  }
-  .plan-basis {
-    margin-left: auto;
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-    color: var(--ink-faint);
-    letter-spacing: 0.02em;
-  }
-  .plan-row {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-  }
-  .plan-lab {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 600;
-    color: var(--ink-dim);
-    width: 20px;
-  }
-  .plan-track {
-    flex: 1;
-    height: 7px;
-    border-radius: 3px;
-    background: var(--bg-surface);
-    overflow: hidden;
-    border: 1px solid var(--border-soft);
-    background-image: repeating-linear-gradient(
-      90deg,
-      transparent 0 5px,
-      color-mix(in srgb, var(--bg-inset) 75%, black) 5px 6px
-    );
-  }
-  .plan-fill {
-    height: 100%;
-    transition: width 0.5s var(--ease), background-color 0.4s var(--ease);
-    background-image: repeating-linear-gradient(90deg, transparent 0 5px, rgba(0, 0, 0, 0.25) 5px 6px);
-  }
-  .plan-fill.ok {
-    background-color: var(--sage);
-    box-shadow: 0 0 8px -1px var(--sage);
-  }
-  .plan-fill.warn {
-    background-color: var(--amber);
-    box-shadow: 0 0 9px -1px var(--amber);
-  }
-  .plan-fill.crit {
-    background-color: var(--coral);
-    box-shadow: 0 0 9px -1px var(--coral);
-  }
-  .plan-val {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--ink-dim);
-    width: 46px;
-    text-align: right;
   }
 
   .panel-foot {

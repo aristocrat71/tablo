@@ -71,17 +71,14 @@ the per-session `used / limit` readout (e.g. `354k / 1M`) shows what was detecte
 Config lives at the Tauri app-config dir (macOS:
 `~/Library/Application Support/com.projektdreamscape.tablo/config.json`).
 
-## Plan usage
+## Plan usage — intentionally not built
 
-Anthropic's live plan-quota data (5h/weekly %, resets-in) is **not** stored in
-any local file — it only rides on the API's `anthropic-ratelimit-*` response
-headers, which Claude Code keeps in memory. So Tablo computes a **token rollup**
-from the transcripts instead: fresh tokens (`input + output + cache_creation`,
-excluding repeated cache reads) summed over the last 5 hours and 7 days, shown at
-the bottom of the panel and on the dashboard. The counts are real; the *percent*
-is usage against `fiveHourTokenBudget` / `weekTokenBudget` in the config, so tune
-those to your plan. This is a proxy — it lives behind a `PlanUsage` shape that a
-rate-limit-header source can later fill with the exact quota, no UI change.
+Anthropic's plan-quota data (5h/weekly %, resets-in) is **not** stored in any
+local file — it only rides the API's `anthropic-ratelimit-*` response headers,
+which Claude Code holds in memory. The only way to read it is to replay your
+Claude Code subscription token against the API, which is a Terms-of-Service grey
+area (those tokens are authorized for use *by Claude Code*). We deliberately do
+**not** do that, so Tablo has no plan/quota widget.
 
 ## Develop
 
@@ -95,8 +92,6 @@ cargo test scan_real_transcripts -- --nocapture   # (in src-tauri) inspect the l
 ## Roadmap (later phases)
 
 - **2** multi-session list refinements
-- **3** swap the plan-usage token rollup for exact `anthropic-ratelimit-*` header
-  data (drop-in behind the existing `PlanUsage` shape)
 - **4** permission approve/deny via Claude Code hooks (the panel's "Input
   requested" group is already wired to render `ask` sessions)
 - **5** browser-served localhost dashboard

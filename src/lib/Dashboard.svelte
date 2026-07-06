@@ -1,6 +1,6 @@
 <script lang="ts">
   import { store } from "./state.svelte";
-  import { pct, tokens } from "./format";
+  import { pct } from "./format";
 
   let snap = $derived(store.snap);
   let lead = $derived.by(() => {
@@ -54,27 +54,6 @@
           </div>
         {/each}
       {/if}
-    </div>
-
-    <div class="card">
-      <h3>Plan usage <span class="n">tokens</span></h3>
-      <div class="plan-vert">
-        <div class="vbar">
-          <div class="vbar-track">
-            <div class="vbar-fill {snap.plan.fiveHourLevel}" style="height:{snap.plan.fiveHourPct}%"></div>
-          </div>
-          <div class="vbar-cap {snap.plan.fiveHourLevel}">{pct(snap.plan.fiveHourPct)}</div>
-        </div>
-        <div class="plan-meta">
-          <div class="row"><span>5h window</span><b>{tokens(snap.plan.fiveHourTokens)}</b></div>
-          <div class="row"><span>5h of budget</span><b>{pct(snap.plan.fiveHourPct)}</b></div>
-          <div class="row"><span>7 days</span><b>{tokens(snap.plan.weekTokens)}</b></div>
-          <div class="row"><span>7d of budget</span><b>{pct(snap.plan.weekPct)}</b></div>
-        </div>
-      </div>
-      <div class="plan-note">
-        Live token rollup from transcripts — a proxy, not Anthropic's exact quota.
-      </div>
     </div>
   </div>
 </div>
@@ -178,13 +157,10 @@
 
   .dash-grid {
     display: grid;
-    grid-template-columns: 1.55fr 1fr;
+    grid-template-columns: 1fr;
     gap: 18px;
   }
   @media (max-width: 720px) {
-    .dash-grid {
-      grid-template-columns: 1fr;
-    }
     .stats {
       flex-wrap: wrap;
     }
@@ -307,91 +283,6 @@
     box-shadow: 0 0 8px -1px var(--coral);
   }
 
-  .plan-vert {
-    display: flex;
-    align-items: stretch;
-    gap: 18px;
-  }
-  .vbar {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  .vbar-track {
-    width: 22px;
-    height: 96px;
-    border-radius: 4px;
-    background: var(--bg-inset);
-    border: 1px solid var(--border-soft);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column-reverse;
-    background-image: repeating-linear-gradient(
-      0deg,
-      transparent 0 6px,
-      color-mix(in srgb, var(--bg-surface) 75%, black) 6px 7px
-    );
-  }
-  .vbar-fill {
-    width: 100%;
-    background-color: var(--sage);
-    box-shadow: 0 0 9px -1px var(--sage);
-    background-image: repeating-linear-gradient(0deg, transparent 0 6px, rgba(0, 0, 0, 0.25) 6px 7px);
-    transition: height 0.5s var(--ease), background-color 0.4s var(--ease);
-  }
-  .vbar-fill.warn {
-    background-color: var(--amber);
-    box-shadow: 0 0 9px -1px var(--amber);
-  }
-  .vbar-fill.crit {
-    background-color: var(--coral);
-    box-shadow: 0 0 9px -1px var(--coral);
-  }
-  .vbar-cap {
-    font-family: var(--font-mono);
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--sage);
-    text-shadow: 0 0 12px color-mix(in srgb, var(--sage) 45%, transparent);
-  }
-  .vbar-cap.warn {
-    color: var(--amber);
-    text-shadow: 0 0 12px color-mix(in srgb, var(--amber) 45%, transparent);
-  }
-  .vbar-cap.crit {
-    color: var(--coral);
-    text-shadow: 0 0 12px color-mix(in srgb, var(--coral) 45%, transparent);
-  }
-  .plan-meta {
-    font-size: 12px;
-    flex: 1;
-    align-self: center;
-  }
-  .plan-meta .row {
-    display: flex;
-    justify-content: space-between;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--border-soft);
-  }
-  .plan-meta .row:last-child {
-    border-bottom: none;
-  }
-  .plan-meta .row span {
-    color: var(--ink-dim);
-  }
-  .plan-meta .row b {
-    font-family: var(--font-mono);
-    font-weight: 600;
-  }
-  .plan-note {
-    margin-top: 14px;
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    color: var(--ink-faint);
-    text-align: center;
-  }
   .dash-empty {
     padding: 24px 0;
     text-align: center;

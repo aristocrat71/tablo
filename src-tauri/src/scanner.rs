@@ -36,39 +36,6 @@ pub struct SessionView {
     pub last_active: i64,
 }
 
-/// Account-wide token usage over rolling windows — a proxy for plan utilisation
-/// computed from transcripts. A rate-limit-header source can later fill this
-/// exact same shape with no UI change.
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanUsage {
-    pub five_hour_tokens: u64,
-    pub week_tokens: u64,
-    pub five_hour_budget: u64,
-    pub week_budget: u64,
-    pub five_hour_pct: f64,
-    pub week_pct: f64,
-    pub five_hour_level: String,
-    pub week_level: String,
-}
-
-impl Default for PlanUsage {
-    fn default() -> Self {
-        // Zeroed placeholder — real values (incl. budgets) always come from
-        // `build_plan` using the config.
-        Self {
-            five_hour_tokens: 0,
-            week_tokens: 0,
-            five_hour_budget: 0,
-            week_budget: 0,
-            five_hour_pct: 0.0,
-            week_pct: 0.0,
-            five_hour_level: "ok".into(),
-            week_level: "ok".into(),
-        }
-    }
-}
-
 /// Full aggregate pushed to every window as the `state-update` event.
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -79,7 +46,6 @@ pub struct Snapshot {
     pub waiting: u32,
     pub projects: u32,
     pub sessions: Vec<SessionView>,
-    pub plan: PlanUsage,
     pub generated_at: i64,
     /// False when `~/.claude/projects` doesn't exist (friendly empty state).
     pub has_projects_dir: bool,
@@ -93,7 +59,6 @@ impl Default for Snapshot {
             waiting: 0,
             projects: 0,
             sessions: Vec::new(),
-            plan: PlanUsage::default(),
             generated_at: 0,
             has_projects_dir: true,
         }
@@ -112,8 +77,6 @@ pub struct FileState {
     session_id: String,
     /// Sticky once we've inferred the 1M window for this session.
     is_1m: bool,
-    /// `(timestamp_ms, fresh_tokens)` per assistant message, for the rollup.
-    events: Vec<(i64, u64)>,
 }
 
 pub fn now_ms() -> i64 {
@@ -236,55 +199,6 @@ fn usage_total(usage: &serde_json::Value) -> u64 {
         + g("output_tokens")
 }
 
-/// Newly-processed tokens for the usage rollup: `input + output + cache
-/// creation`. Cache *reads* are excluded — they re-read the same context every
-/// turn and would balloon the total far past real throughput.
-fn usage_fresh(usage: &serde_json::Value) -> u64 {
-    let g = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-    g("input_tokens") + g("output_tokens") + g("cache_creation_input_tokens")
-}
-
-/// Parse a leading `YYYY-MM-DDTHH:MM:SS` (assumed UTC) to epoch ms. Fractional
-/// seconds / timezone offset are ignored — fine for windowing.
-fn parse_iso_to_ms(s: &str) -> Option<i64> {
-    if s.len() < 19 {
-        return None;
-    }
-    let p = |a: usize, b: usize| s.get(a..b).and_then(|x| x.parse::<i64>().ok());
-    let (year, mon, day) = (p(0, 4)?, p(5, 7)?, p(8, 10)?);
-    let (hour, min, sec) = (p(11, 13)?, p(14, 16)?, p(17, 19)?);
-    // days_from_civil (Howard Hinnant)
-    let y = if mon <= 2 { year - 1 } else { year };
-    let era = (if y >= 0 { y } else { y - 399 }) / 400;
-    let yoe = y - era * 400;
-    let doy = (153 * (if mon > 2 { mon - 3 } else { mon + 9 }) + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe - 719468;
-    Some((days * 86400 + hour * 3600 + min * 60 + sec) * 1000)
-}
-
-fn build_plan(five: u64, week: u64, cfg: &Config) -> PlanUsage {
-    let ratio = |used: u64, budget: u64| {
-        if budget > 0 {
-            (((used as f64 / budget as f64) * 100.0).clamp(0.0, 100.0) * 10.0).round() / 10.0
-        } else {
-            0.0
-        }
-    };
-    let fp = ratio(five, cfg.five_hour_token_budget);
-    let wp = ratio(week, cfg.week_token_budget);
-    PlanUsage {
-        five_hour_tokens: five,
-        week_tokens: week,
-        five_hour_budget: cfg.five_hour_token_budget,
-        week_budget: cfg.week_token_budget,
-        five_hour_pct: fp,
-        week_pct: wp,
-        five_hour_level: level_for(fp, cfg).into(),
-        week_level: level_for(wp, cfg).into(),
-    }
-}
-
 /// Pick the context denominator (Open Question #4). Priority:
 /// 1. **Certain** extended signals — already-sticky, a `[1m]` marker in the
 ///    model string, or usage past the standard window (a standard session
@@ -401,14 +315,10 @@ fn ingest(state: &mut FileState, lines: &[String]) {
         if let Some(sid) = v.get("sessionId").and_then(|x| x.as_str()) {
             state.session_id = sid.to_string();
         }
-        // Context occupancy comes from the *latest* assistant usage block; the
-        // rollup accumulates fresh tokens per timestamped message.
+        // Context occupancy comes from the *latest* assistant usage block.
         if v.get("type").and_then(|x| x.as_str()) == Some("assistant") {
             if let Some(usage) = v.get("message").and_then(|m| m.get("usage")) {
                 state.used = usage_total(usage);
-                if let Some(ts) = v.get("timestamp").and_then(|x| x.as_str()).and_then(parse_iso_to_ms) {
-                    state.events.push((ts, usage_fresh(usage)));
-                }
             }
             if let Some(model) = v.get("message").and_then(|m| m.get("model")).and_then(|x| x.as_str()) {
                 state.model = model.to_string();
@@ -445,8 +355,6 @@ pub fn scan(
 
     let now = now_ms();
     let active_ms = cfg.active_window_secs as i64 * 1000;
-    let five_ms = cfg.five_hour_secs as i64 * 1000;
-    let week_ms = cfg.week_secs as i64 * 1000;
     let mut sessions: Vec<SessionView> = Vec::new();
     let mut seen: Vec<PathBuf> = Vec::new();
 
@@ -476,13 +384,10 @@ pub fn scan(
                 Err(_) => continue,
             };
             let mtime = mtime_ms(&meta);
-            // Files older than the week window feed neither the session list nor
-            // the rollup.
-            if now - mtime > week_ms {
-                continue;
+            if now - mtime > active_ms {
+                continue; // not active (Step 1.2)
             }
             seen.push(path.clone());
-            let active = now - mtime <= active_ms; // Step 1.2
 
             let size = meta.len();
             let st = files.entry(path.clone()).or_default();
@@ -490,7 +395,8 @@ pub fn scan(
             if size < st.offset {
                 *st = FileState::default();
             }
-            // First sight of a large file: skip to a bounded tail.
+            // First sight of a large file: skip to a bounded tail (we only need
+            // the file's end for the latest usage).
             if st.offset == 0 && size > cfg.initial_tail_cap_bytes {
                 st.offset = size - cfg.initial_tail_cap_bytes;
             }
@@ -498,12 +404,6 @@ pub fn scan(
                 let (new_offset, lines) = read_new_lines(&path, st.offset);
                 st.offset = new_offset;
                 ingest(st, &lines);
-            }
-            // Bound rollup memory to a week per file.
-            st.events.retain(|(ts, _)| now - *ts <= week_ms);
-
-            if !active {
-                continue; // recent enough for the rollup, but not a live session
             }
 
             let slug = pdir.file_name().and_then(|s| s.to_str()).unwrap_or("");
@@ -549,23 +449,9 @@ pub fn scan(
         }
     }
 
-    // Drop tail state for files outside the week window / removed, so the map
-    // can't grow without bound.
+    // Drop tail state for files no longer active / removed, so the map can't
+    // grow without bound.
     files.retain(|k, _| seen.contains(k));
-
-    // Plan-usage rollup: sum fresh tokens across every recent file's events.
-    let (mut five, mut week) = (0u64, 0u64);
-    for st in files.values() {
-        for (ts, tok) in &st.events {
-            if now - *ts <= week_ms {
-                week += *tok;
-                if now - *ts <= five_ms {
-                    five += *tok;
-                }
-            }
-        }
-    }
-    let plan = build_plan(five, week, cfg);
 
     // Sort: input-requested first (Phase 4), then by highest context fill.
     sessions.sort_by(|a, b| {
@@ -597,7 +483,6 @@ pub fn scan(
         waiting,
         projects,
         sessions,
-        plan,
         generated_at: now,
         has_projects_dir: true,
     }
@@ -626,10 +511,6 @@ mod tests {
                 s.project, s.level, s.pct, s.used, s.limit, s.model, s.branch
             );
         }
-        println!(
-            "plan: 5h={} tokens ({}%)  7d={} tokens ({}%)",
-            snap.plan.five_hour_tokens, snap.plan.five_hour_pct, snap.plan.week_tokens, snap.plan.week_pct
-        );
         // Every reported session must have a sane percentage.
         for s in &snap.sessions {
             assert!(s.pct >= 0.0 && s.pct <= 100.0, "pct out of range: {}", s.pct);

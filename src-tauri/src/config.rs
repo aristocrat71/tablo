@@ -1,5 +1,5 @@
 //! Persistent user configuration — the single source of truth for every tunable
-//! value (thresholds, context windows, rollup windows, plan budgets, timings).
+//! value (thresholds, context-window sizes, active window, timings).
 //! No domain value is hardcoded elsewhere; the scanner and UI read from here.
 //!
 //! Stored as JSON in the Tauri app-config dir. All fields have defaults so an
@@ -41,16 +41,6 @@ pub struct Config {
     /// Context-fill critical line.
     pub crit_pct: f64,
 
-    // ---- plan-usage rollup ----
-    /// Rolling windows (seconds) the token rollup sums over.
-    pub five_hour_secs: u64,
-    pub week_secs: u64,
-    /// Token budgets the rollup percentages are scaled against. The counts are
-    /// real (summed from transcripts); the *percentage* is usage vs. these, so
-    /// tune them to your plan. (Unused once rate-limit headers become the source.)
-    pub five_hour_token_budget: u64,
-    pub week_token_budget: u64,
-
     // ---- tuning ----
     /// On first sight of a transcript larger than this, skip to a bounded tail
     /// (we only need recent messages + the file's end).
@@ -76,10 +66,6 @@ impl Default for Config {
             extended_window_markers: vec!["[1m]".into(), "-1m".into()],
             warn_pct: 60.0,
             crit_pct: 85.0,
-            five_hour_secs: 5 * 3600,
-            week_secs: 7 * 24 * 3600,
-            five_hour_token_budget: 20_000_000,
-            week_token_budget: 200_000_000,
             initial_tail_cap_bytes: 2_000_000,
             notify_on_warn: false,
             theme: "dark".into(),
