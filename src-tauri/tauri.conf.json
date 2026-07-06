@@ -10,11 +10,46 @@
     "frontendDist": "../build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "avatar",
         "title": "tablo",
-        "width": 800,
-        "height": 600
+        "width": 92,
+        "height": 108,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": true,
+        "focus": false
+      },
+      {
+        "label": "panel",
+        "title": "tablo panel",
+        "width": 360,
+        "height": 540,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false
+      },
+      {
+        "label": "dashboard",
+        "title": "tablo — dashboard",
+        "width": 980,
+        "height": 720,
+        "minWidth": 640,
+        "minHeight": 480,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "visible": false
       }
     ],
     "security": {

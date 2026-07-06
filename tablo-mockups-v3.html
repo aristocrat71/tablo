@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tablo — widget mockups v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ============ TOKENS ============ */
+  :root {
+    --font-round: 'Quicksand', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    /* radii + motion */
+    --r-lg: 20px;
+    --r-md: 14px;
+    --r-sm: 9px;
+    --ease: cubic-bezier(.22,.61,.36,1);
+  }
+
+  /* ---- DARK: warm lamp-lit desk at night ---- */
+  [data-theme="dark"] {
+    --bg-room: #14110e;          /* the dark room */
+    --bg-surface: #201b16;       /* widget body */
+    --bg-raised: #2a231c;        /* cards */
+    --bg-inset: #191410;         /* wells/tracks */
+    --border: #372e25;
+    --border-soft: #2c241d;
+    --ink: #f3e8dc;              /* warm off-white */
+    --ink-dim: #b7a794;
+    --ink-faint: #7d6f5f;
+
+    --amber: #e0a458;            /* desk-lamp glow — "working" */
+    --amber-soft: #3a2c1a;
+    --sage: #8faa7e;             /* calm / healthy */
+    --sage-soft: #29301f;
+    --coral: #e08267;            /* danger / alarmed */
+    --coral-soft: #3a231c;
+
+    --glow: 0 0 24px -2px;
+    --shadow-panel: 0 24px 60px -12px rgba(0,0,0,.7), 0 8px 20px -8px rgba(0,0,0,.6);
+  }
+
+  /* ---- LIGHT: soft warm paper by day ---- */
+  [data-theme="light"] {
+    --bg-room: #ddd3c4;
+    --bg-surface: #faf5ec;
+    --bg-raised: #fffcf6;
+    --bg-inset: #f0e8da;
+    --border: #e2d6c4;
+    --border-soft: #ece2d2;
+    --ink: #3a3128;
+    --ink-dim: #7a6e5e;
+    --ink-faint: #a99b87;
+
+    --amber: #c67f2c;
+    --amber-soft: #f5e6cf;
+    --sage: #5f7f4e;
+    --sage-soft: #e4ecda;
+    --coral: #c85a3c;
+    --coral-soft: #f6ddd2;
+
+    --glow: 0 0 20px -3px;
+    --shadow-panel: 0 20px 44px -14px rgba(90,70,45,.32), 0 6px 16px -8px rgba(90,70,45,.24);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-round);
+    background: var(--bg-room);
+    color: var(--ink);
+    min-height: 100vh;
+    transition: background .5s var(--ease), color .5s var(--ease);
+    -webkit-font-smoothing: antialiased;
+    padding: 40px 24px 80px;
+  }
+
+  /* ambient room glow so the "desk" feels lit */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background: radial-gradient(60% 45% at 50% 8%, color-mix(in srgb, var(--amber) 12%, transparent), transparent 70%);
+    opacity: .7;
+    z-index: 0;
+  }
+
+  .stage { position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; }
+
+  /* ============ TOP CONTROL BAR (mockup chrome, not part of the app) ============ */
+  .chrome {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; margin-bottom: 44px; flex-wrap: wrap;
+  }
+  .chrome-brand { display: flex; align-items: baseline; gap: 12px; }
+  .chrome-brand h1 {
+    font-size: 22px; font-weight: 700; letter-spacing: -.02em;
+  }
+  .chrome-brand span {
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint);
+    letter-spacing: .04em;
+  }
+  .chrome-controls { display: flex; gap: 8px; }
+  .chip {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface); color: var(--ink-dim);
+    cursor: pointer; transition: all .2s var(--ease);
+  }
+  .chip:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .chip[aria-pressed="true"] {
+    background: var(--amber); color: #1c1409; border-color: transparent;
+    font-weight: 600;
+  }
+  [data-theme="light"] .chip[aria-pressed="true"] { color: #fff; }
+
+  /* ============ SECTION SCAFFOLD ============ */
+  .surfaces { display: flex; flex-direction: column; gap: 64px; }
+  .surface-block { }
+  .surface-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
+  .surface-num {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+    color: var(--amber); letter-spacing: .1em;
+  }
+  .surface-title { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .surface-desc { font-size: 13.5px; color: var(--ink-dim); font-weight: 500; }
+  .surface-canvas {
+    background:
+      repeating-linear-gradient(45deg, transparent, transparent 11px, color-mix(in srgb, var(--border-soft) 40%, transparent) 11px, color-mix(in srgb, var(--border-soft) 40%, transparent) 12px),
+      var(--bg-inset);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-lg);
+    padding: 56px 40px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 48px; flex-wrap: wrap;
+    min-height: 200px;
+  }
+
+  /* ============ 1. AVATAR (glyph) ============ */
+  .avatar-set { display: flex; gap: 44px; flex-wrap: wrap; justify-content: center; }
+  .avatar-cell { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+  /* hexagonal avatar. clip-path clips box-shadow, so glow uses a drop-shadow filter
+     (which follows the hex), and the rim is a colored base layer with an inset fill. */
+  .tablo {
+    position: relative;
+    width: 76px; height: 84px;
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-weight: 700; font-size: 27px;
+    cursor: pointer;
+    --hex: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    clip-path: var(--hex);
+    background: var(--border);
+    transition: transform .25s var(--ease), filter .35s var(--ease);
+    user-select: none;
+  }
+  .tablo::before {
+    content: ""; position: absolute; inset: 2px;
+    clip-path: var(--hex);
+    background: var(--bg-surface);
+    z-index: 0;
+  }
+  .tablo .glyph { position: relative; z-index: 1; }
+  .tablo:hover { transform: translateY(-3px); }
+
+  /* wrapper is unclipped so the count badge can sit outside the hex */
+  .tablo-wrap { position: relative; display: inline-grid; place-items: center; }
+
+  /* count badge — floats outside the hex, off the top-right edge */
+  .tablo-wrap .count {
+    position: absolute; top: -7px; right: -11px;
+    min-width: 23px; height: 23px; padding: 0 5px;
+    border-radius: 999px;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+    display: grid; place-items: center;
+    border: 2px solid var(--bg-inset);
+    z-index: 3;
+    background: var(--amber); color: #1c1409;
+  }
+  [data-theme="light"] .tablo-wrap .count { color: #fff; }
+  /* alarmed count turns coral — set when the wrap contains an alarmed hex */
+  .tablo-wrap:has(.alarmed) .count { background: var(--coral); color: #fff; }
+
+  /* idle: gentle sage, slow breathing glow */
+  .tablo.idle { color: var(--sage); background: color-mix(in srgb, var(--sage) 45%, var(--border));
+    animation: breathe 4.5s var(--ease) infinite; }
+  @keyframes breathe {
+    0%,100% { filter: drop-shadow(0 0 7px color-mix(in srgb, var(--sage) 30%, transparent)); }
+    50%     { filter: drop-shadow(0 0 13px color-mix(in srgb, var(--sage) 55%, transparent)); }
+  }
+
+  /* working: amber lamp glow, quicker pulse */
+  .tablo.working { color: var(--amber); background: color-mix(in srgb, var(--amber) 55%, var(--border));
+    animation: work 1.8s var(--ease) infinite; }
+  @keyframes work {
+    0%,100% { filter: drop-shadow(0 0 9px color-mix(in srgb, var(--amber) 40%, transparent)); }
+    50%     { filter: drop-shadow(0 0 16px color-mix(in srgb, var(--amber) 75%, transparent)); }
+  }
+
+  /* alarmed: coral, urgent flush */
+  .tablo.alarmed { color: var(--coral); background: color-mix(in srgb, var(--coral) 60%, var(--border));
+    animation: alarm 0.9s var(--ease) infinite; }
+  @keyframes alarm {
+    0%,100% { filter: drop-shadow(0 0 9px color-mix(in srgb, var(--coral) 45%, transparent)); transform: translateX(0); }
+    25%     { transform: translateX(-1.5px); }
+    50%     { filter: drop-shadow(0 0 17px color-mix(in srgb, var(--coral) 80%, transparent)); }
+    75%     { transform: translateX(1.5px); }
+  }
+
+  .avatar-label {
+    font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+    letter-spacing: .05em; text-align: center;
+  }
+  .avatar-label b { color: var(--ink-dim); font-weight: 600; display: block; margin-bottom: 3px; }
+
+  /* ============ 2. EXPANDED PANEL ============ */
+  .panel {
+    width: 344px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-panel);
+    overflow: hidden;
+  }
+  .panel-top {
+    display: flex; align-items: center; gap: 11px;
+    padding: 16px 18px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .panel-glyph {
+    width: 34px; height: 38px;
+    display: grid; place-items: center;
+    font-family: var(--font-mono); font-weight: 700; font-size: 15px;
+    color: var(--amber);
+    background: var(--amber-soft);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+  .panel-titles { flex: 1; line-height: 1.25; }
+  .panel-titles .name { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .panel-titles .sub {
+    font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+    margin-top: 1px;
+  }
+  .panel-top .mini {
+    width: 28px; height: 28px; border-radius: 8px;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--ink-dim); cursor: pointer; display: grid; place-items: center;
+    transition: all .2s var(--ease);
+  }
+  .panel-top .mini:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+  .panel-body { padding: 6px 12px 12px; max-height: 420px; overflow-y: auto; }
+
+  .group-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 6px 8px;
+  }
+  .group-dot { width: 7px; height: 7px; border-radius: 999px; }
+  .group-dot.attn { background: var(--coral); box-shadow: 0 0 8px var(--coral); }
+  .group-dot.work { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .group-name {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim);
+  }
+  .group-count {
+    font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+    margin-left: auto;
+  }
+
+  .session {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 12px; border-radius: var(--r-md);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-soft);
+    margin-bottom: 7px;
+    transition: border-color .2s var(--ease), transform .12s var(--ease);
+    cursor: pointer;
+  }
+  .session:hover { border-color: var(--border); transform: translateX(2px); }
+  .session.needs { border-color: color-mix(in srgb, var(--coral) 40%, var(--border-soft)); }
+
+  .session-line1 { display: flex; align-items: center; gap: 8px; }
+  .session-proj {
+    font-size: 13.5px; font-weight: 600; letter-spacing: -.01em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .session-badge {
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+    padding: 2px 6px; border-radius: 5px; letter-spacing: .03em;
+    white-space: nowrap;
+  }
+  .session-badge.ask { background: var(--coral-soft); color: var(--coral); }
+  .session-badge.run { background: var(--sage-soft); color: var(--sage); }
+  .session-pct {
+    margin-left: auto;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .session-pct.warn { color: var(--amber); text-shadow: 0 0 12px color-mix(in srgb, var(--amber) 55%, transparent); }
+  .session-pct.crit { color: var(--coral); text-shadow: 0 0 12px color-mix(in srgb, var(--coral) 55%, transparent); }
+
+  .session-path {
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-top: -2px;
+  }
+
+  /* context bar */
+  .ctx { display: flex; align-items: center; gap: 9px; }
+  .ctx-track {
+    flex: 1; height: 8px; border-radius: 3px;
+    background: var(--bg-inset); overflow: hidden;
+    border: 1px solid var(--border-soft);
+    /* segmented LED cells */
+    background-image: repeating-linear-gradient(90deg, transparent 0 5px, color-mix(in srgb, var(--bg-surface) 75%, black) 5px 6px);
+  }
+  .ctx-fill {
+    height: 100%; transition: width .5s var(--ease);
+    background-image: repeating-linear-gradient(90deg, transparent 0 5px, rgba(0,0,0,.25) 5px 6px);
+  }
+  .ctx-fill.ok   { background-color: var(--sage);  box-shadow: 0 0 8px -1px var(--sage); }
+  .ctx-fill.warn { background-color: var(--amber); box-shadow: 0 0 9px -1px var(--amber); }
+  .ctx-fill.crit { background-color: var(--coral); box-shadow: 0 0 9px -1px var(--coral); }
+  .ctx-cap {
+    font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-faint);
+    white-space: nowrap;
+  }
+
+  /* the ask-row for input-requested sessions */
+  .ask-row {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 9px; margin-top: 2px;
+    background: var(--coral-soft);
+    border-radius: var(--r-sm);
+  }
+  .ask-row .q {
+    font-size: 11.5px; color: var(--ink-dim); flex: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ask-row .q code {
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--coral); font-weight: 600;
+  }
+
+  .panel-foot {
+    padding: 12px; border-top: 1px solid var(--border-soft);
+    background: var(--bg-inset);
+  }
+  .dash-btn {
+    width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    padding: 11px; border-radius: var(--r-md);
+    background: var(--ink); color: var(--bg-surface);
+    border: none; cursor: pointer;
+    font-family: var(--font-round); font-size: 13.5px; font-weight: 600;
+    letter-spacing: -.01em;
+    transition: transform .15s var(--ease), opacity .2s var(--ease);
+  }
+  .dash-btn:hover { transform: translateY(-1px); opacity: .92; }
+  .dash-btn .host {
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+    opacity: .6; letter-spacing: 0;
+  }
+
+  /* ============ 3. DASHBOARD (browser) ============ */
+  .browser {
+    width: 100%; max-width: 940px;
+    border-radius: var(--r-lg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    box-shadow: var(--shadow-panel);
+    background: var(--bg-surface);
+  }
+  .browser-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 15px;
+    background: var(--bg-inset);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 11px; height: 11px; border-radius: 999px; display: block; background: var(--border); }
+  .url {
+    flex: 1; font-family: var(--font-mono); font-size: 12px;
+    color: var(--ink-dim);
+    background: var(--bg-surface); border: 1px solid var(--border-soft);
+    padding: 6px 12px; border-radius: 8px;
+  }
+  .url b { color: var(--ink); font-weight: 600; }
+
+  .dash { padding: 26px 28px 30px; }
+  .dash-head {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 16px; margin-bottom: 24px; flex-wrap: wrap;
+  }
+  .dash-head .lead h2 {
+    font-size: 26px; font-weight: 700; letter-spacing: -.025em;
+    display: flex; align-items: center; gap: 11px;
+  }
+  .dash-head .lead h2 .g {
+    width: 30px; height: 34px; background: var(--amber-soft);
+    color: var(--amber); display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: 14px; font-weight: 700;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+  .dash-head .lead p { font-size: 13px; color: var(--ink-dim); margin-top: 5px; font-weight: 500; }
+  .dash-head .live {
+    font-family: var(--font-mono); font-size: 11px; color: var(--sage);
+    display: flex; align-items: center; gap: 7px; font-weight: 600;
+  }
+  .dash-head .live::before {
+    content: ""; width: 7px; height: 7px; border-radius: 999px;
+    background: var(--sage); box-shadow: 0 0 8px var(--sage);
+    animation: breathe 2s infinite;
+  }
+
+  /* stat strip */
+  /* compact inline headline row — numbers and labels side by side, minimal height */
+  .stats { display: flex; gap: 10px; margin-bottom: 20px; }
+  .stat {
+    flex: 1;
+    display: flex; align-items: baseline; gap: 8px;
+    background: var(--bg-raised); border: 1px solid var(--border);
+    border-radius: var(--r-md); padding: 10px 14px;
+  }
+  .stat .v { font-size: 22px; font-weight: 700; letter-spacing: -.03em; line-height: 1; }
+  .stat .k { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint);
+    text-transform: uppercase; letter-spacing: .06em; }
+
+  .dash-grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 18px; }
+  @media (max-width: 720px) { .dash-grid { grid-template-columns: 1fr; } .stats { flex-wrap: wrap; } }
+
+  .card {
+    background: var(--bg-raised); border: 1px solid var(--border-soft);
+    border-radius: var(--r-md); padding: 18px;
+  }
+  .card h3 {
+    font-size: 12px; font-family: var(--font-mono); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim);
+    margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+  }
+  .card h3 .n { color: var(--ink-faint); margin-left: auto; }
+
+  /* dashboard session row */
+  .drow { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border-soft); }
+  .drow:last-child { border-bottom: none; }
+  .drow .st { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+  .drow .st.run { background: var(--sage); box-shadow: 0 0 7px var(--sage); }
+  .drow .st.ask { background: var(--coral); box-shadow: 0 0 7px var(--coral); }
+  .drow .info { flex: 1; min-width: 0; }
+  .drow .info .p { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .drow .info .path { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .drow .gauge { width: 108px; flex-shrink: 0; }
+  .drow .gauge .lab { display: flex; justify-content: space-between; font-family: var(--font-mono);
+    font-size: 9.5px; color: var(--ink-faint); margin-bottom: 4px; }
+  .drow .gauge .lab .val { font-weight: 600; }
+  .drow .gauge .lab .val.warn { color: var(--amber); }
+  .drow .gauge .lab .val.crit { color: var(--coral); }
+  .drow .gauge .tk { height: 7px; border-radius: 2px; background: var(--bg-inset); overflow: hidden;
+    background-image: repeating-linear-gradient(90deg, transparent 0 4px, color-mix(in srgb, var(--bg-surface) 75%, black) 4px 5px); }
+  .drow .gauge .tk i { display: block; height: 100%;
+    background-image: repeating-linear-gradient(90deg, transparent 0 4px, rgba(0,0,0,.25) 4px 5px); }
+  .drow .gauge .tk i.ok { background-color: var(--sage); box-shadow: 0 0 7px -1px var(--sage); }
+  .drow .gauge .tk i.warn { background-color: var(--amber); box-shadow: 0 0 8px -1px var(--amber); }
+  .drow .gauge .tk i.crit { background-color: var(--coral); box-shadow: 0 0 8px -1px var(--coral); }
+
+  /* right column mini cards */
+  /* vertical plan-usage bar — same segmented LED language as the context bars, rotated */
+  .plan-vert { display: flex; align-items: stretch; gap: 18px; }
+  .vbar { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
+  .vbar-track {
+    width: 22px; height: 96px; border-radius: 4px;
+    background: var(--bg-inset); border: 1px solid var(--border-soft);
+    overflow: hidden; display: flex; flex-direction: column-reverse;
+    /* horizontal LED cell rows */
+    background-image: repeating-linear-gradient(0deg, transparent 0 6px, color-mix(in srgb, var(--bg-surface) 75%, black) 6px 7px);
+  }
+  .vbar-fill {
+    width: 100%; background-color: var(--amber);
+    box-shadow: 0 0 9px -1px var(--amber);
+    background-image: repeating-linear-gradient(0deg, transparent 0 6px, rgba(0,0,0,.25) 6px 7px);
+    transition: height .5s var(--ease);
+  }
+  .vbar-cap { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--amber);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--amber) 45%, transparent); }
+  .plan-meta { font-size: 12px; flex: 1; align-self: center; }
+  .plan-meta .row { display: flex; justify-content: space-between; padding: 6px 0;
+    border-bottom: 1px solid var(--border-soft); }
+  .plan-meta .row:last-child { border-bottom: none; }
+  .plan-meta .row span { color: var(--ink-dim); }
+  .plan-meta .row b { font-family: var(--font-mono); font-weight: 600; }
+
+  .spark { display: flex; align-items: flex-end; gap: 4px; height: 60px; margin-top: 4px; }
+  .spark i { flex: 1; background: var(--amber-soft); border-radius: 3px 3px 0 0; position: relative; }
+  .spark i::after { content:""; position:absolute; inset: 0; background: var(--amber); border-radius: 3px 3px 0 0; opacity:.55; }
+
+  .foot-note {
+    text-align: center; margin-top: 40px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint);
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <div class="chrome">
+    <div class="chrome-brand">
+      <h1>tablo</h1>
+      <span>widget mockups · v3 · cozy + glow</span>
+    </div>
+    <div class="chrome-controls">
+      <button class="chip" id="themeToggle" aria-pressed="false">☾ dark</button>
+    </div>
+  </div>
+
+  <div class="surfaces">
+
+    <!-- ===== 1. AVATAR ===== -->
+    <section class="surface-block">
+      <div class="surface-head">
+        <span class="surface-num">01</span>
+        <div>
+          <div class="surface-title">Avatar &nbsp;<span class="surface-desc">— the resting form on your desktop (glyph placeholder, pre-sprite)</span></div>
+        </div>
+      </div>
+      <div class="surface-canvas">
+        <div class="avatar-set">
+          <div class="avatar-cell">
+            <div class="tablo-wrap">
+              <div class="tablo idle"><span class="glyph">I</span></div>
+            </div>
+            <div class="avatar-label"><b>idle</b>nothing running</div>
+          </div>
+          <div class="avatar-cell">
+            <div class="tablo-wrap">
+              <div class="tablo working"><span class="glyph">A</span></div>
+              <span class="count">2</span>
+            </div>
+            <div class="avatar-label"><b>working</b>2 sessions active</div>
+          </div>
+          <div class="avatar-cell">
+            <div class="tablo-wrap">
+              <div class="tablo alarmed"><span class="glyph">!</span></div>
+              <span class="count">3</span>
+            </div>
+            <div class="avatar-label"><b>alarmed</b>context &gt; 60%</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 2. EXPANDED PANEL ===== -->
+    <section class="surface-block">
+      <div class="surface-head">
+        <span class="surface-num">02</span>
+        <div>
+          <div class="surface-title">Expanded panel &nbsp;<span class="surface-desc">— opens on tap · grouped by state · context usage per session</span></div>
+        </div>
+      </div>
+      <div class="surface-canvas">
+        <div class="panel">
+          <div class="panel-top">
+            <div class="panel-glyph">a</div>
+            <div class="panel-titles">
+              <div class="name">tablo</div>
+              <div class="sub">3 sessions · 1 waiting on you</div>
+            </div>
+            <button class="mini" title="Settings">⋯</button>
+          </div>
+
+          <div class="panel-body">
+
+            <!-- group: needs input -->
+            <div class="group-head">
+              <span class="group-dot attn"></span>
+              <span class="group-name">Input requested</span>
+              <span class="group-count">1</span>
+            </div>
+
+            <div class="session needs">
+              <div class="session-line1">
+                <span class="session-proj">optilife</span>
+                <span class="session-badge ask">ASK</span>
+                <span class="session-pct crit">64%</span>
+              </div>
+              <div class="session-path">~/dev/optilife · main</div>
+              <div class="ctx">
+                <div class="ctx-track"><div class="ctx-fill crit" style="width:64%"></div></div>
+                <span class="ctx-cap">128k / 200k</span>
+              </div>
+              <div class="ask-row">
+                <span class="q">Allow <code>rm -rf ./build</code> ?</span>
+              </div>
+            </div>
+
+            <!-- group: working -->
+            <div class="group-head">
+              <span class="group-dot work"></span>
+              <span class="group-name">Working</span>
+              <span class="group-count">2</span>
+            </div>
+
+            <div class="session">
+              <div class="session-line1">
+                <span class="session-proj">simplyquill</span>
+                <span class="session-badge run">RUN</span>
+                <span class="session-pct warn">71%</span>
+              </div>
+              <div class="session-path">~/dev/simplyquill · feat/pdf-annot</div>
+              <div class="ctx">
+                <div class="ctx-track"><div class="ctx-fill warn" style="width:71%"></div></div>
+                <span class="ctx-cap">142k / 200k</span>
+              </div>
+            </div>
+
+            <div class="session">
+              <div class="session-line1">
+                <span class="session-proj">tablo</span>
+                <span class="session-badge run">RUN</span>
+                <span class="session-pct">23%</span>
+              </div>
+              <div class="session-path">~/dev/tablo · main</div>
+              <div class="ctx">
+                <div class="ctx-track"><div class="ctx-fill ok" style="width:23%"></div></div>
+                <span class="ctx-cap">46k / 200k</span>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="panel-foot">
+            <button class="dash-btn">
+              Open dashboard
+              <span class="host">localhost:4317</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 3. DASHBOARD ===== -->
+    <section class="surface-block">
+      <div class="surface-head">
+        <span class="surface-num">03</span>
+        <div>
+          <div class="surface-title">Dashboard &nbsp;<span class="surface-desc">— the deep view · opens in your browser from the panel button</span></div>
+        </div>
+      </div>
+      <div class="surface-canvas" style="padding: 40px 28px;">
+        <div class="browser">
+          <div class="browser-bar">
+            <div class="dots"><i></i><i></i><i></i></div>
+            <div class="url"><b>localhost:4317</b>/dashboard</div>
+          </div>
+          <div class="dash">
+            <div class="dash-head">
+              <div class="lead">
+                <h2><span class="g">a</span> tablo</h2>
+                <p>Watching 3 Claude Code sessions across 3 projects</p>
+              </div>
+              <div class="live">live</div>
+            </div>
+
+            <div class="stats">
+              <div class="stat"><div class="v">3</div><div class="k">Active</div></div>
+              <div class="stat"><div class="v" style="color:var(--coral)">1</div><div class="k">Waiting</div></div>
+              <div class="stat"><div class="v">3</div><div class="k">Projects</div></div>
+            </div>
+
+            <div class="dash-grid">
+              <div class="card">
+                <h3>Sessions <span class="n">3</span></h3>
+
+                <div class="drow">
+                  <span class="st ask"></span>
+                  <div class="info"><div class="p">optilife</div><div class="path">~/dev/optilife · main</div></div>
+                  <div class="gauge">
+                    <div class="lab"><span>context</span><span class="val crit">64%</span></div>
+                    <div class="tk"><i class="crit" style="width:64%"></i></div>
+                  </div>
+                </div>
+
+                <div class="drow">
+                  <span class="st run"></span>
+                  <div class="info"><div class="p">simplyquill</div><div class="path">~/dev/simplyquill · feat/pdf-annot</div></div>
+                  <div class="gauge">
+                    <div class="lab"><span>context</span><span class="val warn">71%</span></div>
+                    <div class="tk"><i class="warn" style="width:71%"></i></div>
+                  </div>
+                </div>
+
+                <div class="drow">
+                  <span class="st run"></span>
+                  <div class="info"><div class="p">tablo</div><div class="path">~/dev/tablo · main</div></div>
+                  <div class="gauge">
+                    <div class="lab"><span>context</span><span class="val">23%</span></div>
+                    <div class="tk"><i class="ok" style="width:23%"></i></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <h3>Plan usage</h3>
+                <div class="plan-vert">
+                  <!-- vertical LED bar, same segmented style as the context bars -->
+                  <div class="vbar">
+                    <div class="vbar-track"><div class="vbar-fill" style="height:42%"></div></div>
+                    <div class="vbar-cap">42%</div>
+                  </div>
+                  <div class="plan-meta">
+                    <div class="row"><span>5h window</span><b>42%</b></div>
+                    <div class="row"><span>Resets in</span><b>2h 14m</b></div>
+                    <div class="row"><span>Weekly</span><b>18%</b></div>
+                    <div class="row"><span>Plan</span><b>Max</b></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="foot-note">tap the avatar glyphs · toggle theme, top-right · mock data</div>
+
+</div>
+
+<script>
+  const root = document.documentElement;
+  const btn = document.getElementById('themeToggle');
+  function setTheme(t) {
+    root.setAttribute('data-theme', t);
+    const dark = t === 'dark';
+    btn.textContent = dark ? '☾ dark' : '☀ light';
+    btn.setAttribute('aria-pressed', String(!dark));
+  }
+  btn.addEventListener('click', () => {
+    setTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+
+  // let the avatar glyphs be tapped to cycle states, for play
+  document.querySelectorAll('.tablo').forEach(t => {
+    const wrap = t.closest('.tablo-wrap');
+    const states = ['idle','working','alarmed'];
+    t.addEventListener('click', () => {
+      const cur = states.findIndex(s => t.classList.contains(s));
+      const next = states[(cur + 1) % states.length];
+      states.forEach(s => t.classList.remove(s));
+      t.classList.add(next);
+      // manage glyph (inside hex) + count badge (on wrapper, outside hex)
+      const g = t.querySelector('.glyph');
+      let c = wrap.querySelector('.count');
+      if (next === 'idle') { g.textContent = 'I'; if (c) c.remove(); }
+      else {
+        g.textContent = next === 'working' ? 'A' : '!';
+        if (!c) { c = document.createElement('span'); c.className='count'; wrap.appendChild(c); }
+        c.textContent = next === 'working' ? '2' : '3';
+      }
+    });
+  });
+</script>
+</body>
+</html>
