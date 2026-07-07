@@ -43,6 +43,10 @@ pub struct SessionView {
     pub model: String,
     /// "run" (working) or "ask" (input-requested — reserved for Phase 4).
     pub state: String,
+    /// The session's permission mode for the read-only badge: "normal" | "auto"
+    /// | "plan" | "bypass". Derived from the last *resting* `permissionMode`;
+    /// Claude Code's transient "auto" execution-heartbeat is filtered out.
+    pub mode: String,
     /// "ok" | "warn" | "crit" per the configured thresholds.
     pub level: String,
     /// Transcript mtime, ms since epoch.
@@ -110,6 +114,10 @@ pub struct FileState {
     cwd: String,
     branch: Option<String>,
     session_id: String,
+    /// Last *resting* permission mode, raw Claude Code value ("default" |
+    /// "acceptEdits" | "plan" | "bypassPermissions"). The transient "auto"
+    /// heartbeat is ignored so the badge doesn't flicker. Empty until first seen.
+    mode: String,
     /// Sticky once we've inferred the 1M window for this session.
     is_1m: bool,
     /// Live activity preview (window-render): a one-line summary of what the
@@ -353,6 +361,18 @@ fn level_for(pct: f64, cfg: &Config) -> &'static str {
     }
 }
 
+/// Map Claude Code's raw `permissionMode` to the read-only badge label. Both
+/// "auto" (current name) and "acceptEdits" (older name) are the ⏵⏵ accept-edits
+/// mode. A session with no explicit mode signal reads "normal".
+fn display_mode(raw: &str) -> &'static str {
+    match raw {
+        "auto" | "acceptEdits" => "auto",
+        "plan" => "plan",
+        "bypassPermissions" => "bypass",
+        _ => "normal",
+    }
+}
+
 /// Ingest newly-appended lines into a file's tail state.
 fn ingest(state: &mut FileState, lines: &[String]) {
     for line in lines {
@@ -371,6 +391,15 @@ fn ingest(state: &mut FileState, lines: &[String]) {
         }
         if let Some(sid) = v.get("sessionId").and_then(|x| x.as_str()) {
             state.session_id = sid.to_string();
+        }
+        // Permission mode rides top-level on the meta `permission-mode` line and
+        // on typed prompts. Last value wins — the tail reflects the session's
+        // current mode ("auto" = the user's ⏵⏵ accept-edits mode; "default" =
+        // normal). Skip an empty value so a value-less line never clears it.
+        if let Some(pm) = v.get("permissionMode").and_then(|x| x.as_str()) {
+            if !pm.is_empty() {
+                state.mode = pm.to_string();
+            }
         }
         match v.get("type").and_then(|x| x.as_str()) {
             // Context occupancy comes from the *latest* assistant usage block;
@@ -477,8 +506,10 @@ fn update_activity(state: &mut FileState, msg: &serde_json::Value) {
     }
 
     // The last block is the current action → the single-line preview + state.
+    // The log keeps the long form (dashboard terminal); the panel's compact
+    // one-liner gets a shorter cut.
     let (last_kind, last_text) = blocks.last().unwrap();
-    state.activity = last_text.clone();
+    state.activity = truncate_activity(last_text, ACTIVITY_MAX);
     state.activity_kind = match *last_kind {
         "tool" => "working",
         "think" => "thinking",
@@ -489,7 +520,11 @@ fn update_activity(state: &mut FileState, msg: &serde_json::Value) {
     .into();
 }
 
+/// Max chars for the panel's compact single-line activity preview.
 const ACTIVITY_MAX: usize = 52;
+/// Max chars kept per rolling-log line. The dashboard terminal is far wider than
+/// the panel, so it stores a longer line and lets CSS ellipsize the overflow.
+const TERM_LINE_MAX: usize = 120;
 /// Recent-activity lines retained per session for the terminal tail.
 const ACTIVITY_LOG_CAP: usize = 8;
 
@@ -606,7 +641,7 @@ fn summarize_activity(tool: &str, input: &serde_json::Value) -> String {
         }
         other => other.to_string(),
     };
-    truncate_activity(&s, ACTIVITY_MAX)
+    truncate_activity(&s, TERM_LINE_MAX)
 }
 
 /// Collapse whitespace and trim leading markdown so a text block reads as one
@@ -614,7 +649,7 @@ fn summarize_activity(tool: &str, input: &serde_json::Value) -> String {
 fn snippet(s: &str) -> String {
     let cleaned = s.trim_start_matches(|c: char| "#*->` \t".contains(c));
     let one_line = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
-    truncate_activity(&one_line, ACTIVITY_MAX)
+    truncate_activity(&one_line, TERM_LINE_MAX)
 }
 
 fn truncate_activity(s: &str, max: usize) -> String {
@@ -743,6 +778,7 @@ pub fn scan(
                 limit,
                 model: st.model.clone(),
                 state: "run".into(), // Phase 4 will surface "ask"
+                mode: display_mode(&st.mode).into(),
                 level: level_for(pct, cfg).into(),
                 last_active: mtime,
                 title: st.title.clone(),
@@ -855,6 +891,28 @@ mod tests {
             summarize_activity("mcp__wel__list_projects", &json!({})),
             "wel: list projects"
         );
+    }
+
+    #[test]
+    fn permission_mode_maps_last_value() {
+        let mut st = FileState::default();
+        // Unseen ⇒ normal.
+        assert_eq!(display_mode(&st.mode), "normal");
+        // "auto" is the user's ⏵⏵ accept-edits mode → shown as "auto".
+        ingest(&mut st, &[r#"{"type":"permission-mode","permissionMode":"auto"}"#.into()]);
+        assert_eq!(display_mode(&st.mode), "auto");
+        // "acceptEdits" (older name for the same mode) → also "auto".
+        ingest(&mut st, &[r#"{"type":"permission-mode","permissionMode":"acceptEdits"}"#.into()]);
+        assert_eq!(display_mode(&st.mode), "auto");
+        // Plan carries through; last value wins.
+        ingest(&mut st, &[r#"{"type":"permission-mode","permissionMode":"plan"}"#.into()]);
+        assert_eq!(display_mode(&st.mode), "plan");
+        // A typed prompt carries the mode too; default ⇒ normal.
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","promptSource":"typed","permissionMode":"default","message":{"content":"go"}}"#.into()],
+        );
+        assert_eq!(display_mode(&st.mode), "normal");
     }
 
     #[test]

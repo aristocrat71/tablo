@@ -3,6 +3,8 @@
 export type AvatarState = "idle" | "running" | "alarmed";
 export type Level = "ok" | "warn" | "crit";
 export type SessionState = "run" | "ask";
+// Read-only permission-mode badge: normal / auto-accept edits / plan / bypass.
+export type SessionMode = "normal" | "auto" | "plan" | "bypass";
 
 export interface SessionView {
   id: string;
@@ -14,6 +16,7 @@ export interface SessionView {
   limit: number;
   model: string;
   state: SessionState;
+  mode: SessionMode; // read-only permission-mode badge
   level: Level;
   lastActive: number; // ms epoch
   title: string | null; // Claude Code's AI session title (disambiguates rows)

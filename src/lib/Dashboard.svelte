@@ -182,6 +182,7 @@
         <div class="path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
       </div>
       {#if c.session}
+        <span class="mode-badge">mode : <span class="mode-val {c.session.mode}">{c.session.mode}</span></span>
         <div class="gauge">
           <div class="lab">
             <span>context</span>
@@ -611,7 +612,7 @@
     padding: 5px 10px;
     cursor: pointer;
     white-space: nowrap;
-    align-self: center;
+    align-self: flex-end; /* lower edge lines up with the mode text */
     transition:
       background-color 0.15s var(--ease),
       transform 0.12s var(--ease);
@@ -619,6 +620,30 @@
   .drow .jump:hover {
     background: color-mix(in srgb, var(--amber) 22%, var(--amber-soft));
     transform: translateY(-1px);
+  }
+  /* read-only permission-mode badge — sits just left of the context gauge,
+     dropped to the bottom of the row so it lines up with the path/branch text */
+  .drow .mode-badge {
+    flex-shrink: 0;
+    align-self: flex-end;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .drow .mode-val {
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .drow .mode-val.auto {
+    color: var(--amber);
+  }
+  .drow .mode-val.plan {
+    color: var(--sage);
+  }
+  .drow .mode-val.bypass {
+    color: var(--coral);
   }
   .term.working .term-led {
     background: #e0a458;
@@ -666,6 +691,8 @@
     text-align: center;
   }
   .term-line .tx {
+    flex: 1;
+    min-width: 0; /* lets text-overflow ellipsis kick in inside the flex row */
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -748,8 +775,9 @@
     }
   }
   .drow .gauge {
-    width: 108px;
+    width: 168px;
     flex-shrink: 0;
+    align-self: flex-end; /* bar's lower edge lines up with the mode text */
   }
   .drow .gauge .lab {
     display: flex;

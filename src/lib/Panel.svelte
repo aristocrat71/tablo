@@ -186,10 +186,15 @@
       </div>
     {/if}
 
-    {#if c.session?.canJump}
-      <button class="jump" title="Focus this session's window" onclick={() => jump(c.session!.id)}>
-        jump &rarr;
-      </button>
+    {#if c.session}
+      <div class="card-foot">
+        {#if c.session.canJump}
+          <button class="jump" title="Focus this session's window" onclick={() => jump(c.session!.id)}>
+            jump &rarr;
+          </button>
+        {/if}
+        <span class="mode-badge">mode : <span class="mode-val {c.session.mode}">{c.session.mode}</span></span>
+      </div>
     {/if}
 
     {#each c.requests as p (p.id)}
@@ -533,8 +538,34 @@
     color: var(--coral);
     text-shadow: 0 0 12px color-mix(in srgb, var(--coral) 55%, transparent);
   }
+  /* card footer: jump pinned left, read-only mode badge pinned right */
+  .card-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mode-badge {
+    margin-left: auto; /* pins to the right end even when jump is absent */
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .mode-val {
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .mode-val.auto {
+    color: var(--amber);
+  }
+  .mode-val.plan {
+    color: var(--sage);
+  }
+  .mode-val.bypass {
+    color: var(--coral);
+  }
   .jump {
-    align-self: flex-start; /* bottom-left of the card, under the context bar */
     font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 600;
