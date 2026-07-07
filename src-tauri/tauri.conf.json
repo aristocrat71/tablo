@@ -24,7 +24,8 @@
         "skipTaskbar": true,
         "shadow": false,
         "visible": true,
-        "focus": false
+        "focus": false,
+        "acceptFirstMouse": true
       },
       {
         "label": "panel",

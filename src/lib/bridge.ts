@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Config, HookStatus, LocateStatus, PermDecision, Snapshot } from "./types";
 
 export function currentLabel(): string {
@@ -21,6 +22,9 @@ export const getConfig = () => invoke<Config>("get_config");
 export const setTheme = (theme: string) => invoke("set_theme", { theme });
 export const togglePanel = () => invoke("toggle_panel");
 export const openDashboard = () => invoke("open_dashboard");
+// Hide whichever window this webview lives in (Esc dismiss). The panel's blur
+// handler then records the dismiss so a follow-up avatar tap doesn't re-open it.
+export const hideCurrentWindow = () => getCurrentWindow().hide();
 export const beginDrag = () => invoke<{ x: number; y: number }>("begin_drag");
 export const moveAvatar = (x: number, y: number) =>
   invoke("move_avatar", { x: Math.round(x), y: Math.round(y) });

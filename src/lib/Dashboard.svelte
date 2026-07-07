@@ -11,6 +11,7 @@
     locateStatus,
     setLocateEnabled,
     jumpToSession,
+    hideCurrentWindow,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -61,6 +62,12 @@
   onMount(() => {
     hookStatus().then((s) => (hook = s)).catch(() => {});
     locateStatus().then((s) => (loc = s)).catch(() => {});
+    // Esc closes the dashboard window (it hides, so it can reopen later).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") hideCurrentWindow().catch(() => {});
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   });
 
   async function toggleApprovals() {
