@@ -28,11 +28,3 @@ notify = "6"
 dirs = "5"
 # Tiny synchronous HTTP server for the PreToolUse approval hook (Phase 4).
 tiny_http = "0.12"
-
-# macOS: bring a session's host app to the front on "jump" without an Automation
-# prompt (NSRunningApplication.activate). Versions pinned to what Tauri already
-# resolves, so no extra crates are compiled.
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication"] }
-objc2-foundation = { version = "0.3", features = ["NSString", "NSArray"] }

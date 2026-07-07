@@ -1,10 +1,15 @@
-//! "Jump to session": focus the terminal a Claude Code session runs in.
+//! "Jump to session" (window-render).
 //!
-//! A session can't be mapped to its OS window from the transcript alone, so it
-//! *self-reports* where it lives: a passive `SessionStart`/`UserPromptSubmit`
-//! hook (`locate.sh`) POSTs its tmux pane + tty to the loopback server, keyed by
-//! session id. `jump_to_session` then switches tmux to that pane and raises the
-//! host app. Unlike approvals it never blocks a tool.
+//! A session can't be mapped to its OS window from the transcript alone (no PID,
+//! and Claude Code doesn't hold the transcript open; tmux/editors hide the
+//! window). So each session *self-reports* where it lives: a passive
+//! `SessionStart` + `UserPromptSubmit` hook (`locate.sh`) reads the env vars
+//! available inside the session — `$TMUX_PANE`, `$TERM_PROGRAM`, `$ZED_TERM`,
+//! tty — and POSTs them to the loopback server, keyed by session id. Tablo
+//! caches that, and `jump_to_session` focuses the exact window: `tmux
+//! select-pane` for the pane, then `open -a` to activate the host app.
+//!
+//! Unlike approvals this never blocks a tool — it only reports location.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -16,22 +21,25 @@ use crate::config::Config;
 use crate::permission;
 use crate::AppState;
 
-/// Where a session lives, as reported by the locate hook (all best-effort). Only
-/// the non-tmux path reads `term_program`/`zed_term`; inside tmux they're
-/// server-inherited and unreliable, so we resolve the host from the process tree.
+/// Where a session lives, as reported by the locate hook (all best-effort).
 #[derive(Clone, Debug, Default)]
 pub struct SessionLocation {
     /// `$TMUX` = "<socket>,<pid>,<session>"; the socket is what we target.
     pub tmux: String,
     /// `$TMUX_PANE`, e.g. "%22" — the exact pane, unambiguous across windows.
     pub tmux_pane: String,
-    /// `$TERM_PROGRAM` (masked to "tmux" inside tmux).
+    /// `$TERM_PROGRAM` (masked to "tmux" inside tmux, hence the flags below).
     pub term_program: String,
     /// `$ZED_TERM` == "true" when hosted inside the Zed editor.
     pub zed_term: String,
     /// Controlling terminal, e.g. "/dev/ttys017" — for a direct terminal tab
     /// this is the tab's own tty, which lets us focus that exact tab.
     pub tty: String,
+    // Reserved for future exact-window resolution — not consumed yet.
+    #[allow(dead_code)]
+    pub term_session_id: String,
+    #[allow(dead_code)]
+    pub window_id: String,
 }
 
 /// The hook's POST body.
@@ -47,7 +55,11 @@ struct LocatePayload {
     #[serde(default)]
     term_program: String,
     #[serde(default)]
+    term_session_id: String,
+    #[serde(default)]
     zed_term: String,
+    #[serde(default)]
+    window_id: String,
     #[serde(default)]
     tty: String,
 }
@@ -67,7 +79,9 @@ pub fn store_location(app: &AppHandle, body: &str) {
         tmux: p.tmux,
         tmux_pane: p.tmux_pane,
         term_program: p.term_program,
+        term_session_id: p.term_session_id,
         zed_term: p.zed_term,
+        window_id: p.window_id,
         tty: p.tty,
     };
     let state = app.state::<AppState>();
@@ -97,35 +111,75 @@ pub fn jump_to_session(state: State<'_, AppState>, session_id: String) -> Result
     focus(&loc)
 }
 
-/// Bring a session's window to the front. Two layers: a portable tmux pane-switch
-/// (every OS, no permission), then a platform-gated GUI raise (macOS today).
-/// Ok(what landed) or Err if nothing could be located.
+/// A dash stands in for an empty locator field, so the trace reads cleanly.
+fn dash(s: &str) -> &str {
+    if s.trim().is_empty() {
+        "-"
+    } else {
+        s
+    }
+}
+
+/// Focus the window a session lives in, recording each step into a trace the UI
+/// can show. Two layers: a **portable tmux pane-switch** that works on every OS
+/// with no permissions, then a **platform-gated GUI raise** (macOS today) that
+/// brings the outer terminal window forward. Ok(trace) if anything landed,
+/// Err(trace) otherwise; both carry the full trace.
 fn focus(loc: &SessionLocation) -> Result<String, String> {
+    let mut trace: Vec<String> = Vec::new();
+    trace.push(format!(
+        "loc tty={} term={} pane={} zed={}",
+        dash(&loc.tty),
+        dash(&loc.term_program),
+        dash(&loc.tmux_pane),
+        dash(&loc.zed_term),
+    ));
+
     let socket = tmux_socket(&loc.tmux);
+    let mut acted = false;
+
     // The terminal the user is in = the most-recently-active tmux client. We move
-    // *this* client onto the target and raise *its* app, so the switch and the
-    // focus stay coherent even across sessions.
+    // *this* client onto the target and raise *this* client's app, so switch and
+    // focus stay coherent even when they were viewing a different session/host.
     let client = if loc.tmux_pane.is_empty() {
         None
     } else {
         most_recent_client(&socket)
     };
 
-    let mut done: Vec<String> = Vec::new();
-    if !loc.tmux_pane.is_empty() {
+    // Layer 1 — portable core: move the user's client onto the pane's session and
+    // pane. Works identically on macOS / Linux / Windows(WSL), no GUI focus, no
+    // permission.
+    if loc.tmux_pane.is_empty() {
+        trace.push("tmux: not in tmux".into());
+    } else {
         let ctty = client.as_ref().map(|(t, _)| t.as_str());
-        if tmux_focus_pane(&socket, &loc.tmux_pane, ctty).is_ok() {
-            done.push(format!("tmux {}", loc.tmux_pane));
+        match tmux_focus_pane(&socket, &loc.tmux_pane, ctty) {
+            Ok(()) => {
+                trace.push(format!("tmux: {} -> {}", ctty.unwrap_or("client"), loc.tmux_pane));
+                acted = true;
+            }
+            Err(e) => trace.push(format!("tmux: {} failed ({e})", loc.tmux_pane)),
         }
     }
-    if let Some(what) = raise_window(&socket, loc, client.as_ref()) {
-        done.push(what);
+
+    // Layer 2 — platform best-effort: raise the outer GUI window. macOS is
+    // implemented; Linux (wmctrl/xdotool on X11) and Windows (SetForegroundWindow)
+    // slot in later; Wayland / Windows-Terminal tabs stay honest no-ops.
+    match raise_window(&socket, loc, client.as_ref()) {
+        Raise::Focused(what) => {
+            trace.push(format!("raise: {what}"));
+            acted = true;
+        }
+        Raise::Missed(why) => trace.push(format!("raise: {why}")),
+        Raise::Unsupported => trace.push("raise: unsupported on this platform".into()),
     }
 
-    if done.is_empty() {
-        Err("couldn't locate this session's window".into())
+    let msg = trace.join(" | ");
+    if acted {
+        Ok(msg)
     } else {
-        Ok(done.join(", "))
+        Err(msg)
     }
 }
 
@@ -194,57 +248,85 @@ fn most_recent_client(socket: &Option<String>) -> Option<(String, i32)> {
     rows.into_iter().next().map(|(_, tty, pid)| (tty, pid))
 }
 
-/// macOS raise: bring the user's current terminal to the front, returning what we
-/// focused. The tty a terminal app knows is the tab's own pty — for a non-tmux
-/// session that's `loc.tty`; inside tmux it's the *client* tty (the outer tab).
-/// Try an exact-tab focus (Terminal.app / iTerm2) first; otherwise resolve the
-/// host app from the client's process tree and activate it.
+/// Outcome of a platform's best-effort attempt to raise a session's GUI window.
+#[allow(dead_code)] // which variants are constructed depends on the target OS
+enum Raise {
+    /// Brought a specific tab or the host app to the front.
+    Focused(String),
+    /// Tried, but nothing matched or it errored (message says why).
+    Missed(String),
+    /// This platform can't raise other apps' windows (e.g. Wayland).
+    Unsupported,
+}
+
+/// macOS raise: bring the user's current terminal to the front. The tty a
+/// terminal app knows is the tab's own pty — for a non-tmux session that's
+/// `loc.tty`; inside tmux it's the *client* tty (the outer tab), never the pane
+/// pty. Try an exact-tab focus (Terminal.app / iTerm2) first; otherwise resolve
+/// the host app from the client's process tree and activate it.
 #[cfg(target_os = "macos")]
-fn raise_window(_socket: &Option<String>, loc: &SessionLocation, client: Option<&(String, i32)>) -> Option<String> {
-    let mut candidates: Vec<String> = Vec::new();
-    if let Some(t) = valid_tty(&loc.tty) {
-        candidates.push(t);
-    }
-    if let Some((tty, _)) = client {
-        if let Some(v) = valid_tty(tty) {
-            if !candidates.contains(&v) {
-                candidates.push(v);
+fn raise_window(_socket: &Option<String>, loc: &SessionLocation, client: Option<&(String, i32)>) -> Raise {
+    // Resolve the TRUE host app from the client's process tree first — env-var
+    // proof, and it's authoritative (both mirrored clients of a Zed-hosted tmux
+    // session resolve to Zed). We trust this over tty-tab matching, which can
+    // false-hit a stale Terminal tab that still reports a now-reused pty.
+    let host = client
+        .and_then(|(_, pid)| walk_to_app(*pid))
+        .or_else(|| gui_app(loc));
+
+    // Only if the host itself is a tab-scriptable terminal, focus the EXACT tab by
+    // tty (so multiple tabs in that app don't all match). Never match a *different*
+    // running terminal — that's what hijacked us to a dead Terminal tab.
+    let tty = client
+        .and_then(|(t, _)| valid_tty(t))
+        .or_else(|| valid_tty(&loc.tty));
+    if let (Some(h), Some(tty)) = (host.as_deref(), &tty) {
+        if let Some(kind) = term_kind_for(h) {
+            if term_app_running(kind) {
+                if let Ok(true) = applescript_focus_tab(kind, tty) {
+                    return Raise::Focused(format!("tab {} {tty}", kind.app()));
+                }
             }
         }
     }
 
-    // Exact-tab focus against terminals that are actually running (scripting a
-    // non-running app would launch it). A permission failure reads as "not found"
-    // and falls through to app activation below.
-    let kinds: Vec<TermKind> = [TermKind::Terminal, TermKind::ITerm]
-        .into_iter()
-        .filter(|k| term_app_running(*k))
-        .collect();
-    for tty in &candidates {
-        for &kind in &kinds {
-            if applescript_focus_tab(kind, tty) {
-                return Some(format!("tab {} {tty}", kind.app()));
+    // Otherwise activate the host app (Zed/Ghostty aren't tab-scriptable).
+    match host {
+        Some(app) => {
+            if activate_app(&app) {
+                Raise::Focused(format!("app {app}"))
+            } else {
+                match Command::new("open").arg("-a").arg(&app).output() {
+                    Ok(o) if o.status.success() => Raise::Focused(format!("app {app} (launched)")),
+                    Ok(o) => Raise::Missed(format!("open {app} — {}", String::from_utf8_lossy(&o.stderr).trim())),
+                    Err(e) => Raise::Missed(format!("open {app} — {e}")),
+                }
             }
         }
+        None => Raise::Missed("no host app resolved".into()),
     }
+}
 
-    // Otherwise raise the host app (can't pick the exact tab). Resolve it from the
-    // client's process tree first — env-var-proof, and it finds hosts that aren't
-    // tab-scriptable (Zed, Ghostty). Only then the non-tmux env mapping.
-    let app = client.and_then(|(_, pid)| walk_to_app(*pid)).or_else(|| gui_app(loc))?;
-    // AppKit activation needs no prompt and wins cooperative activation; `open -a`
-    // is the fallback to launch the app if it isn't running.
-    let raised = activate_app(&app)
-        || Command::new("open").arg("-a").arg(&app).output().map(|o| o.status.success()).unwrap_or(false);
-    raised.then(|| format!("app {app}"))
+/// The scriptable-terminal kind for a resolved host app name, if any.
+#[cfg(target_os = "macos")]
+fn term_kind_for(app: &str) -> Option<TermKind> {
+    match app {
+        "Terminal" => Some(TermKind::Terminal),
+        "iTerm" => Some(TermKind::ITerm),
+        _ => None,
+    }
 }
 
 /// Non-macOS raise: not yet implemented. Linux (wmctrl/xdotool on X11) and Windows
 /// (SetForegroundWindow) go here; Wayland forbids external activation so it stays
 /// a no-op. The portable tmux pane-switch has already run regardless.
 #[cfg(not(target_os = "macos"))]
-fn raise_window(_socket: &Option<String>, _loc: &SessionLocation, _client: Option<&(String, i32)>) -> Option<String> {
-    None
+fn raise_window(
+    _socket: &Option<String>,
+    _loc: &SessionLocation,
+    _client: Option<&(String, i32)>,
+) -> Raise {
+    Raise::Unsupported
 }
 
 /// Run a tmux command on the session's socket; Ok(stdout) / Err(stderr|ioerr).
@@ -323,27 +405,21 @@ fn app_from_comm(comm: &str) -> Option<String> {
     Some(app.to_string())
 }
 
-/// Bring a running app to the front by name, with **no Automation prompt**, via
-/// AppKit's `NSRunningApplication.activate`. This does what `open -a` often won't
-/// from a foreground caller: macOS cooperative activation blocks a plain `open`
-/// when the caller (Tablo) is the active app, so the target only bounces in the
-/// Dock. Returns false if the app isn't running (so the caller can `open` it).
+/// Bring an app to the front by name via AppleScript `activate` — which, unlike
+/// `open -a` and `NSRunningApplication`, reliably takes focus even from the
+/// currently-active app (Tablo). Costs a one-time Automation grant per app, the
+/// same permission the exact-tab path already uses (and which foregrounds
+/// Terminal). Launches the app if it isn't running.
 #[cfg(target_os = "macos")]
-#[allow(deprecated)] // activateWithOptions: is the deployment-portable activator
 fn activate_app(name: &str) -> bool {
-    use objc2_app_kit::{NSApplicationActivationOptions, NSWorkspace};
-    let ws = NSWorkspace::sharedWorkspace();
-    let apps = ws.runningApplications();
-    let count = apps.count();
-    for i in 0..count {
-        let app = apps.objectAtIndex(i);
-        if let Some(ln) = app.localizedName() {
-            if ln.to_string() == name {
-                return app.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
-            }
-        }
-    }
-    false
+    let safe = name.replace('"', "");
+    let script = format!(r#"tell application "{safe}" to activate"#);
+    Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 /// Whether a scriptable terminal is running (so we don't launch it by scripting).
@@ -393,63 +469,67 @@ fn valid_tty(tty: &str) -> Option<String> {
     }
 }
 
-/// Select the tab whose tty matches and bring its window forward via AppleScript.
-/// true = focused; false = not found here or scripting failed (e.g. missing
-/// Automation permission), in which case the caller falls back to app activation.
+/// Select the tab/session whose tty matches and bring its window forward, via
+/// AppleScript. Ok(true) = focused, Ok(false) = not found in this app, Err =
+/// scripting failed (e.g. Automation permission not granted) — the caller falls
+/// through to tmux / app-activation in every case.
 #[cfg(target_os = "macos")]
-fn applescript_focus_tab(kind: TermKind, tty: &str) -> bool {
+fn applescript_focus_tab(kind: TermKind, tty: &str) -> Result<bool, String> {
     let script = match kind {
         TermKind::Terminal => format!(
             r#"tell application "Terminal"
-	set res to "notfound"
-	repeat with w in windows
-		repeat with t in tabs of w
-			try
-				if (tty of t) is "{tty}" then
-					set selected of t to true
-					set res to "found"
-					activate
-					try
-						set frontmost of w to true
-					end try
-					try
-						set index of w to 1
-					end try
-				end if
-			end try
-		end repeat
-	end repeat
-	return res
+    set res to "notfound"
+    repeat with w in windows
+        repeat with t in tabs of w
+            try
+                if (tty of t) is "{tty}" then
+                    set selected of t to true
+                    set res to "found"
+                    activate
+                    try
+                        set frontmost of w to true
+                    end try
+                    try
+                        set index of w to 1
+                    end try
+                end if
+            end try
+        end repeat
+    end repeat
+    return res
 end tell"#
         ),
         TermKind::ITerm => format!(
             r#"tell application "iTerm2"
-	set res to "notfound"
-	repeat with w in windows
-		repeat with t in tabs of w
-			repeat with s in sessions of t
-				try
-					if (tty of s) is "{tty}" then
-						select w
-						select t
-						select s
-						set res to "found"
-						activate
-					end if
-				end try
-			end repeat
-		end repeat
-	end repeat
-	return res
+    set res to "notfound"
+    repeat with w in windows
+        repeat with t in tabs of w
+            repeat with s in sessions of t
+                try
+                    if (tty of s) is "{tty}" then
+                        select w
+                        select t
+                        select s
+                        set res to "found"
+                        activate
+                    end if
+                end try
+            end repeat
+        end repeat
+    end repeat
+    return res
 end tell"#
         ),
     };
-    Command::new("osascript")
+    let out = Command::new("osascript")
         .arg("-e")
         .arg(&script)
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("found"))
-        .unwrap_or(false)
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).contains("found"))
 }
 
 /// The `$TMUX` socket path is the segment before the first comma.
@@ -457,31 +537,71 @@ fn tmux_socket(tmux: &str) -> Option<String> {
     tmux.split(',').next().filter(|s| !s.is_empty()).map(str::to_string)
 }
 
-/// Map a **non-tmux** session's reported host env to an `open -a` app name. Inside
-/// tmux `ZED_TERM`/`TERM_PROGRAM` are server-inherited and unreliable (callers use
-/// the process tree there instead), so this returns None for tmux panes.
+/// Map the reported host to a macOS app name for `open -a`. Inside tmux the env
+/// vars (`ZED_TERM`, `TERM_PROGRAM`) are inherited from the tmux server — a
+/// server first started under Zed marks every later pane `ZED_TERM=true`, even
+/// panes opened from Terminal — so they can't identify the host; there we fall
+/// straight to the running-terminal heuristic. Outside tmux they're reliable.
 #[cfg(target_os = "macos")]
 fn gui_app(loc: &SessionLocation) -> Option<String> {
-    if !loc.tmux_pane.is_empty() {
-        return None;
+    if loc.tmux_pane.is_empty() {
+        if loc.zed_term == "true" {
+            return Some("Zed".into());
+        }
+        let mapped = match loc.term_program.as_str() {
+            "iTerm.app" => "iTerm",
+            "Apple_Terminal" => "Terminal",
+            "vscode" => "Visual Studio Code",
+            "ghostty" | "Ghostty" => "Ghostty",
+            "WezTerm" => "WezTerm",
+            "Hyper" => "Hyper",
+            "Tabby" => "Tabby",
+            "WarpTerminal" | "Warp" => "Warp",
+            "kitty" => "kitty",
+            "Alacritty" => "Alacritty",
+            _ => "",
+        };
+        if !mapped.is_empty() {
+            return Some(mapped.to_string());
+        }
     }
-    if loc.zed_term == "true" {
-        return Some("Zed".into());
+    single_running_terminal()
+}
+
+/// If exactly one known terminal emulator is running, assume it hosts the tmux
+/// session (whose `TERM_PROGRAM` we can't see). Ambiguous (0 or >1) → give up on
+/// app activation; the tmux pane switch still helps if the terminal is visible.
+#[cfg(target_os = "macos")]
+fn single_running_terminal() -> Option<String> {
+    // (process name for pgrep -x, app name for open -a)
+    const APPS: &[(&str, &str)] = &[
+        ("iTerm2", "iTerm"),
+        ("Terminal", "Terminal"),
+        ("ghostty", "Ghostty"),
+        ("wezterm-gui", "WezTerm"),
+        ("kitty", "kitty"),
+        ("alacritty", "Alacritty"),
+        ("stable", "Warp"), // Warp's helper process
+        ("Hyper", "Hyper"),
+        ("Tabby", "Tabby"),
+    ];
+    let mut found: Vec<String> = Vec::new();
+    for (proc_name, app) in APPS {
+        let running = Command::new("pgrep")
+            .arg("-x")
+            .arg(proc_name)
+            .output()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(false);
+        if running {
+            found.push((*app).to_string());
+        }
     }
-    let app = match loc.term_program.as_str() {
-        "iTerm.app" => "iTerm",
-        "Apple_Terminal" => "Terminal",
-        "vscode" => "Visual Studio Code",
-        "ghostty" | "Ghostty" => "Ghostty",
-        "WezTerm" => "WezTerm",
-        "Hyper" => "Hyper",
-        "Tabby" => "Tabby",
-        "WarpTerminal" | "Warp" => "Warp",
-        "kitty" => "kitty",
-        "Alacritty" => "Alacritty",
-        _ => return None,
-    };
-    Some(app.to_string())
+    if found.len() == 1 {
+        found.pop()
+    } else {
+        None
+    }
 }
 
 // ============================ hook script + install ============================
@@ -510,7 +630,7 @@ case "$rawtty" in
 esac
 curl -s -m 2 -X POST -H 'Content-Type: application/json' \
   "http://127.0.0.1:${PORT}/locate" --data-binary @- >/dev/null 2>&1 <<JSON
-{"sessionId":"$sid","tmux":"$TMUX","tmuxPane":"$TMUX_PANE","termProgram":"$TERM_PROGRAM","zedTerm":"$ZED_TERM","tty":"$tty"}
+{"sessionId":"$sid","tmux":"$TMUX","tmuxPane":"$TMUX_PANE","termProgram":"$TERM_PROGRAM","termSessionId":"$TERM_SESSION_ID","zedTerm":"$ZED_TERM","windowId":"$WINDOWID","tty":"$tty"}
 JSON
 exit 0
 "#;
