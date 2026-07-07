@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { store } from "./state.svelte";
   import { fade } from "svelte/transition";
-  import { pct, planTier, activityMark, terminalStatus } from "./format";
+  import { pct, activityMark, terminalStatus } from "./format";
   import { prefs, byMode } from "./prefs.svelte";
   import {
     hookStatus,
@@ -25,7 +25,6 @@
   };
 
   let snap = $derived(store.snap);
-  let tier = $derived(planTier(snap.planTier));
 
   // One card per session, its context gauge unified with any pending requests
   // it owns. Needs-input sessions sort first, then the panel's chosen sort.
@@ -142,25 +141,26 @@
           jump {loc.installed ? "on" : "off"}
         </button>
       {/if}
-      {#if tier}
-        <div class="plan-chip" title="Subscription tier (live quota isn't exposed locally)">
-          {tier} <span>plan</span>
-        </div>
-      {/if}
       <ThemeToggle />
     </div>
   </div>
 
   <div class="dash-grid">
     <div class="card">
-      <h3>Sessions <span class="n">{cards.length}</span></h3>
+      <h3>
+        Sessions
+        {#if cards.length > 0}
+          <span class="sep">·</span>
+          <span class="legend" aria-hidden="true">
+            <span><i class="lmk user">#</i> user prompt</span>
+            <span><i class="lmk agent">&gt;</i> agent response</span>
+          </span>
+        {/if}
+        <span class="n">{cards.length}</span>
+      </h3>
       {#if cards.length === 0}
         <div class="dash-empty">Nothing running. Tablo is watching.</div>
       {:else}
-        <div class="legend" aria-hidden="true">
-          <span><i class="lmk user">#</i> user prompt</span>
-          <span><i class="lmk agent">&gt;</i> agent response</span>
-        </div>
         {#each cards as c (c.key)}
           {@render sessionCard(c)}
         {/each}
@@ -225,8 +225,7 @@
 {#snippet terminal(s: SessionView)}
   <div class="term {s.activityKind || 'idle'}">
     <div class="term-bar">
-      <span class="term-led"></span>
-      <span class="term-name">tablo{s.branch ? `:${s.branch}` : ""}</span>
+      <span class="term-name"><span class="term-dollar">$</span> live preview</span>
       <span class="term-state">{terminalStatus(s.activityKind)}</span>
     </div>
     <div class="term-scroll">
@@ -310,21 +309,6 @@
     display: flex;
     align-items: center;
     gap: 12px;
-  }
-  .plan-chip {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--amber);
-    background: var(--amber-soft);
-    border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
-    border-radius: 999px;
-    padding: 4px 11px;
-    white-space: nowrap;
-  }
-  .plan-chip span {
-    color: var(--ink-faint);
-    font-weight: 500;
   }
   .approvals-toggle {
     display: flex;
@@ -478,23 +462,25 @@
     margin-left: auto;
   }
 
-  /* key for the terminal markers, shown once above the session list */
-  .legend {
-    display: flex;
-    gap: 18px;
-    padding: 0 2px 12px;
-    margin-bottom: 4px;
-    border-bottom: 1px solid var(--border-soft);
-    font-family: var(--font-mono);
+  /* separator + inline key for the terminal markers, beside the Sessions title */
+  .card h3 .sep {
+    color: var(--ink-faint);
+    font-weight: 400;
+  }
+  .card h3 .legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
     font-size: 10px;
+    font-weight: 500;
     letter-spacing: 0.02em;
     color: var(--ink-faint);
     text-transform: none;
   }
-  .legend .lmk {
+  .card h3 .legend .lmk {
     font-style: normal;
     font-weight: 700;
-    margin-right: 6px;
+    margin-right: 5px;
     color: var(--amber);
   }
 
@@ -591,15 +577,13 @@
     position: relative;
     z-index: 1;
   }
-  .term-led {
-    width: 7px;
-    height: 7px;
-    border-radius: 999px;
-    background: #6f6250;
-    flex-shrink: 0;
-  }
   .term-name {
     color: #9c8c78;
+  }
+  .term-dollar {
+    color: #e0a458;
+    font-weight: 700;
+    margin-right: 3px;
   }
   .term-state {
     margin-left: auto;
@@ -652,24 +636,11 @@
   .drow .mode-val.bypass {
     color: var(--coral);
   }
-  .term.working .term-led {
-    background: #e0a458;
-    box-shadow: 0 0 9px #e0a458;
-    animation: term-pulse 1.5s var(--ease) infinite;
-  }
   .term.working .term-state {
     color: #e0a458;
   }
-  .term.waiting .term-led {
-    background: #8faa7e;
-    box-shadow: 0 0 8px rgba(143, 170, 126, 0.75);
-  }
   .term.waiting .term-state {
     color: #8faa7e;
-  }
-  .term.thinking .term-led {
-    background: #e0a458;
-    opacity: 0.55;
   }
 
   .term-scroll {
@@ -770,15 +741,6 @@
     50.01%,
     100% {
       opacity: 0.08;
-    }
-  }
-  @keyframes term-pulse {
-    0%,
-    100% {
-      opacity: 0.5;
-    }
-    50% {
-      opacity: 1;
     }
   }
   .drow .gauge {
