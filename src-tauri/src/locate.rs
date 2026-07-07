@@ -479,21 +479,19 @@ fn applescript_focus_tab(kind: TermKind, tty: &str) -> Result<bool, String> {
         TermKind::Terminal => format!(
             r#"tell application "Terminal"
     set res to "notfound"
+    activate
     repeat with w in windows
         repeat with t in tabs of w
             try
-                if (tty of t) is "{tty}" then
-                    set selected of t to true
-                    set res to "found"
-                    activate
-                    try
-                        set frontmost of w to true
-                    end try
-                    try
-                        set index of w to 1
-                    end try
-                end if
+                set tt to tty of t
+            on error
+                set tt to ""
             end try
+            if tt is "{tty}" then
+                set selected of t to true
+                set frontmost of w to true
+                set res to "found"
+            end if
         end repeat
     end repeat
     return res
@@ -620,14 +618,24 @@ in=$(cat)
 sid=$(printf '%s' "$in" | sed -n 's/.*"session_id"[^"]*"\([^"]*\)".*/\1/p')
 [ -z "$sid" ] && exit 0
 # The session's controlling terminal — read from the process, NOT `tty` (stdin
-# here is the piped payload). For a direct terminal tab this is the tab's own
-# tty (so Tablo can focus that exact tab); inside tmux it's the pane pty.
-rawtty=$(ps -o tty= -p $$ 2>/dev/null | tr -d '[:space:]')
-case "$rawtty" in
-  ''|'??') tty='' ;;
-  /dev/*) tty="$rawtty" ;;
-  *) tty="/dev/$rawtty" ;;
-esac
+# here is the piped payload). Claude Code often runs the hook itself WITHOUT a
+# controlling tty ($$ reports "??"), so walk up the ancestry to the first process
+# that has one: the session's shell / claude, whose controlling tty is the tab's
+# own pty. That exact pty is what lets Tablo focus the right terminal tab
+# (Terminal.app / iTerm). Inside tmux the nearest tty is the pane pty.
+tty=''
+p=$$
+n=0
+while [ -n "$p" ] && [ "$p" -gt 1 ] && [ "$n" -lt 12 ]; do
+  raw=$(ps -o tty= -p "$p" 2>/dev/null | tr -d '[:space:]')
+  case "$raw" in
+    ''|'??') ;;
+    /dev/*) tty="$raw"; break ;;
+    *) tty="/dev/$raw"; break ;;
+  esac
+  p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d '[:space:]')
+  n=$((n + 1))
+done
 curl -s -m 2 -X POST -H 'Content-Type: application/json' \
   "http://127.0.0.1:${PORT}/locate" --data-binary @- >/dev/null 2>&1 <<JSON
 {"sessionId":"$sid","tmux":"$TMUX","tmuxPane":"$TMUX_PANE","termProgram":"$TERM_PROGRAM","termSessionId":"$TERM_SESSION_ID","zedTerm":"$ZED_TERM","windowId":"$WINDOWID","tty":"$tty"}

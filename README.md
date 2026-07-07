@@ -80,6 +80,34 @@ Claude Code subscription token against the API, which is a Terms-of-Service grey
 area (those tokens are authorized for use *by Claude Code*). We deliberately do
 **not** do that, so Tablo has no plan/quota widget.
 
+## Jump to session
+
+Each session card has a **jump** button that focuses the terminal a session is
+running in. Sessions self-report their location through a passive
+`SessionStart` / `UserPromptSubmit` hook; jump then switches tmux to the pane (if
+any) and brings the host terminal to the front.
+
+Pinpointing the *exact tab* needs a terminal that exposes a per-tab tty to
+AppleScript (or a focus-by-id CLI). Support on macOS:
+
+| Terminal | No tmux | Inside tmux |
+|----------|---------|-------------|
+| Terminal.app | Exact window/tab | Exact pane |
+| iTerm2 | Exact tab \* | Exact pane |
+| Ghostty, WezTerm, kitty, Alacritty, Warp, Hyper, Tabby | App only \*\* | Exact pane |
+
+\* The iTerm2 path exists but is currently unverified.
+
+\*\* Brings the app to the front. With a single tab that's the right one; with
+multiple tabs and no tmux it lands on the current tab — these terminals expose no
+scriptable per-tab tty. **Inside tmux, jump is always exact**: tmux selects the
+pane and Tablo just foregrounds the app.
+
+Cross-platform: the tmux pane-switch works everywhere (incl. WSL); the GUI
+window-raise is macOS-only today — Linux (X11 via `wmctrl`/`xdotool`) and Windows
+(`SetForegroundWindow`) are stubbed, and Wayland / Windows-Terminal tabs stay
+honest no-ops.
+
 ## Develop
 
 ```bash
