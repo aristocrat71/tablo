@@ -3,6 +3,8 @@
 export type AvatarState = "idle" | "running" | "alarmed";
 export type Level = "ok" | "warn" | "crit";
 export type SessionState = "run" | "ask";
+// Read-only permission-mode badge: normal / auto-accept edits / plan / bypass.
+export type SessionMode = "normal" | "auto" | "plan" | "bypass";
 
 export interface SessionView {
   id: string;
@@ -14,8 +16,24 @@ export interface SessionView {
   limit: number;
   model: string;
   state: SessionState;
+  mode: SessionMode; // read-only permission-mode badge
   level: Level;
   lastActive: number; // ms epoch
+  title: string | null; // Claude Code's AI session title (disambiguates rows)
+  activity: string; // live one-liner: "editing scanner.rs", "" if unknown
+  activityKind: ActivityKind; // UI hint for icon + state suffix
+  activityLog: ActivityEntry[]; // rolling tail for the dashboard terminal
+  canJump: boolean; // Tablo knows where this session lives (jump button)
+}
+
+export type ActivityKind = "working" | "waiting" | "thinking" | "";
+
+// One line in the terminal tail. `kind` is the block type ("tool" | "text" |
+// "think"); `seq` is monotonic per session so the view can key + animate lines.
+export interface ActivityEntry {
+  seq: number;
+  kind: "user" | "tool" | "text" | "think";
+  text: string;
 }
 
 // A tool call awaiting a human approve/deny (Phase 4). Mirrors Rust
@@ -51,6 +69,12 @@ export interface HookStatus {
   scriptPath: string;
   port: number;
   tools: string[];
+}
+
+// Mirrors Rust `locate::LocateStatus` — session-location reporting for "jump".
+export interface LocateStatus {
+  installed: boolean;
+  scriptPath: string;
 }
 
 // Mirrors the Rust `config::Config` — the single source of truth. The frontend

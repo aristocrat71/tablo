@@ -3,7 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Config, HookStatus, PermDecision, Snapshot } from "./types";
+import type { Config, HookStatus, LocateStatus, PermDecision, Snapshot } from "./types";
 
 export function currentLabel(): string {
   // Read synchronously from the injected window metadata; avoids pulling the
@@ -33,6 +33,13 @@ export const resolvePermission = (id: string, decision: PermDecision) =>
 export const hookStatus = () => invoke<HookStatus>("hook_status");
 export const setHookEnabled = (enabled: boolean) =>
   invoke<HookStatus>("set_hook_enabled", { enabled });
+
+// ---- window-render: jump to session ----
+export const jumpToSession = (sessionId: string) =>
+  invoke<string>("jump_to_session", { sessionId });
+export const locateStatus = () => invoke<LocateStatus>("locate_status");
+export const setLocateEnabled = (enabled: boolean) =>
+  invoke<LocateStatus>("set_locate_enabled", { enabled });
 
 export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
   return listen<Snapshot>("state-update", (e) => cb(e.payload));

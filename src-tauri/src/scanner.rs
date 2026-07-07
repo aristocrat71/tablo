@@ -15,6 +15,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::Config;
 
+/// One line in a session's rolling activity log — the raw material for the
+/// dashboard's terminal preview. `kind` is the block's own type ("tool" for a
+/// tool call, "text" for spoken output, "think" for thinking), distinct from the
+/// working/waiting UI state on `SessionView`. `seq` is monotonic per session so
+/// the frontend can key each line stably and only animate genuinely-new ones.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityEntry {
+    pub seq: u64,
+    pub kind: String,
+    pub text: String,
+}
+
 /// One active session, shaped for the webviews (camelCase JSON).
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -30,10 +43,28 @@ pub struct SessionView {
     pub model: String,
     /// "run" (working) or "ask" (input-requested — reserved for Phase 4).
     pub state: String,
+    /// The session's permission mode for the read-only badge: "normal" | "auto"
+    /// | "plan" | "bypass". Derived from the last *resting* `permissionMode`;
+    /// Claude Code's transient "auto" execution-heartbeat is filtered out.
+    pub mode: String,
     /// "ok" | "warn" | "crit" per the configured thresholds.
     pub level: String,
     /// Transcript mtime, ms since epoch.
     pub last_active: i64,
+    /// Claude Code's AI-generated one-line title for the session (window-render).
+    /// Disambiguates same-project sessions; None until Claude Code writes one.
+    pub title: Option<String>,
+    /// One-line preview of the session's current activity, e.g. "editing
+    /// scanner.rs", "running cargo check". Empty until an assistant line lands.
+    pub activity: String,
+    /// UI hint for the activity: "working" | "waiting" | "thinking" | "".
+    pub activity_kind: String,
+    /// Rolling tail of recent activity lines for the dashboard terminal preview
+    /// (oldest → newest, capped). Empty until an assistant line lands.
+    pub activity_log: Vec<ActivityEntry>,
+    /// Whether Tablo knows where this session lives (drives the "jump" button).
+    /// Set false by `scan`; the emit path overlays it from the location cache.
+    pub can_jump: bool,
 }
 
 /// Full aggregate pushed to every window as the `state-update` event.
@@ -83,8 +114,23 @@ pub struct FileState {
     cwd: String,
     branch: Option<String>,
     session_id: String,
+    /// Last *resting* permission mode, raw Claude Code value ("default" |
+    /// "acceptEdits" | "plan" | "bypassPermissions"). The transient "auto"
+    /// heartbeat is ignored so the badge doesn't flicker. Empty until first seen.
+    mode: String,
     /// Sticky once we've inferred the 1M window for this session.
     is_1m: bool,
+    /// Live activity preview (window-render): a one-line summary of what the
+    /// session is doing right now, plus its kind for UI styling, and Claude
+    /// Code's own AI-generated title for the session.
+    title: Option<String>,
+    activity: String,
+    /// "working" | "waiting" | "thinking" | "" (unknown / no assistant line yet).
+    activity_kind: String,
+    /// Rolling recent-activity buffer (capped at ACTIVITY_LOG_CAP) + its
+    /// monotonic sequence source, for the dashboard terminal.
+    log: Vec<ActivityEntry>,
+    seq: u64,
 }
 
 pub fn now_ms() -> i64 {
@@ -315,6 +361,18 @@ fn level_for(pct: f64, cfg: &Config) -> &'static str {
     }
 }
 
+/// Map Claude Code's raw `permissionMode` to the read-only badge label. Both
+/// "auto" (current name) and "acceptEdits" (older name) are the ⏵⏵ accept-edits
+/// mode. A session with no explicit mode signal reads "normal".
+fn display_mode(raw: &str) -> &'static str {
+    match raw {
+        "auto" | "acceptEdits" => "auto",
+        "plan" => "plan",
+        "bypassPermissions" => "bypass",
+        _ => "normal",
+    }
+}
+
 /// Ingest newly-appended lines into a file's tail state.
 fn ingest(state: &mut FileState, lines: &[String]) {
     for line in lines {
@@ -334,15 +392,273 @@ fn ingest(state: &mut FileState, lines: &[String]) {
         if let Some(sid) = v.get("sessionId").and_then(|x| x.as_str()) {
             state.session_id = sid.to_string();
         }
-        // Context occupancy comes from the *latest* assistant usage block.
-        if v.get("type").and_then(|x| x.as_str()) == Some("assistant") {
-            if let Some(usage) = v.get("message").and_then(|m| m.get("usage")) {
-                state.used = usage_total(usage);
-            }
-            if let Some(model) = v.get("message").and_then(|m| m.get("model")).and_then(|x| x.as_str()) {
-                state.model = model.to_string();
+        // Permission mode rides top-level on the meta `permission-mode` line and
+        // on typed prompts. Last value wins — the tail reflects the session's
+        // current mode ("auto" = the user's ⏵⏵ accept-edits mode; "default" =
+        // normal). Skip an empty value so a value-less line never clears it.
+        if let Some(pm) = v.get("permissionMode").and_then(|x| x.as_str()) {
+            if !pm.is_empty() {
+                state.mode = pm.to_string();
             }
         }
+        match v.get("type").and_then(|x| x.as_str()) {
+            // Context occupancy comes from the *latest* assistant usage block;
+            // the same line also updates the live activity preview.
+            Some("assistant") => {
+                if let Some(msg) = v.get("message") {
+                    if let Some(usage) = msg.get("usage") {
+                        state.used = usage_total(usage);
+                    }
+                    if let Some(model) = msg.get("model").and_then(|x| x.as_str()) {
+                        state.model = model.to_string();
+                    }
+                    update_activity(state, msg);
+                }
+            }
+            // Claude Code's own AI-generated session title.
+            Some("ai-title") => {
+                if let Some(t) = v.get("aiTitle").and_then(|x| x.as_str()) {
+                    let t = t.trim();
+                    if !t.is_empty() {
+                        state.title = Some(t.to_string());
+                    }
+                }
+            }
+            // A fresh user prompt means the agent is about to work again — clear a
+            // stale "waiting for you" until the next assistant line lands. Tool
+            // results (content is a list of tool_result blocks) are not prompts.
+            Some("user") => {
+                // The human's own typed prompt gets its own line in the tail.
+                if let Some(text) = typed_prompt_text(&v) {
+                    push_log(state, "user", &text);
+                }
+                if is_user_prompt(v.get("message")) {
+                    state.activity = "thinking…".into();
+                    state.activity_kind = "working".into();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// True when a `user` line is a real human prompt, not a tool_result carrier.
+fn is_user_prompt(msg: Option<&serde_json::Value>) -> bool {
+    match msg.and_then(|m| m.get("content")) {
+        Some(serde_json::Value::String(s)) => !s.trim().is_empty(),
+        Some(serde_json::Value::Array(blocks)) => !blocks.iter().any(|b| {
+            b.get("type").and_then(|t| t.as_str()) == Some("tool_result")
+        }),
+        _ => false,
+    }
+}
+
+/// Derive the live activity from an assistant message. Claude Code writes
+/// thinking / text / tool_use as their own lines, so the newest assistant line
+/// is the current action. Every meaningful block is appended to the rolling log
+/// (the terminal tail); the last block also drives the one-line preview + the
+/// working/waiting/thinking state used by both surfaces.
+fn update_activity(state: &mut FileState, msg: &serde_json::Value) {
+    let end_turn = msg.get("stop_reason").and_then(|v| v.as_str()) == Some("end_turn");
+    // Meaningful blocks in order: (block-kind, text).
+    let mut blocks: Vec<(&'static str, String)> = Vec::new();
+    match msg.get("content") {
+        Some(serde_json::Value::String(s)) => {
+            let sn = snippet(s);
+            if !sn.is_empty() {
+                blocks.push(("text", sn));
+            }
+        }
+        Some(serde_json::Value::Array(arr)) => {
+            for b in arr {
+                match b.get("type").and_then(|t| t.as_str()) {
+                    Some("tool_use") => {
+                        let name = b.get("name").and_then(|x| x.as_str()).unwrap_or("tool");
+                        let input = b.get("input").cloned().unwrap_or(serde_json::Value::Null);
+                        blocks.push(("tool", summarize_activity(name, &input)));
+                    }
+                    Some("text") => {
+                        let sn = snippet(b.get("text").and_then(|x| x.as_str()).unwrap_or(""));
+                        if !sn.is_empty() {
+                            blocks.push(("text", sn));
+                        }
+                    }
+                    Some("thinking") => blocks.push(("think", "thinking…".into())),
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+
+    if blocks.is_empty() {
+        // A bare end-of-turn (e.g. a stop with no renderable block): the agent
+        // handed back to the user.
+        if end_turn {
+            state.activity_kind = "waiting".into();
+        }
+        return;
+    }
+
+    // Append every block to the rolling terminal log.
+    for (kind, text) in &blocks {
+        push_log(state, kind, text);
+    }
+
+    // The last block is the current action → the single-line preview + state.
+    // The log keeps the long form (dashboard terminal); the panel's compact
+    // one-liner gets a shorter cut.
+    let (last_kind, last_text) = blocks.last().unwrap();
+    state.activity = truncate_activity(last_text, ACTIVITY_MAX);
+    state.activity_kind = match *last_kind {
+        "tool" => "working",
+        "think" => "thinking",
+        // A finished text turn means the agent handed back to the user.
+        _ if end_turn => "waiting",
+        _ => "working",
+    }
+    .into();
+}
+
+/// Max chars for the panel's compact single-line activity preview.
+const ACTIVITY_MAX: usize = 52;
+/// Max chars kept per rolling-log line. The dashboard terminal is far wider than
+/// the panel, so it stores a longer line and lets CSS ellipsize the overflow.
+const TERM_LINE_MAX: usize = 120;
+/// Recent-activity lines retained per session for the terminal tail.
+const ACTIVITY_LOG_CAP: usize = 8;
+
+/// Append one line to the rolling terminal log, skipping an exact repeat of the
+/// last line (a re-emitted message shouldn't duplicate) and capping the buffer.
+fn push_log(state: &mut FileState, kind: &str, text: &str) {
+    let dup = state
+        .log
+        .last()
+        .map(|e| e.kind == kind && e.text == text)
+        .unwrap_or(false);
+    if dup {
+        return;
+    }
+    state.seq += 1;
+    state.log.push(ActivityEntry {
+        seq: state.seq,
+        kind: kind.into(),
+        text: text.into(),
+    });
+    if state.log.len() > ACTIVITY_LOG_CAP {
+        state.log.drain(0..state.log.len() - ACTIVITY_LOG_CAP);
+    }
+}
+
+/// The clean text of a prompt the human actually typed, or None. Claude Code
+/// marks these with `promptSource: "typed"`; tool-results and auto-injected
+/// context ride other `user` lines without it. Content is a plain string, or a
+/// block list whose `text` blocks we join.
+fn typed_prompt_text(v: &serde_json::Value) -> Option<String> {
+    if v.get("promptSource").and_then(|s| s.as_str()) != Some("typed") {
+        return None;
+    }
+    let content = v.get("message").and_then(|m| m.get("content"))?;
+    let raw = match content {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(blocks) => blocks
+            .iter()
+            .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
+            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => return None,
+    };
+    let sn = snippet(&raw);
+    if sn.is_empty() {
+        None
+    } else {
+        Some(sn)
+    }
+}
+
+fn base_name(p: &str) -> &str {
+    Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p)
+}
+
+fn url_host(u: &str) -> &str {
+    let after = u.split_once("://").map(|(_, r)| r).unwrap_or(u);
+    after.split('/').next().unwrap_or(after)
+}
+
+fn arg<'a>(input: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+    input.get(key).and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// Human, verb-led one-liner for a tool call ("editing scanner.rs", "running
+/// cargo check"). Richer than the permission card's raw preview — this is the
+/// at-a-glance "what's happening" line. The leading icon/state suffix are added
+/// by the UI from `activity_kind`, so this returns just the phrase.
+fn summarize_activity(tool: &str, input: &serde_json::Value) -> String {
+    let s: String = match tool {
+        "Bash" => arg(input, "description")
+            .map(str::to_string)
+            .or_else(|| arg(input, "command").map(|c| format!("running {c}")))
+            .unwrap_or_else(|| "running a command".into()),
+        "Read" => arg(input, "file_path")
+            .map(|p| format!("reading {}", base_name(p)))
+            .unwrap_or_else(|| "reading a file".into()),
+        "Edit" | "MultiEdit" => arg(input, "file_path")
+            .map(|p| format!("editing {}", base_name(p)))
+            .unwrap_or_else(|| "editing a file".into()),
+        "Write" => arg(input, "file_path")
+            .map(|p| format!("writing {}", base_name(p)))
+            .unwrap_or_else(|| "writing a file".into()),
+        "NotebookEdit" => arg(input, "notebook_path")
+            .map(|p| format!("editing {}", base_name(p)))
+            .unwrap_or_else(|| "editing a notebook".into()),
+        "Grep" => arg(input, "pattern")
+            .map(|p| format!("searching \"{p}\""))
+            .unwrap_or_else(|| "searching the code".into()),
+        "Glob" => arg(input, "pattern")
+            .map(|p| format!("finding {p}"))
+            .unwrap_or_else(|| "finding files".into()),
+        "Task" | "Agent" => arg(input, "description")
+            .or_else(|| arg(input, "subagent_type"))
+            .map(|d| format!("agent: {d}"))
+            .unwrap_or_else(|| "running an agent".into()),
+        "WebFetch" => arg(input, "url")
+            .map(|u| format!("fetching {}", url_host(u)))
+            .unwrap_or_else(|| "fetching a page".into()),
+        "WebSearch" => arg(input, "query")
+            .map(|q| format!("searching the web: {q}"))
+            .unwrap_or_else(|| "searching the web".into()),
+        "TodoWrite" => "updating the plan".into(),
+        "ExitPlanMode" => "presenting a plan".into(),
+        "AskUserQuestion" => "asking you a question".into(),
+        t if t.starts_with("Task") => "planning".into(),
+        t if t.starts_with("mcp__") => {
+            let mut it = t.splitn(3, "__");
+            match (it.next(), it.next(), it.next()) {
+                (_, Some(server), Some(name)) => format!("{server}: {}", name.replace('_', " ")),
+                _ => t.to_string(),
+            }
+        }
+        other => other.to_string(),
+    };
+    truncate_activity(&s, TERM_LINE_MAX)
+}
+
+/// Collapse whitespace and trim leading markdown so a text block reads as one
+/// clean line.
+fn snippet(s: &str) -> String {
+    let cleaned = s.trim_start_matches(|c: char| "#*->` \t".contains(c));
+    let one_line = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_activity(&one_line, TERM_LINE_MAX)
+}
+
+fn truncate_activity(s: &str, max: usize) -> String {
+    let s = s.trim();
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{}…", head.trim_end())
     }
 }
 
@@ -462,8 +778,14 @@ pub fn scan(
                 limit,
                 model: st.model.clone(),
                 state: "run".into(), // Phase 4 will surface "ask"
+                mode: display_mode(&st.mode).into(),
                 level: level_for(pct, cfg).into(),
                 last_active: mtime,
+                title: st.title.clone(),
+                activity: st.activity.clone(),
+                activity_kind: st.activity_kind.clone(),
+                activity_log: st.log.clone(),
+                can_jump: false, // overlaid in the emit path from the location cache
             });
         }
     }
@@ -528,14 +850,119 @@ mod tests {
         );
         for s in &snap.sessions {
             println!(
-                "  {:<22} [{:^4}] {:>5}%  {:>8}/{:<9} model={:<20} branch={:?}",
-                s.project, s.level, s.pct, s.used, s.limit, s.model, s.branch
+                "  {:<22} [{:^4}] {:>5}%  {:>8}/{:<9} branch={:?}",
+                s.project, s.level, s.pct, s.used, s.limit, s.branch
             );
+            println!(
+                "      title={:?}\n      activity=[{}] {}",
+                s.title, s.activity_kind, s.activity
+            );
+            for e in &s.activity_log {
+                println!("        {:>3} {:<5} {}", e.seq, e.kind, e.text);
+            }
         }
         // Every reported session must have a sane percentage.
         for s in &snap.sessions {
             assert!(s.pct >= 0.0 && s.pct <= 100.0, "pct out of range: {}", s.pct);
             assert!(s.limit > 0, "limit must be positive");
         }
+    }
+
+    #[test]
+    fn activity_summaries_are_human() {
+        use serde_json::json;
+        // Bash prefers the human description, falls back to the command.
+        assert_eq!(
+            summarize_activity("Bash", &json!({ "command": "cargo check", "description": "Type-check the crate" })),
+            "Type-check the crate"
+        );
+        assert_eq!(summarize_activity("Bash", &json!({ "command": "ls -la" })), "running ls -la");
+        // File tools show just the basename with a verb.
+        assert_eq!(
+            summarize_activity("Edit", &json!({ "file_path": "/Users/x/proj/src/scanner.rs" })),
+            "editing scanner.rs"
+        );
+        assert_eq!(
+            summarize_activity("Read", &json!({ "file_path": "/a/b/Panel.svelte" })),
+            "reading Panel.svelte"
+        );
+        // MCP tools decode server + tool name.
+        assert_eq!(
+            summarize_activity("mcp__wel__list_projects", &json!({})),
+            "wel: list projects"
+        );
+    }
+
+    #[test]
+    fn permission_mode_maps_last_value() {
+        let mut st = FileState::default();
+        // Unseen ⇒ normal.
+        assert_eq!(display_mode(&st.mode), "normal");
+        // "auto" is the user's ⏵⏵ accept-edits mode → shown as "auto".
+        ingest(&mut st, &[r#"{"type":"permission-mode","permissionMode":"auto"}"#.into()]);
+        assert_eq!(display_mode(&st.mode), "auto");
+        // "acceptEdits" (older name for the same mode) → also "auto".
+        ingest(&mut st, &[r#"{"type":"permission-mode","permissionMode":"acceptEdits"}"#.into()]);
+        assert_eq!(display_mode(&st.mode), "auto");
+        // Plan carries through; last value wins.
+        ingest(&mut st, &[r#"{"type":"permission-mode","permissionMode":"plan"}"#.into()]);
+        assert_eq!(display_mode(&st.mode), "plan");
+        // A typed prompt carries the mode too; default ⇒ normal.
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","promptSource":"typed","permissionMode":"default","message":{"content":"go"}}"#.into()],
+        );
+        assert_eq!(display_mode(&st.mode), "normal");
+    }
+
+    #[test]
+    fn activity_tracks_tool_then_waits_on_end_turn() {
+        let mut st = FileState::default();
+        // A tool call ⇒ working.
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/x/lib.rs"}}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "working");
+        assert_eq!(st.activity, "reading lib.rs");
+        // The rolling terminal log captured the tool line.
+        assert_eq!(st.log.len(), 1);
+        assert_eq!((st.log[0].kind.as_str(), st.log[0].text.as_str()), ("tool", "reading lib.rs"));
+
+        // A finished text turn ⇒ waiting for the user.
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"All done — tests pass."}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "waiting");
+        assert_eq!(st.activity, "All done — tests pass.");
+        // Log now has the tool line then the output line, with rising seqs.
+        assert_eq!(st.log.len(), 2);
+        assert_eq!(st.log[1].kind, "text");
+        assert!(st.log[1].seq > st.log[0].seq);
+
+        // The AI title rides along.
+        ingest(&mut st, &[r#"{"type":"ai-title","aiTitle":"Fix the scanner"}"#.into()]);
+        assert_eq!(st.title.as_deref(), Some("Fix the scanner"));
+
+        // A typed user prompt clears the stale "waiting" AND joins the tail.
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","promptSource":"typed","message":{"content":"now do X"}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "working");
+        assert_eq!(st.log.len(), 3);
+        assert_eq!((st.log[2].kind.as_str(), st.log[2].text.as_str()), ("user", "now do X"));
+
+        // A tool_result is neither a typed prompt nor a reset — no log line, no
+        // activity overwrite.
+        st.activity = "editing a.rs".into();
+        st.activity_kind = "working".into();
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#.into()],
+        );
+        assert_eq!(st.activity, "editing a.rs", "tool_result should not overwrite activity");
+        assert_eq!(st.log.len(), 3, "tool_result must not add a log line");
     }
 }

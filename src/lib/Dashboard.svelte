@@ -1,10 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "./state.svelte";
-  import { pct, planTier } from "./format";
+  import { fade } from "svelte/transition";
+  import { pct, planTier, activityMark, terminalStatus } from "./format";
   import { prefs, byMode } from "./prefs.svelte";
-  import { hookStatus, setHookEnabled, resolvePermission } from "./bridge";
-  import type { HookStatus, PermDecision, PendingRequest, SessionView } from "./types";
+  import {
+    hookStatus,
+    setHookEnabled,
+    resolvePermission,
+    locateStatus,
+    setLocateEnabled,
+    jumpToSession,
+  } from "./bridge";
+  import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
 
   type Card = {
     key: string;
@@ -46,9 +54,13 @@
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
   let busy = $state(false);
+  // ---- window-render: session-location ("jump") hook status ----
+  let loc = $state<LocateStatus | null>(null);
+  let locBusy = $state(false);
 
   onMount(() => {
     hookStatus().then((s) => (hook = s)).catch(() => {});
+    locateStatus().then((s) => (loc = s)).catch(() => {});
   });
 
   async function toggleApprovals() {
@@ -63,8 +75,24 @@
     }
   }
 
+  async function toggleLocate() {
+    if (locBusy) return;
+    locBusy = true;
+    try {
+      loc = await setLocateEnabled(!(loc?.installed ?? false));
+    } catch {
+      /* leave prior status */
+    } finally {
+      locBusy = false;
+    }
+  }
+
   function decide(id: string, decision: PermDecision) {
     resolvePermission(id, decision);
+  }
+
+  function jump(sessionId: string) {
+    jumpToSession(sessionId).catch(() => {});
   }
 </script>
 
@@ -101,6 +129,18 @@
           approvals {hook.installed ? "on" : "off"}
         </button>
       {/if}
+      {#if loc}
+        <button
+          class="approvals-toggle"
+          class:on={loc.installed}
+          disabled={locBusy}
+          title="Lets Tablo focus the window a session lives in. Reports each session's tmux pane / terminal app (no tool interception)."
+          onclick={toggleLocate}
+        >
+          <span class="dot"></span>
+          jump {loc.installed ? "on" : "off"}
+        </button>
+      {/if}
       {#if tier}
         <div class="plan-chip" title="Subscription tier (live quota isn't exposed locally)">
           {tier} <span>plan</span>
@@ -109,51 +149,102 @@
     </div>
   </div>
 
-
   <div class="dash-grid">
     <div class="card">
       <h3>Sessions <span class="n">{cards.length}</span></h3>
       {#if cards.length === 0}
         <div class="dash-empty">Nothing running. Tablo is watching.</div>
       {:else}
+        <div class="legend" aria-hidden="true">
+          <span><i class="lmk user">#</i> user prompt</span>
+          <span><i class="lmk agent">&gt;</i> agent response</span>
+        </div>
         {#each cards as c (c.key)}
-          <div class="scard" class:needs={c.requests.length > 0}>
-            <div class="drow">
-              <span class="st {c.requests.length ? 'ask' : 'run'}"></span>
-              <div class="info">
-                <div class="p">{c.project}</div>
-                <div class="path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
-              </div>
-              {#if c.session}
-                <div class="gauge">
-                  <div class="lab">
-                    <span>context</span>
-                    <span class="val" class:warn={c.session.level === "warn"} class:crit={c.session.level === "crit"}>
-                      {pct(c.session.pct)}
-                    </span>
-                  </div>
-                  <div class="tk"><i class={c.session.level} style="width:{c.session.pct}%"></i></div>
-                </div>
-              {/if}
-            </div>
-            {#each c.requests as p (p.id)}
-              <div class="arow">
-                <div class="ainfo">
-                  <div class="atool"><span class="tag">{p.tool}</span></div>
-                  {#if p.detail}<div class="adetail">{p.detail}</div>{/if}
-                </div>
-                <div class="aacts">
-                  <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
-                  <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
-                </div>
-              </div>
-            {/each}
-          </div>
+          {@render sessionCard(c)}
         {/each}
       {/if}
     </div>
   </div>
 </div>
+
+{#snippet sessionCard(c: Card)}
+  <div class="scard" class:needs={c.requests.length > 0}>
+    <div class="drow">
+      <span class="st {c.requests.length ? 'ask' : 'run'}"></span>
+      <div class="info">
+        <div class="p">
+          <span class="pname">{c.project}</span>
+          {#if c.session?.title}
+            <span class="psep">·</span>
+            <span class="ptitle">{c.session.title}</span>
+          {/if}
+        </div>
+        <div class="path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
+      </div>
+      {#if c.session}
+        <span class="mode-badge">mode : <span class="mode-val {c.session.mode}">{c.session.mode}</span></span>
+        <div class="gauge">
+          <div class="lab">
+            <span>context</span>
+            <span class="val" class:warn={c.session.level === "warn"} class:crit={c.session.level === "crit"}>
+              {pct(c.session.pct)}
+            </span>
+          </div>
+          <div class="tk"><i class={c.session.level} style="width:{c.session.pct}%"></i></div>
+        </div>
+      {/if}
+      {#if c.session?.canJump}
+        <button class="jump" title="Focus the window this session lives in" onclick={() => jump(c.session!.id)}>
+          jump &rarr;
+        </button>
+      {/if}
+    </div>
+
+    {#if c.session}
+      {@render terminal(c.session)}
+    {/if}
+    {#each c.requests as p (p.id)}
+      <div class="arow">
+        <div class="ainfo">
+          <div class="atool"><span class="tag">{p.tool}</span></div>
+          {#if p.detail}<div class="adetail">{p.detail}</div>{/if}
+        </div>
+        <div class="aacts">
+          <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
+          <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
+        </div>
+      </div>
+    {/each}
+  </div>
+{/snippet}
+
+<!-- Per-session terminal preview: a recessed amber-phosphor screen tailing the
+     agent's recent activity. State lives on the wrapper's kind class. -->
+{#snippet terminal(s: SessionView)}
+  <div class="term {s.activityKind || 'idle'}">
+    <div class="term-bar">
+      <span class="term-led"></span>
+      <span class="term-name">tablo{s.branch ? `:${s.branch}` : ""}</span>
+      <span class="term-state">{terminalStatus(s.activityKind)}</span>
+    </div>
+    <div class="term-scroll">
+      {#if s.activityLog.length === 0}
+        <div class="term-line think"><span class="mk">&gt;</span><span class="tx">awaiting activity</span></div>
+      {:else}
+        {#each s.activityLog as ln (ln.seq)}
+          <div class="term-line {ln.kind}" in:fade={{ duration: 160 }}>
+            <span class="mk">{activityMark(ln.kind)}</span>
+            <span class="tx">{ln.text}</span>
+          </div>
+        {/each}
+      {/if}
+      <div class="term-line caret">
+        <span class="mk">&gt;</span>
+        <span class="cur" class:blink={s.activityKind === "working"}></span>
+      </div>
+    </div>
+  </div>
+{/snippet}
 
 <style>
   .dash {
@@ -272,7 +363,7 @@
 
   /* one session block: its context row + any pending requests, unified */
   .scard {
-    padding: 11px 0;
+    padding: 16px 0;
     border-bottom: 1px solid var(--border-soft);
   }
   .scard:last-child {
@@ -380,10 +471,30 @@
     margin-left: auto;
   }
 
+  /* key for the terminal markers, shown once above the session list */
+  .legend {
+    display: flex;
+    gap: 18px;
+    padding: 0 2px 12px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border-soft);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    text-transform: none;
+  }
+  .legend .lmk {
+    font-style: normal;
+    font-weight: 700;
+    margin-right: 6px;
+    color: var(--amber);
+  }
+
   .drow {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     padding: 3px 0;
   }
   .drow .st {
@@ -405,9 +516,24 @@
     min-width: 0;
   }
   .drow .info .p {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
     font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
+    overflow: hidden;
+  }
+  .drow .info .p .pname {
+    flex-shrink: 0;
+  }
+  .drow .info .p .psep {
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+  .drow .info .p .ptitle {
+    font-weight: 500;
+    color: var(--ink-dim);
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -418,10 +544,240 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    margin-top: 3px;
+  }
+  /* ===== terminal preview (window-render) — a recessed amber-phosphor screen.
+     Colors are fixed dark (a "screen" reads as intentional in both themes). ===== */
+  .term {
+    margin-top: 13px;
+    border-radius: 11px;
+    border: 1px solid #2b2015;
+    background:
+      radial-gradient(130% 80% at 50% -20%, rgba(224, 164, 88, 0.1), transparent 55%),
+      #140e07;
+    box-shadow:
+      inset 0 1px 0 rgba(224, 164, 88, 0.06),
+      inset 0 0 44px rgba(0, 0, 0, 0.55),
+      0 2px 12px -6px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+    position: relative;
+  }
+  /* faint scanlines — kept low so it never turns into full CRT */
+  .term::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(0, 0, 0, 0.12) 2px 3px);
+    opacity: 0.5;
+  }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-bottom: 1px solid #241a10;
+    background: linear-gradient(180deg, rgba(224, 164, 88, 0.05), transparent);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    position: relative;
+    z-index: 1;
+  }
+  .term-led {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #6f6250;
+    flex-shrink: 0;
+  }
+  .term-name {
+    color: #9c8c78;
+  }
+  .term-state {
+    margin-left: auto;
+    color: #6f6250;
+  }
+  /* jump button — top-right of the row, beside the context gauge */
+  .drow .jump {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--amber);
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in srgb, var(--amber) 32%, transparent);
+    border-radius: 6px;
+    padding: 5px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    align-self: flex-end; /* lower edge lines up with the mode text */
+    transition:
+      background-color 0.15s var(--ease),
+      transform 0.12s var(--ease);
+  }
+  .drow .jump:hover {
+    background: color-mix(in srgb, var(--amber) 22%, var(--amber-soft));
+    transform: translateY(-1px);
+  }
+  /* read-only permission-mode badge — sits just left of the context gauge,
+     dropped to the bottom of the row so it lines up with the path/branch text */
+  .drow .mode-badge {
+    flex-shrink: 0;
+    align-self: flex-end;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .drow .mode-val {
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .drow .mode-val.auto {
+    color: var(--amber);
+  }
+  .drow .mode-val.plan {
+    color: var(--sage);
+  }
+  .drow .mode-val.bypass {
+    color: var(--coral);
+  }
+  .term.working .term-led {
+    background: #e0a458;
+    box-shadow: 0 0 9px #e0a458;
+    animation: term-pulse 1.5s var(--ease) infinite;
+  }
+  .term.working .term-state {
+    color: #e0a458;
+  }
+  .term.waiting .term-led {
+    background: #8faa7e;
+    box-shadow: 0 0 8px rgba(143, 170, 126, 0.75);
+  }
+  .term.waiting .term-state {
+    color: #8faa7e;
+  }
+  .term.thinking .term-led {
+    background: #e0a458;
+    opacity: 0.55;
+  }
+
+  .term-scroll {
+    padding: 11px 13px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.75;
+    min-height: 92px;
+    max-height: 176px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end; /* stick to the bottom like tail -f */
+    position: relative;
+    z-index: 1;
+  }
+  .term-line {
+    display: flex;
+    gap: 9px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .term-line .mk {
+    flex-shrink: 0;
+    width: 9px;
+    text-align: center;
+  }
+  .term-line .tx {
+    flex: 1;
+    min-width: 0; /* lets text-overflow ellipsis kick in inside the flex row */
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* the human's own prompt — brightest line, and a little air above marks a
+     new turn (you asked, then the agent did X, Y, Z) */
+  .term-line.user {
+    margin-top: 7px;
+  }
+  .term-line.user:first-child {
+    margin-top: 0;
+  }
+  .term-line.user .mk {
+    color: #e0a458;
+    font-weight: 700;
+    text-shadow: 0 0 9px rgba(224, 164, 88, 0.5);
+  }
+  .term-line.user .tx {
+    color: #f6ead8;
+    font-weight: 600;
+  }
+  /* tool call = the command line, bright amber phosphor */
+  .term-line.tool .mk {
+    color: #e0a458;
+  }
+  .term-line.tool .tx {
+    color: #f1ddc0;
+    text-shadow: 0 0 10px rgba(224, 164, 88, 0.3);
+  }
+  /* spoken text = output, warm cream */
+  .term-line.text .mk {
+    color: #6f6250;
+  }
+  .term-line.text .tx {
+    color: #c9b8a0;
+  }
+  /* thinking = dim comment */
+  .term-line.think {
+    opacity: 0.62;
+  }
+  .term-line.think .mk {
+    color: #6f6250;
+  }
+  .term-line.think .tx {
+    color: #8a7c69;
+    font-style: italic;
+  }
+  /* live caret line */
+  .term-line.caret .mk {
+    color: #e0a458;
+  }
+  .cur {
+    display: inline-block;
+    width: 8px;
+    height: 13px;
+    align-self: center;
+    background: #e0a458;
+    box-shadow: 0 0 9px rgba(224, 164, 88, 0.55);
+    opacity: 0.22;
+  }
+  .cur.blink {
+    animation: term-blink 1.05s steps(1) infinite;
+  }
+  @keyframes term-blink {
+    0%,
+    50% {
+      opacity: 0.95;
+    }
+    50.01%,
+    100% {
+      opacity: 0.08;
+    }
+  }
+  @keyframes term-pulse {
+    0%,
+    100% {
+      opacity: 0.5;
+    }
+    50% {
+      opacity: 1;
+    }
   }
   .drow .gauge {
-    width: 108px;
+    width: 168px;
     flex-shrink: 0;
+    align-self: flex-end; /* bar's lower edge lines up with the mode text */
   }
   .drow .gauge .lab {
     display: flex;

@@ -10,6 +10,7 @@
 //! keep only the cat interactive.
 
 mod config;
+mod locate;
 mod permission;
 mod scanner;
 
@@ -69,6 +70,9 @@ pub(crate) struct AppState {
     pub(crate) perm_server_up: AtomicBool,
     /// Pending ids already notified, so each approval notifies once.
     prev_pending: Mutex<HashSet<String>>,
+    /// Window-render — session id → where it lives, self-reported by the locate
+    /// hook, for "jump to session".
+    pub(crate) session_locations: Mutex<HashMap<String, locate::SessionLocation>>,
 }
 
 #[derive(Serialize)]
@@ -276,6 +280,14 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
     }
     snap.pending = pending;
 
+    // Overlay "jump to session" availability from the location cache.
+    {
+        let locs = state.session_locations.lock().unwrap();
+        for s in &mut snap.sessions {
+            s.can_jump = locs.contains_key(&s.id);
+        }
+    }
+
     fire_notifications(app, &state, &cfg, &snap);
     fire_permission_notifications(app, &state, &cfg, &snap);
 
@@ -470,12 +482,16 @@ pub fn run() {
                 perm_seq: AtomicU64::new(0),
                 perm_server_up: AtomicBool::new(false),
                 prev_pending: Mutex::new(HashSet::new()),
+                session_locations: Mutex::new(HashMap::new()),
             });
 
             // Keep the hook script in sync with the current port/timeout (safe,
             // idempotent — it's Tablo's own file). Enabling approvals, which
             // edits ~/.claude/settings.json, stays an explicit UI action.
             let _ = permission::write_hook_script(hook_port, hook_timeout);
+            // Locate hook script is written too (harmless, Tablo's own file);
+            // wiring it into settings.json stays an explicit UI action.
+            let _ = locate::write_locate_script(hook_port);
             permission::spawn_server(handle.clone());
 
             spawn_watcher(handle.clone());
@@ -494,6 +510,9 @@ pub fn run() {
             permission::resolve_permission,
             permission::hook_status,
             permission::set_hook_enabled,
+            locate::jump_to_session,
+            locate::locate_status,
+            locate::set_locate_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

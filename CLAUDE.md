@@ -306,11 +306,22 @@ Requires `curl` (present on macOS).
 
 ---
 
-## Phase 5 — Dashboard
+## Phase 5 — Dashboard — **ON HOLD (do not build unprompted)**
 
-- A localhost browser view aggregating context %, plan usage, permission history, and session list. Opened from the panel's **Open dashboard** button.
-- Match the dashboard in the **Visual design direction** section / `tablo-mockups-v3.html`: compact inline headline stats (active / waiting / projects), a sessions list with per-session context gauges, and a **vertical** segmented-LED plan-usage bar with a plan-meta list.
-- The avatar stays the tiny glanceable surface; the panel links out to this deep view.
+The dashboard already exists as a **Tauri window** (session list, per-session
+context gauges, plan chip, live approvals, inline stat line). The original Phase 5
+idea — re-plumb it as a **localhost browser view** — is deferred: with Phase 3
+(plan usage) cancelled, a browser version would render ~the same content, so its
+only real value is browser/phone/LAN access.
+
+**Firm scope decisions (2026-07-06, Mitul):**
+- **Permission history: NOT wanted, ever.** Do NOT build, persist, or even
+  suggest a log of past approvals. Only *live* pending approvals are tracked, and
+  that's final. Drop it from any Phase 5 scope.
+- **Browser/localhost dashboard: wait for Mitul.** He is planning specific
+  features for the browser direction and will share them in a fresh session. Do
+  NOT proactively scope or build the localhost server / browser view until he
+  brings those requirements.
 
 ---
 
@@ -323,7 +334,7 @@ Requires `curl` (present on macOS).
 | 2 | Multi-session list in panel | — (render only) |
 | 3 | ~~Plan/session usage~~ **cancelled** (only static plan-tier chip shipped) | — (no live quota on disk) |
 | 4 | Permission approve/deny **(built)** | Claude Code `PreToolUse` hook + loopback server |
-| 5 | Dashboard | — (aggregation) |
+| 5 | Dashboard **(on hold — awaiting Mitul's browser feature ideas; NO permission history)** | — |
 
 ---
 

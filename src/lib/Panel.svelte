@@ -1,7 +1,7 @@
 <script lang="ts">
   import { store, applyTheme } from "./state.svelte";
-  import { setTheme, openDashboard, resolvePermission } from "./bridge";
-  import { tokens, pct } from "./format";
+  import { setTheme, openDashboard, resolvePermission, jumpToSession } from "./bridge";
+  import { tokens, pct, activitySuffix } from "./format";
   import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
@@ -61,6 +61,10 @@
 
   function decide(id: string, decision: PermDecision) {
     resolvePermission(id, decision);
+  }
+
+  function jump(sessionId: string) {
+    jumpToSession(sessionId).catch(() => {});
   }
 
   function toggleTheme() {
@@ -145,8 +149,11 @@
   <div class="ucard" class:needs={c.requests.length > 0}>
     <div class="session-line1">
       <span class="session-proj">{c.project}</span>
+      {#if c.session?.title}
+        <span class="session-sep">·</span>
+        <span class="session-title">{c.session.title}</span>
+      {/if}
       {#if c.session}
-        <span class="session-badge run">RUN</span>
         <span
           class="session-pct"
           class:warn={c.session.level === "warn"}
@@ -160,12 +167,33 @@
     </div>
     <div class="session-path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
 
+    {#if c.session?.activity}
+      <div class="session-activity {c.session.activityKind}">
+        <span class="act-dot"></span>
+        <span class="act-text">{c.session.activity}</span>
+        {#if activitySuffix(c.session.activityKind)}
+          <span class="act-suffix">· {activitySuffix(c.session.activityKind)}</span>
+        {/if}
+      </div>
+    {/if}
+
     {#if c.session}
       <div class="ctx">
         <div class="ctx-track">
           <div class="ctx-fill {c.session.level}" style="width:{c.session.pct}%"></div>
         </div>
         <span class="ctx-cap">{tokens(c.session.used)} / {tokens(c.session.limit)}</span>
+      </div>
+    {/if}
+
+    {#if c.session}
+      <div class="card-foot">
+        {#if c.session.canJump}
+          <button class="jump" title="Focus this session's window" onclick={() => jump(c.session!.id)}>
+            jump &rarr;
+          </button>
+        {/if}
+        <span class="mode-badge">mode : <span class="mode-val {c.session.mode}">{c.session.mode}</span></span>
       </div>
     {/if}
 
@@ -383,12 +411,12 @@
   .ucard {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 12px;
+    gap: 11px;
+    padding: 15px 14px;
     border-radius: var(--r-md);
     background: var(--bg-raised);
     border: 1px solid var(--border-soft);
-    margin-bottom: 7px;
+    margin-bottom: 10px;
     transition: border-color 0.2s var(--ease);
   }
   .ucard:hover {
@@ -463,6 +491,22 @@
     font-weight: 600;
     letter-spacing: -0.01em;
     white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-sep {
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+  /* aiTitle — grows to fill, ellipsizes, so RUN + % stay pinned right */
+  .session-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -479,10 +523,6 @@
     background: var(--coral-soft);
     color: var(--coral);
   }
-  .session-badge.run {
-    background: var(--sage-soft);
-    color: var(--sage);
-  }
   .session-pct {
     margin-left: auto;
     font-family: var(--font-mono);
@@ -498,6 +538,53 @@
     color: var(--coral);
     text-shadow: 0 0 12px color-mix(in srgb, var(--coral) 55%, transparent);
   }
+  /* card footer: jump pinned left, read-only mode badge pinned right */
+  .card-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mode-badge {
+    margin-left: auto; /* pins to the right end even when jump is absent */
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .mode-val {
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .mode-val.auto {
+    color: var(--amber);
+  }
+  .mode-val.plan {
+    color: var(--sage);
+  }
+  .mode-val.bypass {
+    color: var(--coral);
+  }
+  .jump {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--amber);
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in srgb, var(--amber) 32%, transparent);
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color 0.15s var(--ease),
+      transform 0.12s var(--ease);
+  }
+  .jump:hover {
+    transform: translateY(-1px);
+    background: color-mix(in srgb, var(--amber) 24%, var(--amber-soft));
+  }
 
   .session-path {
     font-family: var(--font-mono);
@@ -507,6 +594,61 @@
     overflow: hidden;
     text-overflow: ellipsis;
     margin-top: -2px;
+  }
+
+  /* live activity preview (window-render) */
+  .session-activity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 3px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  /* LED status dot, colored per kind (no glyph/emoji) */
+  .session-activity .act-dot {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--ink-faint);
+  }
+  .session-activity .act-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-activity .act-suffix {
+    flex-shrink: 0;
+    color: var(--ink-faint);
+  }
+  /* working: amber dot, gently pulsing so it reads as live */
+  .session-activity.working {
+    color: var(--ink);
+  }
+  .session-activity.working .act-dot {
+    background: var(--amber);
+    box-shadow: 0 0 7px var(--amber);
+    animation: act-pulse 1.6s var(--ease) infinite;
+  }
+  /* waiting for you: calm sage dot */
+  .session-activity.waiting .act-dot {
+    background: var(--sage);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--sage) 70%, transparent);
+  }
+  .session-activity.thinking .act-dot {
+    background: var(--ink-faint);
+  }
+  @keyframes act-pulse {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
   .ctx {
