@@ -99,10 +99,15 @@ fn get_config(state: State<'_, AppState>) -> Config {
 }
 
 #[tauri::command]
-fn set_theme(state: State<'_, AppState>, theme: String) {
-    let mut cfg = state.config.lock().unwrap();
-    cfg.theme = theme;
-    cfg.save(&state.config_dir);
+fn set_theme(app: AppHandle, state: State<'_, AppState>, theme: String) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.theme = theme.clone();
+        cfg.save(&state.config_dir);
+    }
+    // Broadcast to every window so the panel, dashboard, and avatar switch in
+    // lockstep — theme is a single app-wide setting, not per-surface.
+    let _ = app.emit("theme-update", &theme);
 }
 
 /// Toggle the panel open/closed, anchored near the avatar.

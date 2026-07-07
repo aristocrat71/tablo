@@ -44,3 +44,9 @@ export const setLocateEnabled = (enabled: boolean) =>
 export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
   return listen<Snapshot>("state-update", (e) => cb(e.payload));
 }
+
+// Theme is app-wide: any window can flip it, and Rust rebroadcasts so all
+// surfaces update live.
+export function onTheme(cb: (theme: string) => void): Promise<UnlistenFn> {
+  return listen<string>("theme-update", (e) => cb(e.payload));
+}

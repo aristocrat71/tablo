@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { store, applyTheme } from "./state.svelte";
-  import { setTheme, openDashboard, resolvePermission, jumpToSession } from "./bridge";
+  import { store } from "./state.svelte";
+  import { openDashboard, resolvePermission, jumpToSession } from "./bridge";
   import { tokens, pct, activitySuffix } from "./format";
+  import ThemeToggle from "./ThemeToggle.svelte";
   import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
@@ -66,13 +67,6 @@
   function jump(sessionId: string) {
     jumpToSession(sessionId).catch(() => {});
   }
-
-  function toggleTheme() {
-    const next = store.config.theme === "dark" ? "light" : "dark";
-    store.config.theme = next;
-    applyTheme(next);
-    setTheme(next);
-  }
 </script>
 
 <div class="panel-shell">
@@ -87,7 +81,7 @@
         <button class="dash-link" title="Open dashboard" onclick={() => openDashboard()}>
           dashboard <span class="arr">↗</span>
         </button>
-        <button class="mini" title="Toggle theme" onclick={toggleTheme} aria-label="Toggle theme">☾</button>
+        <ThemeToggle />
       </div>
     </div>
 
@@ -262,22 +256,6 @@
     font-size: 11px;
     color: var(--ink-faint);
     margin-top: 1px;
-  }
-  .mini {
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--ink-dim);
-    cursor: pointer;
-    display: grid;
-    place-items: center;
-    transition: all 0.2s var(--ease);
-  }
-  .mini:hover {
-    color: var(--ink);
-    border-color: var(--ink-faint);
   }
   .panel-actions {
     display: flex;
@@ -662,7 +640,7 @@
     border-radius: 3px;
     background: var(--bg-inset);
     overflow: hidden;
-    border: 1px solid var(--border-soft);
+    border: 1px solid var(--border);
     background-image: repeating-linear-gradient(
       90deg,
       transparent 0 5px,

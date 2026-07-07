@@ -13,6 +13,7 @@
     jumpToSession,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
+  import ThemeToggle from "./ThemeToggle.svelte";
 
   type Card = {
     key: string;
@@ -146,6 +147,7 @@
           {tier} <span>plan</span>
         </div>
       {/if}
+      <ThemeToggle />
     </div>
   </div>
 
@@ -453,6 +455,11 @@
     border: 1px solid var(--border-soft);
     border-radius: var(--r-md);
     padding: 18px;
+  }
+  /* Light mode only: the card sits on a soft warm beige, gently darker than the
+     near-white page (see app.css) — the full "room" beige read too muddy. */
+  :global([data-theme="light"]) .card {
+    background: var(--bg-inset);
   }
   .card h3 {
     font-size: 12px;
@@ -801,6 +808,9 @@
     border-radius: 2px;
     background: var(--bg-inset);
     overflow: hidden;
+    /* Outline the well so the empty track stays legible even when it shares the
+       card's color (light mode) — matches the panel's context track. */
+    border: 1px solid var(--border);
     background-image: repeating-linear-gradient(
       90deg,
       transparent 0 4px,

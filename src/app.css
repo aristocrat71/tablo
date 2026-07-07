@@ -84,6 +84,11 @@ body[data-surface="dashboard"] {
   background: var(--bg-room);
   overflow: auto;
 }
+/* Light mode only: flip the dashboard page/card contrast — a near-white page
+   with cards sitting on the darker "room" beige (see Dashboard.svelte .card). */
+[data-theme="light"] body[data-surface="dashboard"] {
+  background: var(--bg-raised);
+}
 
 /* Avatar window: center the cat in a transparent frame. */
 body[data-surface="avatar"] {
