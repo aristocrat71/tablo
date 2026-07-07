@@ -11,7 +11,7 @@
     locateStatus,
     setLocateEnabled,
     jumpToSession,
-    hideCurrentWindow,
+    hideDashboard,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -62,9 +62,10 @@
   onMount(() => {
     hookStatus().then((s) => (hook = s)).catch(() => {});
     locateStatus().then((s) => (loc = s)).catch(() => {});
-    // Esc closes the dashboard window (it hides, so it can reopen later).
+    // Esc closes the dashboard window (it hides, so it can reopen later) and
+    // returns Tablo to a switcher-hidden widget.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") hideCurrentWindow().catch(() => {});
+      if (e.key === "Escape") hideDashboard().catch(() => {});
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

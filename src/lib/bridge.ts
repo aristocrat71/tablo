@@ -25,6 +25,8 @@ export const openDashboard = () => invoke("open_dashboard");
 // Hide whichever window this webview lives in (Esc dismiss). The panel's blur
 // handler then records the dismiss so a follow-up avatar tap doesn't re-open it.
 export const hideCurrentWindow = () => getCurrentWindow().hide();
+// Dashboard Esc: hide + drop Tablo back out of the Dock / Cmd+Tab switcher.
+export const hideDashboard = () => invoke("hide_dashboard");
 export const beginDrag = () => invoke<{ x: number; y: number }>("begin_drag");
 export const moveAvatar = (x: number, y: number) =>
   invoke("move_avatar", { x: Math.round(x), y: Math.round(y) });
