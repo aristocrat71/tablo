@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "./state.svelte";
-  import { pct, planTier, activitySuffix } from "./format";
+  import { fade } from "svelte/transition";
+  import { pct, planTier, activityMark, terminalStatus } from "./format";
   import { prefs, byMode } from "./prefs.svelte";
   import { hookStatus, setHookEnabled, resolvePermission } from "./bridge";
   import type { HookStatus, PermDecision, PendingRequest, SessionView } from "./types";
@@ -116,59 +117,90 @@
       {#if cards.length === 0}
         <div class="dash-empty">Nothing running. Tablo is watching.</div>
       {:else}
+        <div class="legend" aria-hidden="true">
+          <span><i class="lmk user">#</i> user prompt</span>
+          <span><i class="lmk agent">&gt;</i> agent response</span>
+        </div>
         {#each cards as c (c.key)}
-          <div class="scard" class:needs={c.requests.length > 0}>
-            <div class="drow">
-              <span class="st {c.requests.length ? 'ask' : 'run'}"></span>
-              <div class="info">
-                <div class="p">
-                  <span class="pname">{c.project}</span>
-                  {#if c.session?.title}
-                    <span class="psep">·</span>
-                    <span class="ptitle">{c.session.title}</span>
-                  {/if}
-                </div>
-                <div class="path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
-                {#if c.session?.activity}
-                  <div class="activity {c.session.activityKind}">
-                    <span class="act-dot"></span>
-                    <span class="act-text">{c.session.activity}</span>
-                    {#if activitySuffix(c.session.activityKind)}
-                      <span class="act-suffix">· {activitySuffix(c.session.activityKind)}</span>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-              {#if c.session}
-                <div class="gauge">
-                  <div class="lab">
-                    <span>context</span>
-                    <span class="val" class:warn={c.session.level === "warn"} class:crit={c.session.level === "crit"}>
-                      {pct(c.session.pct)}
-                    </span>
-                  </div>
-                  <div class="tk"><i class={c.session.level} style="width:{c.session.pct}%"></i></div>
-                </div>
-              {/if}
-            </div>
-            {#each c.requests as p (p.id)}
-              <div class="arow">
-                <div class="ainfo">
-                  <div class="atool"><span class="tag">{p.tool}</span></div>
-                  {#if p.detail}<div class="adetail">{p.detail}</div>{/if}
-                </div>
-                <div class="aacts">
-                  <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
-                  <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
-                </div>
-              </div>
-            {/each}
-          </div>
+          {@render sessionCard(c)}
         {/each}
       {/if}
     </div>
   </div>
 </div>
+
+{#snippet sessionCard(c: Card)}
+  <div class="scard" class:needs={c.requests.length > 0}>
+    <div class="drow">
+      <span class="st {c.requests.length ? 'ask' : 'run'}"></span>
+      <div class="info">
+        <div class="p">
+          <span class="pname">{c.project}</span>
+          {#if c.session?.title}
+            <span class="psep">·</span>
+            <span class="ptitle">{c.session.title}</span>
+          {/if}
+        </div>
+        <div class="path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
+      </div>
+      {#if c.session}
+        <div class="gauge">
+          <div class="lab">
+            <span>context</span>
+            <span class="val" class:warn={c.session.level === "warn"} class:crit={c.session.level === "crit"}>
+              {pct(c.session.pct)}
+            </span>
+          </div>
+          <div class="tk"><i class={c.session.level} style="width:{c.session.pct}%"></i></div>
+        </div>
+      {/if}
+    </div>
+
+    {#if c.session}
+      {@render terminal(c.session)}
+    {/if}
+    {#each c.requests as p (p.id)}
+      <div class="arow">
+        <div class="ainfo">
+          <div class="atool"><span class="tag">{p.tool}</span></div>
+          {#if p.detail}<div class="adetail">{p.detail}</div>{/if}
+        </div>
+        <div class="aacts">
+          <button class="act deny" onclick={() => decide(p.id, "deny")}>Deny</button>
+          <button class="act allow" onclick={() => decide(p.id, "allow")}>Approve</button>
+        </div>
+      </div>
+    {/each}
+  </div>
+{/snippet}
+
+<!-- Per-session terminal preview: a recessed amber-phosphor screen tailing the
+     agent's recent activity. State lives on the wrapper's kind class. -->
+{#snippet terminal(s: SessionView)}
+  <div class="term {s.activityKind || 'idle'}">
+    <div class="term-bar">
+      <span class="term-led"></span>
+      <span class="term-name">tablo{s.branch ? `:${s.branch}` : ""}</span>
+      <span class="term-state">{terminalStatus(s.activityKind)}</span>
+    </div>
+    <div class="term-scroll">
+      {#if s.activityLog.length === 0}
+        <div class="term-line think"><span class="mk">&gt;</span><span class="tx">awaiting activity</span></div>
+      {:else}
+        {#each s.activityLog as ln (ln.seq)}
+          <div class="term-line {ln.kind}" in:fade={{ duration: 160 }}>
+            <span class="mk">{activityMark(ln.kind)}</span>
+            <span class="tx">{ln.text}</span>
+          </div>
+        {/each}
+      {/if}
+      <div class="term-line caret">
+        <span class="mk">&gt;</span>
+        <span class="cur" class:blink={s.activityKind === "working"}></span>
+      </div>
+    </div>
+  </div>
+{/snippet}
 
 <style>
   .dash {
@@ -395,6 +427,26 @@
     margin-left: auto;
   }
 
+  /* key for the terminal markers, shown once above the session list */
+  .legend {
+    display: flex;
+    gap: 18px;
+    padding: 0 2px 12px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border-soft);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    text-transform: none;
+  }
+  .legend .lmk {
+    font-style: normal;
+    font-weight: 700;
+    margin-right: 6px;
+    color: var(--amber);
+  }
+
   .drow {
     display: flex;
     align-items: center;
@@ -450,53 +502,180 @@
     text-overflow: ellipsis;
     margin-top: 3px;
   }
-  /* live activity preview (window-render) */
-  .drow .info .activity {
+  /* ===== terminal preview (window-render) — a recessed amber-phosphor screen.
+     Colors are fixed dark (a "screen" reads as intentional in both themes). ===== */
+  .term {
+    margin-top: 13px;
+    border-radius: 11px;
+    border: 1px solid #2b2015;
+    background:
+      radial-gradient(130% 80% at 50% -20%, rgba(224, 164, 88, 0.1), transparent 55%),
+      #140e07;
+    box-shadow:
+      inset 0 1px 0 rgba(224, 164, 88, 0.06),
+      inset 0 0 44px rgba(0, 0, 0, 0.55),
+      0 2px 12px -6px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+    position: relative;
+  }
+  /* faint scanlines — kept low so it never turns into full CRT */
+  .term::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(0, 0, 0, 0.12) 2px 3px);
+    opacity: 0.5;
+  }
+  .term-bar {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 6px;
+    padding: 7px 12px;
+    border-bottom: 1px solid #241a10;
+    background: linear-gradient(180deg, rgba(224, 164, 88, 0.05), transparent);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    position: relative;
+    z-index: 1;
+  }
+  .term-led {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #6f6250;
+    flex-shrink: 0;
+  }
+  .term-name {
+    color: #9c8c78;
+  }
+  .term-state {
+    margin-left: auto;
+    color: #6f6250;
+  }
+  .term.working .term-led {
+    background: #e0a458;
+    box-shadow: 0 0 9px #e0a458;
+    animation: term-pulse 1.5s var(--ease) infinite;
+  }
+  .term.working .term-state {
+    color: #e0a458;
+  }
+  .term.waiting .term-led {
+    background: #8faa7e;
+    box-shadow: 0 0 8px rgba(143, 170, 126, 0.75);
+  }
+  .term.waiting .term-state {
+    color: #8faa7e;
+  }
+  .term.thinking .term-led {
+    background: #e0a458;
+    opacity: 0.55;
+  }
+
+  .term-scroll {
+    padding: 11px 13px 12px;
     font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--ink-dim);
+    line-height: 1.75;
+    min-height: 92px;
+    max-height: 176px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end; /* stick to the bottom like tail -f */
+    position: relative;
+    z-index: 1;
+  }
+  .term-line {
+    display: flex;
+    gap: 9px;
     white-space: nowrap;
     overflow: hidden;
   }
-  /* LED status dot, colored per kind (no glyph/emoji) */
-  .drow .info .activity .act-dot {
+  .term-line .mk {
     flex-shrink: 0;
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--ink-faint);
+    width: 9px;
+    text-align: center;
   }
-  .drow .info .activity .act-text {
+  .term-line .tx {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .drow .info .activity .act-suffix {
-    flex-shrink: 0;
-    color: var(--ink-faint);
+  /* the human's own prompt — brightest line, and a little air above marks a
+     new turn (you asked, then the agent did X, Y, Z) */
+  .term-line.user {
+    margin-top: 7px;
   }
-  .drow .info .activity.working {
-    color: var(--ink);
+  .term-line.user:first-child {
+    margin-top: 0;
   }
-  .drow .info .activity.working .act-dot {
-    background: var(--amber);
-    box-shadow: 0 0 7px var(--amber);
-    animation: act-pulse 1.6s var(--ease) infinite;
+  .term-line.user .mk {
+    color: #e0a458;
+    font-weight: 700;
+    text-shadow: 0 0 9px rgba(224, 164, 88, 0.5);
   }
-  .drow .info .activity.waiting .act-dot {
-    background: var(--sage);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--sage) 70%, transparent);
+  .term-line.user .tx {
+    color: #f6ead8;
+    font-weight: 600;
   }
-  .drow .info .activity.thinking .act-dot {
-    background: var(--ink-faint);
+  /* tool call = the command line, bright amber phosphor */
+  .term-line.tool .mk {
+    color: #e0a458;
   }
-  @keyframes act-pulse {
+  .term-line.tool .tx {
+    color: #f1ddc0;
+    text-shadow: 0 0 10px rgba(224, 164, 88, 0.3);
+  }
+  /* spoken text = output, warm cream */
+  .term-line.text .mk {
+    color: #6f6250;
+  }
+  .term-line.text .tx {
+    color: #c9b8a0;
+  }
+  /* thinking = dim comment */
+  .term-line.think {
+    opacity: 0.62;
+  }
+  .term-line.think .mk {
+    color: #6f6250;
+  }
+  .term-line.think .tx {
+    color: #8a7c69;
+    font-style: italic;
+  }
+  /* live caret line */
+  .term-line.caret .mk {
+    color: #e0a458;
+  }
+  .cur {
+    display: inline-block;
+    width: 8px;
+    height: 13px;
+    align-self: center;
+    background: #e0a458;
+    box-shadow: 0 0 9px rgba(224, 164, 88, 0.55);
+    opacity: 0.22;
+  }
+  .cur.blink {
+    animation: term-blink 1.05s steps(1) infinite;
+  }
+  @keyframes term-blink {
+    0%,
+    50% {
+      opacity: 0.95;
+    }
+    50.01%,
+    100% {
+      opacity: 0.08;
+    }
+  }
+  @keyframes term-pulse {
     0%,
     100% {
-      opacity: 0.45;
+      opacity: 0.5;
     }
     50% {
       opacity: 1;

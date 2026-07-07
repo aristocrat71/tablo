@@ -150,7 +150,6 @@
         <span class="session-title">{c.session.title}</span>
       {/if}
       {#if c.session}
-        <span class="session-badge run">RUN</span>
         <span
           class="session-pct"
           class:warn={c.session.level === "warn"}
@@ -508,10 +507,6 @@
   .session-badge.ask {
     background: var(--coral-soft);
     color: var(--coral);
-  }
-  .session-badge.run {
-    background: var(--sage-soft);
-    color: var(--sage);
   }
   .session-pct {
     margin-left: auto;

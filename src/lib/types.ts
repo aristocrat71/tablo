@@ -19,9 +19,18 @@ export interface SessionView {
   title: string | null; // Claude Code's AI session title (disambiguates rows)
   activity: string; // live one-liner: "editing scanner.rs", "" if unknown
   activityKind: ActivityKind; // UI hint for icon + state suffix
+  activityLog: ActivityEntry[]; // rolling tail for the dashboard terminal
 }
 
 export type ActivityKind = "working" | "waiting" | "thinking" | "";
+
+// One line in the terminal tail. `kind` is the block type ("tool" | "text" |
+// "think"); `seq` is monotonic per session so the view can key + animate lines.
+export interface ActivityEntry {
+  seq: number;
+  kind: "user" | "tool" | "text" | "think";
+  text: string;
+}
 
 // A tool call awaiting a human approve/deny (Phase 4). Mirrors Rust
 // `permission::PendingRequest`.

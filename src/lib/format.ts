@@ -7,6 +7,25 @@ export function activitySuffix(k: ActivityKind): string {
   return k === "waiting" ? "waiting for you" : k === "working" ? "working" : "";
 }
 
+// Terminal (dashboard) prompt marker: "#" for the human's own prompt, ">" for
+// anything the agent does (tool call / spoken output / thinking). Two markers,
+// matching the legend; the tool/text/think distinction is carried by color.
+// Typographic punctuation only — never an emoji.
+export function activityMark(kind: string): string {
+  return kind === "user" ? "#" : ">";
+}
+
+// Terminal titlebar status label.
+export function terminalStatus(k: ActivityKind): string {
+  return k === "working"
+    ? "working"
+    : k === "waiting"
+      ? "waiting for input"
+      : k === "thinking"
+        ? "thinking"
+        : "idle";
+}
+
 // Compact token counts: 46000 -> "46k", 1000000 -> "1M".
 export function tokens(n: number): string {
   if (n >= 1_000_000) {
