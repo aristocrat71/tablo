@@ -1,6 +1,6 @@
 <script lang="ts">
   import { store, applyTheme } from "./state.svelte";
-  import { setTheme, openDashboard, resolvePermission } from "./bridge";
+  import { setTheme, openDashboard, resolvePermission, jumpToSession } from "./bridge";
   import { tokens, pct, activitySuffix } from "./format";
   import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
@@ -61,6 +61,10 @@
 
   function decide(id: string, decision: PermDecision) {
     resolvePermission(id, decision);
+  }
+
+  function jump(sessionId: string) {
+    jumpToSession(sessionId).catch(() => {});
   }
 
   function toggleTheme() {
@@ -180,6 +184,12 @@
         </div>
         <span class="ctx-cap">{tokens(c.session.used)} / {tokens(c.session.limit)}</span>
       </div>
+    {/if}
+
+    {#if c.session?.canJump}
+      <button class="jump" title="Focus this session's window" onclick={() => jump(c.session!.id)}>
+        jump &rarr;
+      </button>
     {/if}
 
     {#each c.requests as p (p.id)}
@@ -522,6 +532,27 @@
   .session-pct.crit {
     color: var(--coral);
     text-shadow: 0 0 12px color-mix(in srgb, var(--coral) 55%, transparent);
+  }
+  .jump {
+    align-self: flex-start; /* bottom-left of the card, under the context bar */
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--amber);
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in srgb, var(--amber) 32%, transparent);
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color 0.15s var(--ease),
+      transform 0.12s var(--ease);
+  }
+  .jump:hover {
+    transform: translateY(-1px);
+    background: color-mix(in srgb, var(--amber) 24%, var(--amber-soft));
   }
 
   .session-path {

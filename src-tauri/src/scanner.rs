@@ -58,6 +58,9 @@ pub struct SessionView {
     /// Rolling tail of recent activity lines for the dashboard terminal preview
     /// (oldest → newest, capped). Empty until an assistant line lands.
     pub activity_log: Vec<ActivityEntry>,
+    /// Whether Tablo knows where this session lives (drives the "jump" button).
+    /// Set false by `scan`; the emit path overlays it from the location cache.
+    pub can_jump: bool,
 }
 
 /// Full aggregate pushed to every window as the `state-update` event.
@@ -746,6 +749,7 @@ pub fn scan(
                 activity: st.activity.clone(),
                 activity_kind: st.activity_kind.clone(),
                 activity_log: st.log.clone(),
+                can_jump: false, // overlaid in the emit path from the location cache
             });
         }
     }

@@ -4,8 +4,15 @@
   import { fade } from "svelte/transition";
   import { pct, planTier, activityMark, terminalStatus } from "./format";
   import { prefs, byMode } from "./prefs.svelte";
-  import { hookStatus, setHookEnabled, resolvePermission } from "./bridge";
-  import type { HookStatus, PermDecision, PendingRequest, SessionView } from "./types";
+  import {
+    hookStatus,
+    setHookEnabled,
+    resolvePermission,
+    locateStatus,
+    setLocateEnabled,
+    jumpToSession,
+  } from "./bridge";
+  import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
 
   type Card = {
     key: string;
@@ -47,9 +54,13 @@
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
   let busy = $state(false);
+  // ---- window-render: session-location ("jump") hook status ----
+  let loc = $state<LocateStatus | null>(null);
+  let locBusy = $state(false);
 
   onMount(() => {
     hookStatus().then((s) => (hook = s)).catch(() => {});
+    locateStatus().then((s) => (loc = s)).catch(() => {});
   });
 
   async function toggleApprovals() {
@@ -64,8 +75,24 @@
     }
   }
 
+  async function toggleLocate() {
+    if (locBusy) return;
+    locBusy = true;
+    try {
+      loc = await setLocateEnabled(!(loc?.installed ?? false));
+    } catch {
+      /* leave prior status */
+    } finally {
+      locBusy = false;
+    }
+  }
+
   function decide(id: string, decision: PermDecision) {
     resolvePermission(id, decision);
+  }
+
+  function jump(sessionId: string) {
+    jumpToSession(sessionId).catch(() => {});
   }
 </script>
 
@@ -102,6 +129,18 @@
           approvals {hook.installed ? "on" : "off"}
         </button>
       {/if}
+      {#if loc}
+        <button
+          class="approvals-toggle"
+          class:on={loc.installed}
+          disabled={locBusy}
+          title="Lets Tablo focus the window a session lives in. Reports each session's tmux pane / terminal app (no tool interception)."
+          onclick={toggleLocate}
+        >
+          <span class="dot"></span>
+          jump {loc.installed ? "on" : "off"}
+        </button>
+      {/if}
       {#if tier}
         <div class="plan-chip" title="Subscription tier (live quota isn't exposed locally)">
           {tier} <span>plan</span>
@@ -109,7 +148,6 @@
       {/if}
     </div>
   </div>
-
 
   <div class="dash-grid">
     <div class="card">
@@ -153,6 +191,11 @@
           </div>
           <div class="tk"><i class={c.session.level} style="width:{c.session.pct}%"></i></div>
         </div>
+      {/if}
+      {#if c.session?.canJump}
+        <button class="jump" title="Focus the window this session lives in" onclick={() => jump(c.session!.id)}>
+          jump &rarr;
+        </button>
       {/if}
     </div>
 
@@ -553,6 +596,29 @@
   .term-state {
     margin-left: auto;
     color: #6f6250;
+  }
+  /* jump button — top-right of the row, beside the context gauge */
+  .drow .jump {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--amber);
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in srgb, var(--amber) 32%, transparent);
+    border-radius: 6px;
+    padding: 5px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    align-self: center;
+    transition:
+      background-color 0.15s var(--ease),
+      transform 0.12s var(--ease);
+  }
+  .drow .jump:hover {
+    background: color-mix(in srgb, var(--amber) 22%, var(--amber-soft));
+    transform: translateY(-1px);
   }
   .term.working .term-led {
     background: #e0a458;

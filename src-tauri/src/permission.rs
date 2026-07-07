@@ -106,7 +106,18 @@ pub fn spawn_server(app: AppHandle) {
 }
 
 fn handle_request(app: &AppHandle, mut request: tiny_http::Request) {
-    let is_decide = request.method() == &Method::Post && request.url().starts_with("/decide");
+    let is_post = request.method() == &Method::Post;
+    let url = request.url().to_string();
+    // Passive session-locator report (window-render "jump to session"): cache it
+    // and answer immediately — never blocks, unlike /decide.
+    if is_post && url.starts_with("/locate") {
+        let mut body = String::new();
+        let _ = request.as_reader().read_to_string(&mut body);
+        crate::locate::store_location(app, &body);
+        let _ = request.respond(Response::from_string("ok"));
+        return;
+    }
+    let is_decide = is_post && url.starts_with("/decide");
     if !is_decide {
         let _ = request.respond(Response::from_string("tablo"));
         return;
@@ -267,7 +278,7 @@ pub fn set_hook_enabled(
 
 // ============================ hook script ============================
 
-fn hook_dir() -> Option<PathBuf> {
+pub(crate) fn hook_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("tablo"))
 }
 
@@ -318,7 +329,7 @@ fn settings_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("settings.json"))
 }
 
-fn read_settings() -> Value {
+pub(crate) fn read_settings() -> Value {
     let v = settings_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
@@ -330,7 +341,7 @@ fn read_settings() -> Value {
     }
 }
 
-fn write_settings(root: &Value) -> std::io::Result<()> {
+pub(crate) fn write_settings(root: &Value) -> std::io::Result<()> {
     let path = settings_path()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir"))?;
     if let Some(parent) = path.parent() {
@@ -340,8 +351,8 @@ fn write_settings(root: &Value) -> std::io::Result<()> {
     std::fs::write(path, text)
 }
 
-/// Does this PreToolUse entry point at our hook script?
-fn entry_is_tablo(entry: &Value, script: &str) -> bool {
+/// Does this hook entry point at the given tablo script?
+pub(crate) fn entry_is_tablo(entry: &Value, script: &str) -> bool {
     entry
         .get("hooks")
         .and_then(|h| h.as_array())
@@ -354,18 +365,30 @@ fn entry_is_tablo(entry: &Value, script: &str) -> bool {
 }
 
 fn is_installed(script: &str) -> bool {
+    is_event_installed("PreToolUse", script)
+}
+
+/// Whether a tablo entry for `script` is present under the given hook event.
+pub(crate) fn is_event_installed(event: &str, script: &str) -> bool {
     read_settings()
         .get("hooks")
-        .and_then(|h| h.get("PreToolUse"))
+        .and_then(|h| h.get(event))
         .and_then(|p| p.as_array())
         .map(|arr| arr.iter().any(|e| entry_is_tablo(e, script)))
         .unwrap_or(false)
 }
 
-/// Add (or refresh) our PreToolUse entry in a settings document, in place.
-/// Pure: no filesystem, so it's unit-tested. Existing keys are preserved and
-/// re-running is idempotent (a prior tablo entry is replaced, not duplicated).
-fn apply_install(root: &mut Value, script: &str, matcher: &str, timeout: u64) {
+/// Add (or refresh) a tablo hook entry under `event`, in place. `matcher` and
+/// `timeout` are optional (tool events like PreToolUse use a matcher; lifecycle
+/// events like SessionStart / UserPromptSubmit take neither). Pure (no
+/// filesystem) so it's unit-tested; preserves existing keys and is idempotent.
+pub(crate) fn apply_install_event(
+    root: &mut Value,
+    event: &str,
+    script: &str,
+    matcher: Option<&str>,
+    timeout: Option<u64>,
+) {
     if !root.is_object() {
         *root = json!({});
     }
@@ -375,24 +398,26 @@ fn apply_install(root: &mut Value, script: &str, matcher: &str, timeout: u64) {
         *hooks = json!({});
     }
     let hooks_obj = hooks.as_object_mut().unwrap();
-    let pre = hooks_obj.entry("PreToolUse").or_insert_with(|| json!([]));
-    if !pre.is_array() {
-        *pre = json!([]);
+    let ev = hooks_obj.entry(event).or_insert_with(|| json!([]));
+    if !ev.is_array() {
+        *ev = json!([]);
     }
-    let arr = pre.as_array_mut().unwrap();
+    let arr = ev.as_array_mut().unwrap();
     arr.retain(|e| !entry_is_tablo(e, script));
-    arr.push(json!({
-        "matcher": matcher,
-        "hooks": [{
-            "type": "command",
-            "command": script,
-            "timeout": timeout,
-        }],
-    }));
+    let mut hook = json!({ "type": "command", "command": script });
+    if let Some(t) = timeout {
+        hook["timeout"] = json!(t);
+    }
+    let mut entry = serde_json::Map::new();
+    if let Some(m) = matcher {
+        entry.insert("matcher".into(), json!(m));
+    }
+    entry.insert("hooks".into(), json!([hook]));
+    arr.push(Value::Object(entry));
 }
 
-/// Remove our PreToolUse entry, pruning now-empty containers. Pure/in place.
-fn apply_uninstall(root: &mut Value, script: &str) {
+/// Remove a tablo entry under `event`, pruning now-empty containers. Pure/in place.
+pub(crate) fn apply_uninstall_event(root: &mut Value, event: &str, script: &str) {
     let obj = match root.as_object_mut() {
         Some(o) => o,
         None => return,
@@ -401,15 +426,24 @@ fn apply_uninstall(root: &mut Value, script: &str) {
         Some(h) => h,
         None => return,
     };
-    if let Some(arr) = hooks.get_mut("PreToolUse").and_then(|p| p.as_array_mut()) {
+    if let Some(arr) = hooks.get_mut(event).and_then(|p| p.as_array_mut()) {
         arr.retain(|e| !entry_is_tablo(e, script));
         if arr.is_empty() {
-            hooks.remove("PreToolUse");
+            hooks.remove(event);
         }
     }
     if hooks.is_empty() {
         obj.remove("hooks");
     }
+}
+
+/// PreToolUse install/uninstall — thin wrappers over the generic per-event form.
+fn apply_install(root: &mut Value, script: &str, matcher: &str, timeout: u64) {
+    apply_install_event(root, "PreToolUse", script, Some(matcher), Some(timeout));
+}
+
+fn apply_uninstall(root: &mut Value, script: &str) {
+    apply_uninstall_event(root, "PreToolUse", script);
 }
 
 pub fn install_hook(cfg: &Config) -> Result<(), String> {
@@ -551,6 +585,27 @@ mod tests {
         let pre = root["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre.len(), 1);
         assert_eq!(pre[0]["matcher"], "Write");
+    }
+
+    #[test]
+    fn matcherless_event_install_and_uninstall() {
+        // Lifecycle events (SessionStart / UserPromptSubmit) take no matcher and
+        // no timeout — the locate hook's shape.
+        let mut root = json!({});
+        apply_install_event(&mut root, "SessionStart", SCRIPT, None, None);
+        apply_install_event(&mut root, "UserPromptSubmit", SCRIPT, None, None);
+        let ss = root["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(ss.len(), 1);
+        assert!(ss[0].get("matcher").is_none(), "lifecycle events take no matcher");
+        assert_eq!(ss[0]["hooks"][0]["command"], SCRIPT);
+        assert!(ss[0]["hooks"][0].get("timeout").is_none(), "no timeout");
+        // Idempotent.
+        apply_install_event(&mut root, "SessionStart", SCRIPT, None, None);
+        assert_eq!(root["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+        // Uninstall both prunes the containers away.
+        apply_uninstall_event(&mut root, "SessionStart", SCRIPT);
+        apply_uninstall_event(&mut root, "UserPromptSubmit", SCRIPT);
+        assert!(root.get("hooks").is_none(), "empty hooks pruned");
     }
 
     #[test]

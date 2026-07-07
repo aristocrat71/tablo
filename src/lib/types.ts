@@ -20,6 +20,7 @@ export interface SessionView {
   activity: string; // live one-liner: "editing scanner.rs", "" if unknown
   activityKind: ActivityKind; // UI hint for icon + state suffix
   activityLog: ActivityEntry[]; // rolling tail for the dashboard terminal
+  canJump: boolean; // Tablo knows where this session lives (jump button)
 }
 
 export type ActivityKind = "working" | "waiting" | "thinking" | "";
@@ -65,6 +66,12 @@ export interface HookStatus {
   scriptPath: string;
   port: number;
   tools: string[];
+}
+
+// Mirrors Rust `locate::LocateStatus` — session-location reporting for "jump".
+export interface LocateStatus {
+  installed: boolean;
+  scriptPath: string;
 }
 
 // Mirrors the Rust `config::Config` — the single source of truth. The frontend
