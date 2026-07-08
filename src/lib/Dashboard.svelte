@@ -19,6 +19,7 @@
     setLocateEnabled,
     jumpToSession,
     hideDashboard,
+    setWarnPct,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -61,6 +62,13 @@
       return a.session ? -1 : b.session ? 1 : 0;
     });
   });
+
+  // Sessions past the context warn threshold get their own Critical card, pinned
+  // above the rest.
+  const isCrit = (c: Card) => !!c.session && c.session.level !== "ok";
+  let critCards = $derived(cards.filter(isCrit));
+  let restCards = $derived(cards.filter((c) => !isCrit(c)));
+  let warnPct = $derived(Math.round(snap.warnPct));
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -144,26 +152,41 @@
 
   {#if view === "dashboard"}
   <div class="dash-grid">
-    <div class="card">
-      <h3>
-        Sessions
-        {#if cards.length > 0}
-          <span class="sep">·</span>
-          <span class="legend" aria-hidden="true">
-            <span><i class="lmk user">#</i> user prompt</span>
-            <span><i class="lmk agent">&gt;</i> agent response</span>
-          </span>
-        {/if}
-        <span class="n">{cards.length}</span>
-      </h3>
-      {#if cards.length === 0}
-        <div class="dash-empty">Nothing running. Tablo is watching.</div>
-      {:else}
-        {#each cards as c (c.key)}
+    {#if critCards.length}
+      <div class="card crit-card">
+        <h3 class="crit-h3">
+          <span class="crit-led"></span>
+          Context window warning ! &gt;{warnPct}%
+          <span class="n">{critCards.length}</span>
+        </h3>
+        {#each critCards as c (c.key)}
           {@render sessionCard(c)}
         {/each}
-      {/if}
-    </div>
+      </div>
+    {/if}
+
+    {#if cards.length === 0 || restCards.length}
+      <div class="card">
+        <h3>
+          Sessions
+          {#if restCards.length > 0}
+            <span class="sep">·</span>
+            <span class="legend" aria-hidden="true">
+              <span><i class="lmk user">#</i> user prompt</span>
+              <span><i class="lmk agent">&gt;</i> agent response</span>
+            </span>
+          {/if}
+          <span class="n">{restCards.length}</span>
+        </h3>
+        {#if cards.length === 0}
+          <div class="dash-empty">Nothing running. Tablo is watching.</div>
+        {:else}
+          {#each restCards as c (c.key)}
+            {@render sessionCard(c)}
+          {/each}
+        {/if}
+      </div>
+    {/if}
   </div>
   {:else}
   <button class="back" onclick={() => (view = "dashboard")}>
@@ -184,6 +207,24 @@
         {#if loc}
           {@render toggle("Jump to session", "Focus the terminal window a session lives in (reads its tmux pane / terminal app).", loc.installed, locBusy, toggleLocate)}
         {/if}
+      </div>
+
+      <div class="setting">
+        <div class="setting-main">
+          <div class="setting-title">Context window limit</div>
+          <div class="setting-sub">Warn (and mark critical) once a session's context passes this.</div>
+        </div>
+        <div class="num">
+          <input
+            type="number"
+            min="1"
+            max="100"
+            step="1"
+            value={warnPct}
+            onchange={(e) => setWarnPct(Math.max(1, Math.min(100, Math.round(+e.currentTarget.value) || 60)))}
+          />
+          <span class="unit">%</span>
+        </div>
       </div>
 
       {@render toggle("Waiting notifications", "A gentle nudge from the widget when a session finishes and starts waiting on you.", prefs.notifyOnWaiting, false, () => setNotifyOnWaiting(!prefs.notifyOnWaiting))}
@@ -463,6 +504,12 @@
     outline: none;
     border-color: var(--ink-faint);
   }
+  /* plain text box — no spinner arrows */
+  .num input::-webkit-outer-spin-button,
+  .num input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
   .num .unit {
     font-family: var(--font-mono);
     font-size: 11px;
@@ -630,6 +677,23 @@
   .card h3 .n {
     color: var(--ink-faint);
     margin-left: auto;
+  }
+
+  /* Critical card: over-threshold sessions, pinned above the rest with a red
+     border + warning header. */
+  .card.crit-card {
+    border-color: color-mix(in srgb, var(--coral) 45%, var(--border));
+  }
+  .card h3.crit-h3 {
+    color: var(--coral);
+  }
+  .crit-led {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--coral);
+    box-shadow: 0 0 8px var(--coral);
+    flex-shrink: 0;
   }
 
   /* separator + inline key for the terminal markers, beside the Sessions title */

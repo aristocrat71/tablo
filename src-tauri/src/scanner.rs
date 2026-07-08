@@ -86,6 +86,9 @@ pub struct Snapshot {
     /// Tool calls awaiting a human approve/deny (Phase 4). Populated in the emit
     /// path, not by the scan itself — `scan` always leaves it empty.
     pub pending: Vec<crate::permission::PendingRequest>,
+    /// Context warn threshold (percent), echoed so every window can label the
+    /// Critical group ("> N%") without its own config fetch.
+    pub warn_pct: f64,
 }
 
 impl Default for Snapshot {
@@ -100,6 +103,7 @@ impl Default for Snapshot {
             has_projects_dir: true,
             plan_tier: None,
             pending: Vec::new(),
+            warn_pct: 60.0,
         }
     }
 }
@@ -833,6 +837,7 @@ pub fn scan(
         has_projects_dir: true,
         plan_tier: claude_cfg.plan_tier.clone(),
         pending: Vec::new(),
+        warn_pct: cfg.warn_pct,
     }
 }
 

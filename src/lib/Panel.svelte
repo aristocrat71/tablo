@@ -57,14 +57,18 @@
     });
   });
 
-  let needsCards = $derived(cards.filter((c) => c.requests.length > 0));
-  // Split the non-request sessions: agents waiting on the user get their own
-  // green-LED group, distinct from the ones actively working.
+  // Sessions past the context warn threshold get pulled into a Critical group,
+  // always pinned to the top, ahead of every other state.
+  const isCrit = (c: Card) => !!c.session && c.session.level !== "ok";
+  let critCards = $derived(cards.filter(isCrit));
+  let needsCards = $derived(cards.filter((c) => !isCrit(c) && c.requests.length > 0));
+  // Split the remaining non-request sessions: agents waiting on the user get
+  // their own green-LED group, distinct from the ones actively working.
   let waitingCards = $derived(
-    cards.filter((c) => c.requests.length === 0 && c.session?.activityKind === "waiting")
+    cards.filter((c) => !isCrit(c) && c.requests.length === 0 && c.session?.activityKind === "waiting")
   );
   let workCards = $derived(
-    cards.filter((c) => c.requests.length === 0 && c.session?.activityKind !== "waiting")
+    cards.filter((c) => !isCrit(c) && c.requests.length === 0 && c.session?.activityKind !== "waiting")
   );
   // State filters only apply while the toolbar is visible (>1 session), so a
   // lone session can never be filtered out with no way to bring it back.
@@ -74,7 +78,10 @@
   // Everything filtered away (e.g. both toggles off) with no permission request
   // forcing itself in — show a friendly placeholder instead of blank space.
   let nothingVisible = $derived(
-    needsCards.length === 0 && !(showWait && waitingCards.length) && !(showWork && workCards.length)
+    critCards.length === 0 &&
+      needsCards.length === 0 &&
+      !(showWait && waitingCards.length) &&
+      !(showWork && workCards.length)
   );
 
   let sub = $derived.by(() => {
@@ -84,6 +91,9 @@
     const base = n > 0 ? `${n} session${n > 1 ? "s" : ""}` : "idle";
     return snap.waiting > 0 ? `${base} · ${snap.waiting} waiting on you` : base;
   });
+
+  // Warn threshold (%), shown in the Critical group header (live from the snapshot).
+  let warnPct = $derived(Math.round(snap.warnPct));
 
   function decide(id: string, decision: PermDecision) {
     resolvePermission(id, decision);
@@ -134,11 +144,22 @@
           <span>Tablo wakes up when an agent starts working.</span>
         </div>
       {:else}
+        {#if critCards.length}
+          <div class="group-head crit-head">
+            <span class="group-dot attn"></span>
+            <span class="group-name">Context window warning ! &gt;{warnPct}%</span>
+            <span class="group-count">{critCards.length}</span>
+          </div>
+          {#each critCards as c (c.key)}
+            {@render sessionCard(c)}
+          {/each}
+        {/if}
+
         {#if needsCards.length}
           <div class="group-head">
             <span class="group-dot attn"></span>
             <span class="group-name">Permission Request</span>
-            <span class="group-count">{pending.length}</span>
+            <span class="group-count">{needsCards.length}</span>
           </div>
           {#each needsCards as c (c.key)}
             {@render sessionCard(c)}
@@ -179,7 +200,7 @@
 </div>
 
 {#snippet sessionCard(c: Card)}
-  <div class="ucard" class:needs={c.requests.length > 0}>
+  <div class="ucard" class:needs={c.requests.length > 0} class:crit={!!c.session && c.session.level !== "ok"}>
     <div class="session-line1">
       <span class="session-proj">{c.project}</span>
       {#if c.session?.title}
@@ -258,6 +279,10 @@
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-panel);
     overflow: hidden;
+  }
+  /* critical group header — the context-window warning line, red */
+  .crit-head .group-name {
+    color: var(--coral);
   }
   .panel-top {
     display: flex;
@@ -444,8 +469,9 @@
   .ucard:hover {
     border-color: var(--border);
   }
-  /* a session with pending approvals — coral card, sorted to the top */
-  .ucard.needs {
+  /* a session with pending approvals, or past the context warn line — coral card */
+  .ucard.needs,
+  .ucard.crit {
     background: color-mix(in srgb, var(--coral) 8%, var(--bg-raised));
     border-color: color-mix(in srgb, var(--coral) 42%, var(--border-soft));
   }
