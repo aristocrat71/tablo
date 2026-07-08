@@ -61,6 +61,7 @@ export interface Snapshot {
   planTier: string | null; // raw account tier, e.g. "default_claude_max_5x"
   pending: PendingRequest[];
   warnPct: number; // context warn threshold (%), echoed for the Critical group
+  cancelGraceMins: number; // early-cancel grace window (min), echoed for Settings
 }
 
 // Mirrors Rust `permission::HookStatus`.
@@ -123,4 +124,5 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   planTier: null,
   pending: [],
   warnPct: 60,
+  cancelGraceMins: 3,
 };

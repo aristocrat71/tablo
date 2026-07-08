@@ -20,6 +20,7 @@
     jumpToSession,
     hideDashboard,
     setWarnPct,
+    setCancelGraceMins,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -69,6 +70,7 @@
   let critCards = $derived(cards.filter(isCrit));
   let restCards = $derived(cards.filter((c) => !isCrit(c)));
   let warnPct = $derived(Math.round(snap.warnPct));
+  let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -224,6 +226,23 @@
             onchange={(e) => setWarnPct(Math.max(1, Math.min(100, Math.round(+e.currentTarget.value) || 60)))}
           />
           <span class="unit">%</span>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-main">
+          <div class="setting-title">Cancelled-prompt grace</div>
+          <div class="setting-sub">If you Ctrl+C a prompt before Claude responds, Tablo can't tell it apart from a long think — so it waits this long, then drops back to idle.</div>
+        </div>
+        <div class="num">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={cancelGraceMins}
+            onchange={(e) => setCancelGraceMins(Math.max(1, Math.round(+e.currentTarget.value) || 3))}
+          />
+          <span class="unit">min</span>
         </div>
       </div>
 

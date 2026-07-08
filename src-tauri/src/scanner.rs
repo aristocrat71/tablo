@@ -89,6 +89,9 @@ pub struct Snapshot {
     /// Context warn threshold (percent), echoed so every window can label the
     /// Critical group ("> N%") without its own config fetch.
     pub warn_pct: f64,
+    /// Early-cancel grace window (minutes), echoed so the Settings input shows
+    /// the live floored value.
+    pub cancel_grace_mins: u64,
 }
 
 impl Default for Snapshot {
@@ -104,6 +107,7 @@ impl Default for Snapshot {
             plan_tier: None,
             pending: Vec::new(),
             warn_pct: 60.0,
+            cancel_grace_mins: 3,
         }
     }
 }
@@ -131,6 +135,11 @@ pub struct FileState {
     activity: String,
     /// "working" | "waiting" | "thinking" | "" (unknown / no assistant line yet).
     activity_kind: String,
+    /// True after a typed prompt set the optimistic "thinking…" placeholder but
+    /// before any assistant line has confirmed the turn. Cleared by the first
+    /// assistant line (real work) or an interrupt. While true, a long transcript
+    /// silence is read as an early cancel (see `cancel_grace_mins`).
+    awaiting_first: bool,
     /// Rolling recent-activity buffer (capped at ACTIVITY_LOG_CAP) + its
     /// monotonic sequence source, for the dashboard terminal.
     log: Vec<ActivityEntry>,
@@ -417,6 +426,9 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                         state.model = model.to_string();
                     }
                     update_activity(state, msg);
+                    // An assistant line confirms the turn is really running, so
+                    // the "awaiting first line" cancel-guard no longer applies.
+                    state.awaiting_first = false;
                 }
             }
             // Claude Code's own AI-generated session title.
@@ -444,9 +456,14 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                 if is_interrupt(&v) {
                     state.activity = "interrupted".into();
                     state.activity_kind = "waiting".into();
+                    state.awaiting_first = false;
                 } else if is_user_prompt(v.get("message")) {
                     state.activity = "thinking…".into();
                     state.activity_kind = "working".into();
+                    // Optimistic — not yet confirmed by an assistant line. If the
+                    // user Ctrl+C's before the assistant responds, no marker is
+                    // written; the cancel-guard downgrades this after a silence.
+                    state.awaiting_first = true;
                 }
             }
             _ => {}
@@ -721,6 +738,8 @@ pub fn scan(
 
     let now = now_ms();
     let active_ms = cfg.active_window_secs as i64 * 1000;
+    // Enforce the 1-minute floor the UI also guards.
+    let cancel_grace_ms = cfg.cancel_grace_mins.max(1) as i64 * 60_000;
     let mut sessions: Vec<SessionView> = Vec::new();
     let mut seen: Vec<PathBuf> = Vec::new();
 
@@ -770,6 +789,17 @@ pub fn scan(
                 let (new_offset, lines) = read_new_lines(&path, st.offset);
                 st.offset = new_offset;
                 ingest(st, &lines);
+            }
+
+            // Early-cancel guard (see FileState::awaiting_first): a typed prompt
+            // with no assistant line yet, and a transcript silent past the grace
+            // window, reads as a Ctrl+C before the response — hand back to the
+            // user so the avatar drops out of "working". Checked here (not in
+            // ingest) precisely because the tell is the *absence* of new lines.
+            if st.awaiting_first && now - mtime > cancel_grace_ms {
+                st.activity_kind = "waiting".into();
+                st.activity = "cancelled".into();
+                st.awaiting_first = false;
             }
 
             let slug = pdir.file_name().and_then(|s| s.to_str()).unwrap_or("");
@@ -865,6 +895,7 @@ pub fn scan(
         plan_tier: claude_cfg.plan_tier.clone(),
         pending: Vec::new(),
         warn_pct: cfg.warn_pct,
+        cancel_grace_mins: cfg.cancel_grace_mins.max(1),
     }
 }
 
@@ -1032,5 +1063,37 @@ mod tests {
             &[r#"{"type":"user","interruptedMessageId":"msg_123","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#.into()],
         );
         assert_eq!(st.activity_kind, "waiting");
+    }
+
+    #[test]
+    fn awaiting_first_gates_the_cancel_guard() {
+        let mut st = FileState::default();
+        // A typed prompt arms the guard (optimistic "thinking…", unconfirmed).
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","promptSource":"typed","message":{"content":"do the thing"}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "working");
+        assert!(st.awaiting_first, "a fresh prompt should arm the cancel guard");
+
+        // The first assistant line confirms real work → guard disarmed, so a
+        // later silence must NOT be mistaken for a cancel.
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/x/a.rs"}}]}}"#.into()],
+        );
+        assert!(!st.awaiting_first, "an assistant line disarms the guard");
+
+        // A new prompt re-arms it; an interrupt (not a silence) disarms immediately.
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","promptSource":"typed","message":{"content":"again"}}"#.into()],
+        );
+        assert!(st.awaiting_first);
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","interruptedMessageId":"m","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#.into()],
+        );
+        assert!(!st.awaiting_first, "an interrupt disarms the guard too");
     }
 }

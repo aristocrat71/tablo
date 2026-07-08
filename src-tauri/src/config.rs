@@ -20,6 +20,14 @@ pub struct Config {
     /// A transcript modified within this many seconds counts as an active
     /// session (Open Question #3).
     pub active_window_secs: u64,
+    /// A typed prompt optimistically shows "thinking…", but a Ctrl+C *before*
+    /// the assistant responds writes no marker — the transcript just goes quiet.
+    /// If we're still awaiting the first assistant line after this many minutes
+    /// of silence, the prompt is treated as cancelled and Tablo hands back to the
+    /// user. Kept long by default because a genuinely long-thinking turn is
+    /// indistinguishable on disk (it also writes nothing until it responds).
+    /// Minimum 1 minute (enforced at use).
+    pub cancel_grace_mins: u64,
 
     // ---- context window sizing (Open Question #4) ----
     /// Denominator used when a session's window can't be determined and its
@@ -78,6 +86,7 @@ impl Default for Config {
             avatar_x: None,
             avatar_y: None,
             active_window_secs: 900,
+            cancel_grace_mins: 3,
             default_context_limit: 200_000,
             standard_context_limit: 200_000,
             extended_context_limit: 1_000_000,

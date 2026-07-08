@@ -125,6 +125,19 @@ fn set_warn_pct(app: AppHandle, state: State<'_, AppState>, pct: f64) {
     recompute_and_emit(&app);
 }
 
+/// Set the early-cancel grace window (minutes). A typed prompt with no assistant
+/// response and a transcript silent past this window is treated as cancelled.
+/// Floored at 1 minute. Persists and re-scans so the change takes effect at once.
+#[tauri::command]
+fn set_cancel_grace_mins(app: AppHandle, state: State<'_, AppState>, mins: u64) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.cancel_grace_mins = mins.max(1);
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
 /// Toggle the panel open/closed, anchored near the avatar.
 #[tauri::command]
 fn toggle_panel(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
@@ -674,6 +687,7 @@ pub fn run() {
             get_config,
             set_theme,
             set_warn_pct,
+            set_cancel_grace_mins,
             toggle_panel,
             open_dashboard,
             hide_dashboard,
