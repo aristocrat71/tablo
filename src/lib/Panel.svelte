@@ -3,7 +3,6 @@
   import { store } from "./state.svelte";
   import { openDashboard, resolvePermission, jumpToSession, hideCurrentWindow } from "./bridge";
   import { tokens, pct, activitySuffix } from "./format";
-  import ThemeToggle from "./ThemeToggle.svelte";
 
   // Esc collapses the panel (matches tap-away). The webview persists across
   // show/hide, so binding once on mount covers every open.
@@ -107,7 +106,6 @@
         <button class="dash-link" title="Open dashboard" onclick={() => openDashboard()}>
           dashboard <span class="arr">↗</span>
         </button>
-        <ThemeToggle />
       </div>
     </div>
 

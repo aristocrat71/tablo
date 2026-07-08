@@ -27,6 +27,9 @@
 
   let snap = $derived(store.snap);
 
+  // Header tabs: the sessions dashboard vs. the settings pane.
+  let view = $state<"dashboard" | "settings">("dashboard");
+
   // One card per session, its context gauge unified with any pending requests
   // it owns. Needs-input sessions sort first, then the panel's chosen sort.
   let cards = $derived.by(() => {
@@ -122,37 +125,17 @@
         </p>
       {/if}
     </div>
-    <div class="head-meta">
-      {#if hook}
-        <button
-          class="approvals-toggle"
-          class:on={hook.installed}
-          disabled={busy}
-          title={hook.serverUp
-            ? `Intercepts ${hook.tools.join(", ")} on :${hook.port}`
-            : "Approval server not running"}
-          onclick={toggleApprovals}
-        >
-          <span class="dot"></span>
-          approvals {hook.installed ? "on" : "off"}
-        </button>
-      {/if}
-      {#if loc}
-        <button
-          class="approvals-toggle"
-          class:on={loc.installed}
-          disabled={locBusy}
-          title="Lets Tablo focus the window a session lives in. Reports each session's tmux pane / terminal app (no tool interception)."
-          onclick={toggleLocate}
-        >
-          <span class="dot"></span>
-          jump {loc.installed ? "on" : "off"}
-        </button>
-      {/if}
-      <ThemeToggle />
-    </div>
+    {#if view === "dashboard"}
+      <button class="settings-btn" title="Settings" aria-label="Settings" onclick={() => (view = "settings")}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+    {/if}
   </div>
 
+  {#if view === "dashboard"}
   <div class="dash-grid">
     <div class="card">
       <h3>
@@ -175,7 +158,51 @@
       {/if}
     </div>
   </div>
+  {:else}
+  <button class="back" onclick={() => (view = "dashboard")}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+    Back to Dashboard
+  </button>
+  <div class="dash-grid">
+    <div class="card settings-card">
+      <h3>Settings</h3>
+
+      <div class="setting-grid">
+        {#if hook}
+          {@render toggle("Tool approvals", hook.serverUp ? `Intercept ${hook.tools.join(", ")} so you can approve or deny before they run.` : "Approval server not running.", hook.installed, busy, toggleApprovals)}
+        {/if}
+        {#if loc}
+          {@render toggle("Jump to session", "Focus the terminal window a session lives in (reads its tmux pane / terminal app).", loc.installed, locBusy, toggleLocate)}
+        {/if}
+      </div>
+
+      <div class="setting theme-row">
+        <div class="setting-main">
+          <div class="setting-title">Theme</div>
+          <div class="setting-sub">Switch between the warm dark and light looks.</div>
+        </div>
+        <ThemeToggle />
+      </div>
+    </div>
+  </div>
+  {/if}
 </div>
+
+{#snippet toggle(title: string, sub: string, on: boolean, busy: boolean, onToggle: () => void)}
+  <div class="setting">
+    <div class="setting-main">
+      <div class="setting-title">{title}</div>
+      <div class="setting-sub">{sub}</div>
+    </div>
+    <button class="approvals-toggle" class:on disabled={busy} onclick={onToggle}>
+      <span class="dot"></span>
+      {on ? "on" : "off"}
+    </button>
+  </div>
+{/snippet}
 
 {#snippet sessionCard(c: Card)}
   <div class="scard" class:needs={c.requests.length > 0}>
@@ -289,6 +316,52 @@
     font-weight: 700;
     clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
   }
+  /* settings gear — top-right of the header, dashboard view only */
+  .settings-btn {
+    align-self: flex-start;
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg-raised);
+    color: var(--ink-dim);
+    cursor: pointer;
+    transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
+  }
+  .settings-btn:hover,
+  .back:hover {
+    color: var(--ink);
+    border-color: var(--ink-faint);
+  }
+  .settings-btn svg {
+    width: 17px;
+    height: 17px;
+    display: block;
+  }
+  /* back link, settings view */
+  .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 16px;
+    padding: 6px 12px 6px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--ink-dim);
+    font-family: var(--font-round);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
+  }
+  .back svg {
+    width: 15px;
+    height: 15px;
+    display: block;
+  }
   .statline {
     display: flex;
     align-items: center;
@@ -313,10 +386,42 @@
   .statline.muted {
     color: var(--ink-faint);
   }
-  .head-meta {
+  /* settings pane rows */
+  .settings-card {
+    display: flex;
+    flex-direction: column;
+  }
+  /* approvals + jump share one two-column row; theme gets its own below. */
+  .setting-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .setting {
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .theme-row {
+    padding-top: 16px;
+  }
+  .setting-main {
+    min-width: 0;
+  }
+  .setting-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .setting-sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 3px;
+    line-height: 1.5;
   }
   .approvals-toggle {
     display: flex;

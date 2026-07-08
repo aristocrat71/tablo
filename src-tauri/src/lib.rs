@@ -179,7 +179,7 @@ fn open_dashboard(app: AppHandle) -> Result<(), String> {
         Some(w) => w,
         None => {
             let w = tauri::WebviewWindowBuilder::new(&app, "dashboard", tauri::WebviewUrl::default())
-                .title("tablo — dashboard")
+                .title("tablo")
                 .inner_size(980.0, 720.0)
                 .min_inner_size(640.0, 480.0)
                 .resizable(true)
@@ -476,7 +476,7 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .unwrap_or_else(|_| std::env::temp_dir().join("tablo"));
-            let cfg = Config::load(&config_dir);
+            let mut cfg = Config::load(&config_dir);
             // Capture hook params before `cfg` is moved into managed state.
             let (hook_port, hook_timeout) = (cfg.permission_port, cfg.hook_timeout_secs);
 
@@ -506,6 +506,15 @@ pub fn run() {
             // resets Tablo to a switcher-hidden widget.
             if let Some(dash) = app.get_webview_window("dashboard") {
                 install_dashboard_close(&handle, &dash);
+            }
+
+            // "Jump to session" is on by default: wire the locate hook into
+            // ~/.claude/settings.json on the first launch only. The guard flag
+            // means a later user-disable sticks — we never re-enable behind them.
+            if !cfg.locate_default_applied {
+                let _ = locate::install(&cfg);
+                cfg.locate_default_applied = true;
+                cfg.save(&config_dir);
             }
 
             app.manage(AppState {

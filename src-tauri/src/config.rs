@@ -66,6 +66,10 @@ pub struct Config {
     pub notify_on_permission: bool,
     /// "dark" (hero) or "light".
     pub theme: String,
+    /// One-time guard: whether "jump to session" has been auto-enabled once. Set
+    /// true after the first launch wires it in, so a later user-disable sticks
+    /// and we never silently re-enable it behind their back.
+    pub locate_default_applied: bool,
 }
 
 impl Default for Config {
@@ -93,6 +97,7 @@ impl Default for Config {
             notify_on_warn: false,
             notify_on_permission: true,
             theme: "dark".into(),
+            locate_default_applied: false,
         }
     }
 }
