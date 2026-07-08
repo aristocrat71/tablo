@@ -107,7 +107,7 @@
 <div class="panel-shell">
   <div class="panel">
     <div class="panel-top">
-      <div class="panel-glyph">a</div>
+      <img class="panel-glyph" src="/tablo-cat-logo.png" alt="" />
       <div class="panel-titles">
         <div class="name">tablo</div>
         <div class="sub">{sub}</div>
@@ -292,16 +292,10 @@
     border-bottom: 1px solid var(--border-soft);
   }
   .panel-glyph {
-    width: 34px;
-    height: 38px;
-    display: grid;
-    place-items: center;
-    font-family: var(--font-mono);
-    font-weight: 700;
-    font-size: 15px;
-    color: var(--amber);
-    background: var(--amber-soft);
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+    flex: none;
   }
   .panel-titles {
     flex: 1;
