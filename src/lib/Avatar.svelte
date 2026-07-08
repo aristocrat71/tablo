@@ -13,11 +13,21 @@
   };
 
   let s = $derived(store.snap.state);
-  let count = $derived(store.snap.agentCount);
-  let showCount = $derived(s !== "idle" && count >= 1);
   // Pending tool approvals (Phase 4) — drive the extra-prominent "needs input"
   // shake, distinct from the gentler context-alarm.
   let needsInput = $derived(store.snap.waiting > 0);
+
+  // Per-state session tallies for the pips around Tablo. A session with a pending
+  // permission request counts only as "permission" (matches the panel's grouping:
+  // Permission Request / Waiting / Working). Each pip shows only when its count > 0.
+  let pendingIds = $derived(new Set(store.snap.pending.map((p) => p.sessionId)));
+  let permCount = $derived(pendingIds.size);
+  let waitCount = $derived(
+    store.snap.sessions.filter((x) => !pendingIds.has(x.id) && x.activityKind === "waiting").length,
+  );
+  let workCount = $derived(
+    store.snap.sessions.filter((x) => !pendingIds.has(x.id) && x.activityKind !== "waiting").length,
+  );
 
   // --- tap vs. drag ---
   const DRAG_THRESHOLD = 6; // px of movement before a press becomes a drag
@@ -100,9 +110,11 @@
     <div class="tablo {CLASS[s]}" class:needs-input={needsInput}>
       <span class="glyph">{GLYPH[s]}</span>
     </div>
-    {#if showCount}
-      <span class="count" class:alarmed={s === "alarmed"}>{count}</span>
-    {/if}
+    <div class="badges">
+      {#if permCount > 0}<span class="badge perm">{permCount}</span>{/if}
+      {#if waitCount > 0}<span class="badge wait">{waitCount}</span>{/if}
+      {#if workCount > 0}<span class="badge work">{workCount}</span>{/if}
+    </div>
   </div>
 </div>
 
@@ -155,11 +167,18 @@
     transform: translateY(-3px);
   }
 
-  /* count badge — floats outside the hex, off the top-right edge */
-  .count {
+  /* count pips — float off the top-right edge, stacked: permission (red),
+     waiting (green), working (amber), each shown only when its count > 0 */
+  .badges {
     position: absolute;
-    top: -6px;
-    right: -9px;
+    top: -7px;
+    right: -10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    z-index: 3;
+  }
+  .badge {
     min-width: 19px;
     height: 19px;
     padding: 0 4px;
@@ -170,15 +189,21 @@
     display: grid;
     place-items: center;
     border: 2px solid var(--bg-inset);
-    z-index: 3;
+  }
+  .badge.perm {
+    background: var(--coral);
+    color: #fff;
+  }
+  .badge.wait {
+    background: var(--sage);
+    color: #17220f;
+  }
+  .badge.work {
     background: var(--amber);
     color: #1c1409;
   }
-  :global([data-theme="light"]) .count {
-    color: #fff;
-  }
-  .count.alarmed {
-    background: var(--coral);
+  :global([data-theme="light"]) .badge.wait,
+  :global([data-theme="light"]) .badge.work {
     color: #fff;
   }
 
