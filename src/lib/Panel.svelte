@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { store } from "./state.svelte";
   import { openDashboard, resolvePermission, jumpToSession, hideCurrentWindow } from "./bridge";
-  import { tokens, pct, activitySuffix } from "./format";
+  import { tokens, pct } from "./format";
 
   // Esc collapses the panel (matches tap-away). The webview persists across
   // show/hide, so binding once on mount covers every open.
@@ -204,9 +204,6 @@
       <div class="session-activity {c.session.activityKind}">
         <span class="act-dot"></span>
         <span class="act-text">{c.session.activity}</span>
-        {#if activitySuffix(c.session.activityKind)}
-          <span class="act-suffix">· {activitySuffix(c.session.activityKind)}</span>
-        {/if}
       </div>
     {/if}
 
@@ -644,10 +641,6 @@
   .session-activity .act-text {
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .session-activity .act-suffix {
-    flex-shrink: 0;
-    color: var(--ink-faint);
   }
   /* working: amber dot, gently pulsing so it reads as live */
   .session-activity.working {

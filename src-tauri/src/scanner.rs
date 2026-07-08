@@ -810,12 +810,17 @@ pub fn scan(
         p.dedup();
         p.len() as u32
     };
-    let state = if sessions.is_empty() {
-        "idle"
-    } else if sessions.iter().any(|s| s.level != "ok") {
+    // Avatar state (Avatar State Model), precedence alarmed > running > idle:
+    //  - "alarmed": any session's context is in the danger zone (>60%, level != ok).
+    //    Permission requests also force "alarmed" in `recompute_and_emit`.
+    //  - "running": any session is actively working — anything but waiting-on-you.
+    //  - "idle": no sessions, or every one is just waiting.
+    let state = if sessions.iter().any(|s| s.level != "ok") {
         "alarmed"
-    } else {
+    } else if sessions.iter().any(|s| s.activity_kind != "waiting") {
         "running"
+    } else {
+        "idle"
     };
 
     Snapshot {

@@ -1,12 +1,5 @@
 import type { ActivityKind } from "./types";
 
-// Trailing state label for the activity line ("working" / "waiting for you").
-// Thinking needs none — the activity text already reads "thinking…". The live
-// state is also carried by a colored LED dot (styled per kind), no glyph/emoji.
-export function activitySuffix(k: ActivityKind): string {
-  return k === "waiting" ? "waiting for you" : k === "working" ? "working" : "";
-}
-
 // Terminal (dashboard) prompt marker: "#" for the human's own prompt, ">" for
 // anything the agent does (tool call / spoken output / thinking). Two markers,
 // matching the legend; the tool/text/think distinction is carried by color.
