@@ -18,9 +18,29 @@ interface Prefs {
   // everything); the Permission Request group is never filtered.
   showWorking: boolean;
   showWaiting: boolean;
+  // Toast when a session finishes working and starts waiting on you. Default on.
+  notifyOnWaiting: boolean;
+  // How long that toast stays on screen, in seconds. Default 2.
+  waitingToastSecs: number;
 }
 
-const DEFAULTS: Prefs = { sort: "context", showWorking: true, showWaiting: true };
+// Bounds for the toast hover time (seconds).
+export const TOAST_SECS_MIN = 1;
+export const TOAST_SECS_MAX = 30;
+
+function clampSecs(n: unknown): number {
+  const v = Math.round(Number(n));
+  if (!Number.isFinite(v)) return 2;
+  return Math.min(TOAST_SECS_MAX, Math.max(TOAST_SECS_MIN, v));
+}
+
+const DEFAULTS: Prefs = {
+  sort: "context",
+  showWorking: true,
+  showWaiting: true,
+  notifyOnWaiting: true,
+  waitingToastSecs: 2,
+};
 
 function coerce(raw: unknown): Prefs {
   const p = (raw ?? {}) as Partial<Prefs>;
@@ -28,6 +48,8 @@ function coerce(raw: unknown): Prefs {
     sort: p.sort === "recent" ? "recent" : "context",
     showWorking: p.showWorking !== false,
     showWaiting: p.showWaiting !== false,
+    notifyOnWaiting: p.notifyOnWaiting !== false,
+    waitingToastSecs: p.waitingToastSecs == null ? 2 : clampSecs(p.waitingToastSecs),
   };
 }
 
@@ -48,7 +70,13 @@ function persist() {
   try {
     localStorage.setItem(
       KEY,
-      JSON.stringify({ sort: prefs.sort, showWorking: prefs.showWorking, showWaiting: prefs.showWaiting })
+      JSON.stringify({
+        sort: prefs.sort,
+        showWorking: prefs.showWorking,
+        showWaiting: prefs.showWaiting,
+        notifyOnWaiting: prefs.notifyOnWaiting,
+        waitingToastSecs: prefs.waitingToastSecs,
+      })
     );
   } catch {
     /* storage unavailable — keep the in-memory value */
@@ -66,6 +94,16 @@ export function toggleFilter(kind: StateFilter) {
   persist();
 }
 
+export function setNotifyOnWaiting(on: boolean) {
+  prefs.notifyOnWaiting = on;
+  persist();
+}
+
+export function setWaitingToastSecs(secs: number) {
+  prefs.waitingToastSecs = clampSecs(secs);
+  persist();
+}
+
 // Live-sync when another window (panel <-> dashboard) changes the preference.
 // The `storage` event only fires in *other* windows, so the writer isn't
 // double-applied.
@@ -77,6 +115,8 @@ if (browser) {
       prefs.sort = next.sort;
       prefs.showWorking = next.showWorking;
       prefs.showWaiting = next.showWaiting;
+      prefs.notifyOnWaiting = next.notifyOnWaiting;
+      prefs.waitingToastSecs = next.waitingToastSecs;
     } catch {
       /* ignore malformed cross-window payload */
     }

@@ -3,7 +3,14 @@
   import { store } from "./state.svelte";
   import { fade } from "svelte/transition";
   import { pct, activityMark, terminalStatus } from "./format";
-  import { prefs, byMode } from "./prefs.svelte";
+  import {
+    prefs,
+    byMode,
+    setNotifyOnWaiting,
+    setWaitingToastSecs,
+    TOAST_SECS_MIN,
+    TOAST_SECS_MAX,
+  } from "./prefs.svelte";
   import {
     hookStatus,
     setHookEnabled,
@@ -179,7 +186,29 @@
         {/if}
       </div>
 
-      <div class="setting theme-row">
+      {@render toggle("Waiting notifications", "A gentle nudge from the widget when a session finishes and starts waiting on you.", prefs.notifyOnWaiting, false, () => setNotifyOnWaiting(!prefs.notifyOnWaiting))}
+
+      {#if prefs.notifyOnWaiting}
+        <div class="setting">
+          <div class="setting-main">
+            <div class="setting-title">Notification hover time</div>
+            <div class="setting-sub">How long the waiting toast stays on screen.</div>
+          </div>
+          <div class="num">
+            <input
+              type="number"
+              min={TOAST_SECS_MIN}
+              max={TOAST_SECS_MAX}
+              step="1"
+              value={prefs.waitingToastSecs}
+              onchange={(e) => setWaitingToastSecs(+e.currentTarget.value)}
+            />
+            <span class="unit">sec</span>
+          </div>
+        </div>
+      {/if}
+
+      <div class="setting">
         <div class="setting-main">
           <div class="setting-title">Theme</div>
           <div class="setting-sub">Switch between the warm dark and light looks.</div>
@@ -391,13 +420,13 @@
     display: flex;
     flex-direction: column;
   }
-  /* approvals + jump share one two-column row; theme gets its own below. */
+  /* approvals + jump share one two-column row; the on/off + theme rows stack
+     below it, each a full-width row divided by a top border. */
   .setting-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 28px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: 4px;
   }
   .setting {
     display: flex;
@@ -405,11 +434,39 @@
     justify-content: space-between;
     gap: 16px;
   }
-  .theme-row {
-    padding-top: 16px;
+  .settings-card > .setting {
+    padding: 15px 0;
+    border-top: 1px solid var(--border-soft);
   }
   .setting-main {
     min-width: 0;
+  }
+  .num {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .num input {
+    width: 50px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-inset);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: right;
+  }
+  .num input:focus {
+    outline: none;
+    border-color: var(--ink-faint);
+  }
+  .num .unit {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
   }
   .setting-title {
     font-size: 13.5px;

@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { store } from "./state.svelte";
-  import { beginDrag, moveAvatar, endDrag, togglePanel } from "./bridge";
+  import { prefs } from "./prefs.svelte";
+  import { beginDrag, moveAvatar, endDrag, togglePanel, onSessionWaiting } from "./bridge";
   import type { AvatarState } from "./types";
 
   // Single source of truth for the state -> render mapping. Swapping the glyph
@@ -28,6 +30,25 @@
   let workCount = $derived(
     store.snap.sessions.filter((x) => !pendingIds.has(x.id) && x.activityKind !== "waiting").length,
   );
+
+  // One-shot side-to-side shake when a waiting notification fires. Toggling the
+  // class off then on (next frame) restarts the CSS animation even mid-shake.
+  let notifShake = $state(false);
+  let shakeT: ReturnType<typeof setTimeout> | undefined;
+  function shakeOnce() {
+    notifShake = false;
+    requestAnimationFrame(() => {
+      notifShake = true;
+      clearTimeout(shakeT);
+      shakeT = setTimeout(() => (notifShake = false), 520);
+    });
+  }
+  onMount(() => {
+    const un = onSessionWaiting(() => {
+      if (prefs.notifyOnWaiting) shakeOnce();
+    });
+    return () => un.then((u) => u()).catch(() => {});
+  });
 
   // --- tap vs. drag ---
   const DRAG_THRESHOLD = 6; // px of movement before a press becomes a drag
@@ -106,7 +127,7 @@
   onpointermove={onMove}
   onpointerup={onUp}
 >
-  <div class="tablo-wrap" class:needs-input={needsInput}>
+  <div class="tablo-wrap" class:needs-input={needsInput} class:notif-shake={notifShake}>
     <div class="tablo {CLASS[s]}" class:needs-input={needsInput}>
       <span class="glyph">{GLYPH[s]}</span>
     </div>
@@ -305,6 +326,33 @@
     }
     50% {
       filter: drop-shadow(0 0 24px color-mix(in srgb, var(--coral) 95%, transparent));
+    }
+  }
+
+  /* one-shot side-to-side shake when a waiting notification launches. Declared
+     last so it wins over the needs-input shake for its brief run, then reverts. */
+  .tablo-wrap.notif-shake {
+    animation: notif-shake 0.5s var(--ease);
+  }
+  @keyframes notif-shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    15% {
+      transform: translateX(-6px);
+    }
+    35% {
+      transform: translateX(5px);
+    }
+    55% {
+      transform: translateX(-4px);
+    }
+    75% {
+      transform: translateX(3px);
+    }
+    90% {
+      transform: translateX(-1px);
     }
   }
 </style>

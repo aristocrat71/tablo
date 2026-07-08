@@ -55,6 +55,9 @@ pub(crate) struct AppState {
     claude_cfg: Mutex<ClaudeConfigCache>,
     /// Last emitted level per session id, for one-shot warning notifications.
     prev_levels: Mutex<HashMap<String, String>>,
+    /// Last seen activity kind per session id (perm/working/thinking/waiting/""),
+    /// to fire a one-shot "session-waiting" event on a working→waiting crossing.
+    prev_activity: Mutex<HashMap<String, String>>,
     /// True while the avatar is being dragged (keeps it interactive).
     dragging: AtomicBool,
     /// When the panel was last auto-hidden on blur, to debounce the tap that
@@ -290,6 +293,62 @@ fn place_panel(app: &AppHandle) {
     let _ = panel.set_position(PhysicalPosition::new(px, py));
 }
 
+/// Anchor the toast just left of (or right of, if clipped) the avatar, vertically
+/// centered on it, clamped to the monitor. Mirrors `place_panel`.
+fn place_toast(app: &AppHandle) {
+    let (avatar, toast) = match (app.get_webview_window("avatar"), app.get_webview_window("toast")) {
+        (Some(a), Some(t)) => (a, t),
+        _ => return,
+    };
+    let ap = avatar.outer_position().unwrap_or(PhysicalPosition::new(0, 0));
+    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(92, 108));
+    let sf = avatar.scale_factor().unwrap_or(1.0);
+    let mut tsz = toast.outer_size().unwrap_or(tauri::PhysicalSize::new(0, 0));
+    if tsz.width == 0 || tsz.height == 0 {
+        tsz = tauri::PhysicalSize::new((264.0 * sf) as u32, (84.0 * sf) as u32);
+    }
+    // The hex art (58px wide) is centered in the avatar window with a transparent
+    // side margin; tuck the toast into that margin so the right-aligned card sits
+    // right beside the cat rather than a whole window-width away.
+    let inset = (asz.width as i32 - (58.0 * sf) as i32) / 2;
+    let gap = (3.0 * sf) as i32;
+
+    let mut tx = ap.x + inset - gap - tsz.width as i32;
+    let mut ty = ap.y + (asz.height as i32 - tsz.height as i32) / 2;
+
+    if let Ok(Some(mon)) = avatar.current_monitor() {
+        let mpos = mon.position();
+        let msz = mon.size();
+        if tx < mpos.x {
+            tx = ap.x + asz.width as i32 - inset + gap; // flip to the right of the hex
+        }
+        let max_x = (mpos.x + msz.width as i32 - tsz.width as i32).max(mpos.x);
+        let max_y = (mpos.y + msz.height as i32 - tsz.height as i32).max(mpos.y);
+        tx = tx.clamp(mpos.x, max_x);
+        ty = ty.clamp(mpos.y, max_y);
+    }
+    let _ = toast.set_position(PhysicalPosition::new(tx, ty));
+}
+
+/// Position the toast next to the avatar and reveal it (non-activating).
+#[tauri::command]
+fn show_toast(app: AppHandle) -> Result<(), String> {
+    place_toast(&app);
+    if let Some(t) = app.get_webview_window("toast") {
+        t.show().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Hide the toast once its dismiss animation has finished.
+#[tauri::command]
+fn hide_toast(app: AppHandle) -> Result<(), String> {
+    if let Some(t) = app.get_webview_window("toast") {
+        t.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // ============================ background loops ============================
 
 /// One scan → attach pending → notify → emit cycle. Called both by the watcher
@@ -324,6 +383,7 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
 
     fire_notifications(app, &state, &cfg, &snap);
     fire_permission_notifications(app, &state, &cfg, &snap);
+    fire_waiting_events(app, &state, &snap);
 
     let changed = {
         let mut cur = state.snapshot.lock().unwrap();
@@ -360,6 +420,46 @@ fn fire_notifications(app: &AppHandle, state: &State<'_, AppState>, cfg: &Config
         next.insert(s.id.clone(), s.level.clone());
     }
     *prev = next;
+}
+
+/// Emit `session-waiting` (with the project names) when a session finishes
+/// working and starts waiting on the user. The toast and the avatar both listen
+/// and decide whether to react per the frontend `notifyOnWaiting` preference. A
+/// session with a pending permission request is tracked as "perm" so approval
+/// flows never masquerade as a work→wait crossing.
+#[derive(serde::Serialize, Clone)]
+struct WaitingSession {
+    project: String,
+    title: Option<String>,
+}
+
+fn fire_waiting_events(app: &AppHandle, state: &State<'_, AppState>, snap: &Snapshot) {
+    let pending_ids: HashSet<&str> = snap.pending.iter().map(|p| p.session_id.as_str()).collect();
+    let mut prev = state.prev_activity.lock().unwrap();
+    let mut arrived: Vec<WaitingSession> = Vec::new();
+    let mut next = HashMap::new();
+    for s in &snap.sessions {
+        let kind = if pending_ids.contains(s.id.as_str()) {
+            "perm"
+        } else {
+            s.activity_kind.as_str()
+        };
+        if kind == "waiting" {
+            if let Some(p) = prev.get(&s.id) {
+                if p == "working" || p == "thinking" {
+                    arrived.push(WaitingSession {
+                        project: s.project.clone(),
+                        title: s.title.clone(),
+                    });
+                }
+            }
+        }
+        next.insert(s.id.clone(), kind.to_string());
+    }
+    *prev = next;
+    if !arrived.is_empty() {
+        let _ = app.emit("session-waiting", &arrived);
+    }
 }
 
 /// Notify once per newly-arrived approval request (Phase 4).
@@ -485,6 +585,12 @@ pub fn run() {
                 position_avatar(&avatar, &cfg);
             }
 
+            // The toast is purely visual — always click-through so it never
+            // intercepts anything beneath it.
+            if let Some(toast) = app.get_webview_window("toast") {
+                let _ = toast.set_ignore_cursor_events(true);
+            }
+
             // Panel dismisses itself when it loses focus (tap-away).
             if let Some(panel) = app.get_webview_window("panel") {
                 let h = handle.clone();
@@ -524,6 +630,7 @@ pub fn run() {
                 files: Mutex::new(HashMap::new()),
                 claude_cfg: Mutex::new(ClaudeConfigCache::default()),
                 prev_levels: Mutex::new(HashMap::new()),
+                prev_activity: Mutex::new(HashMap::new()),
                 dragging: AtomicBool::new(false),
                 panel_last_hidden: Mutex::new(None),
                 pending: Mutex::new(Vec::new()),
@@ -554,6 +661,8 @@ pub fn run() {
             toggle_panel,
             open_dashboard,
             hide_dashboard,
+            show_toast,
+            hide_toast,
             begin_drag,
             move_avatar,
             end_drag,

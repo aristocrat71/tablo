@@ -97,6 +97,14 @@ body[data-surface="avatar"] {
   background: transparent;
 }
 
+/* Toast window: right-align the card so it hugs the avatar side (the window is
+   positioned just to the left of the cat). */
+body[data-surface="toast"] {
+  display: grid;
+  place-items: center end;
+  background: transparent;
+}
+
 /* ---- Themed scrollbars (WebKit) — thin, warm, unobtrusive. The transparent
    track + padding-boxed thumb reads as a slim pill that adapts per theme. ---- */
 ::-webkit-scrollbar {

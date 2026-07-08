@@ -27,6 +27,9 @@ export const openDashboard = () => invoke("open_dashboard");
 export const hideCurrentWindow = () => getCurrentWindow().hide();
 // Dashboard Esc: hide + drop Tablo back out of the Dock / Cmd+Tab switcher.
 export const hideDashboard = () => invoke("hide_dashboard");
+// Toast window: position next to the avatar + reveal / hide after its animation.
+export const showToast = () => invoke("show_toast");
+export const hideToast = () => invoke("hide_toast");
 export const beginDrag = () => invoke<{ x: number; y: number }>("begin_drag");
 export const moveAvatar = (x: number, y: number) =>
   invoke("move_avatar", { x: Math.round(x), y: Math.round(y) });
@@ -55,4 +58,11 @@ export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
 // surfaces update live.
 export function onTheme(cb: (theme: string) => void): Promise<UnlistenFn> {
   return listen<string>("theme-update", (e) => cb(e.payload));
+}
+
+// Fired when sessions cross from working → waiting; payload is the sessions'
+// project + title. Drives the toast (toast window) and a one-shot avatar shake.
+export type WaitingSession = { project: string; title: string | null };
+export function onSessionWaiting(cb: (sessions: WaitingSession[]) => void): Promise<UnlistenFn> {
+  return listen<WaitingSession[]>("session-waiting", (e) => cb(e.payload));
 }

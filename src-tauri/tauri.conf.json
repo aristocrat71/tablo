@@ -51,6 +51,20 @@
         "decorations": true,
         "transparent": false,
         "visible": false
+      },
+      {
+        "label": "toast",
+        "title": "tablo",
+        "width": 264,
+        "height": 84,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false
       }
     ],
     "security": {
