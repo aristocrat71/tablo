@@ -107,7 +107,7 @@
 <div class="panel-shell">
   <div class="panel">
     <div class="panel-top">
-      <img class="panel-glyph" src="/tablo-cat-logo.png" alt="" />
+      <img class="panel-glyph" src="/tablo-logo-v3.png" alt="" />
       <div class="panel-titles">
         <div class="name">tablo</div>
         <div class="sub">{sub}</div>
@@ -295,6 +295,9 @@
     width: 36px;
     height: 36px;
     object-fit: contain;
+    background: #fff;
+    border-radius: 7px;
+    padding: 3px;
     flex: none;
   }
   .panel-titles {
