@@ -8,24 +8,26 @@ import { browser } from "$app/environment";
 import type { SessionView } from "./types";
 
 export type SortMode = "context" | "recent";
-export type PanelMode = "expanded" | "compact";
+export type StateFilter = "working" | "waiting";
 
 const KEY = "tablo.viewPrefs";
 
 interface Prefs {
   sort: SortMode;
-  panelMode: PanelMode;
+  // Per-state visibility toggles for the panel groups. Both on by default (show
+  // everything); the Permission Request group is never filtered.
+  showWorking: boolean;
+  showWaiting: boolean;
 }
 
-// Defaults reproduce the pre-Phase-2 behaviour exactly: the backend already
-// orders sessions by highest context fill, and the panel showed the full list.
-const DEFAULTS: Prefs = { sort: "context", panelMode: "expanded" };
+const DEFAULTS: Prefs = { sort: "context", showWorking: true, showWaiting: true };
 
 function coerce(raw: unknown): Prefs {
   const p = (raw ?? {}) as Partial<Prefs>;
   return {
     sort: p.sort === "recent" ? "recent" : "context",
-    panelMode: p.panelMode === "compact" ? "compact" : "expanded",
+    showWorking: p.showWorking !== false,
+    showWaiting: p.showWaiting !== false,
   };
 }
 
@@ -44,7 +46,10 @@ export const prefs = $state<Prefs>(load());
 function persist() {
   if (!browser) return;
   try {
-    localStorage.setItem(KEY, JSON.stringify({ sort: prefs.sort, panelMode: prefs.panelMode }));
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ sort: prefs.sort, showWorking: prefs.showWorking, showWaiting: prefs.showWaiting })
+    );
   } catch {
     /* storage unavailable — keep the in-memory value */
   }
@@ -55,8 +60,9 @@ export function setSort(mode: SortMode) {
   persist();
 }
 
-export function setPanelMode(mode: PanelMode) {
-  prefs.panelMode = mode;
+export function toggleFilter(kind: StateFilter) {
+  if (kind === "working") prefs.showWorking = !prefs.showWorking;
+  else prefs.showWaiting = !prefs.showWaiting;
   persist();
 }
 
@@ -69,7 +75,8 @@ if (browser) {
     try {
       const next = coerce(JSON.parse(e.newValue));
       prefs.sort = next.sort;
-      prefs.panelMode = next.panelMode;
+      prefs.showWorking = next.showWorking;
+      prefs.showWaiting = next.showWaiting;
     } catch {
       /* ignore malformed cross-window payload */
     }

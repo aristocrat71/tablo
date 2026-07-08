@@ -180,7 +180,7 @@
 {#snippet sessionCard(c: Card)}
   <div class="scard" class:needs={c.requests.length > 0}>
     <div class="drow">
-      <span class="st {c.requests.length ? 'ask' : 'run'}"></span>
+      <span class="st {c.requests.length ? 'ask' : c.session?.activityKind || 'run'}"></span>
       <div class="info">
         <div class="p">
           <span class="pname">{c.project}</span>
@@ -504,9 +504,19 @@
     border-radius: 999px;
     flex-shrink: 0;
   }
-  .drow .st.run {
+  /* per-session state LED: working = amber, waiting-for-input = sage,
+     permission request = coral. `run` is the fallback for unknown activity. */
+  .drow .st.run,
+  .drow .st.waiting {
     background: var(--sage);
     box-shadow: 0 0 7px var(--sage);
+  }
+  .drow .st.working {
+    background: var(--amber);
+    box-shadow: 0 0 7px var(--amber);
+  }
+  .drow .st.thinking {
+    background: var(--ink-faint);
   }
   .drow .st.ask {
     background: var(--coral);

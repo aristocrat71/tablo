@@ -14,7 +14,7 @@
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
-  import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
+  import { prefs, setSort, toggleFilter, byMode } from "./prefs.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
   // One card per session, unifying its working/context state with any pending
@@ -59,9 +59,24 @@
   });
 
   let needsCards = $derived(cards.filter((c) => c.requests.length > 0));
-  let workCards = $derived(cards.filter((c) => c.requests.length === 0));
-  // Compact collapses only the purely-working sessions; requests never hide.
-  let compact = $derived(prefs.panelMode === "compact" && workCards.length > 1);
+  // Split the non-request sessions: agents waiting on the user get their own
+  // green-LED group, distinct from the ones actively working.
+  let waitingCards = $derived(
+    cards.filter((c) => c.requests.length === 0 && c.session?.activityKind === "waiting")
+  );
+  let workCards = $derived(
+    cards.filter((c) => c.requests.length === 0 && c.session?.activityKind !== "waiting")
+  );
+  // State filters only apply while the toolbar is visible (>1 session), so a
+  // lone session can never be filtered out with no way to bring it back.
+  let filtersActive = $derived(snap.sessions.length > 1);
+  let showWork = $derived(!filtersActive || prefs.showWorking);
+  let showWait = $derived(!filtersActive || prefs.showWaiting);
+  // Everything filtered away (e.g. both toggles off) with no permission request
+  // forcing itself in — show a friendly placeholder instead of blank space.
+  let nothingVisible = $derived(
+    needsCards.length === 0 && !(showWait && waitingCards.length) && !(showWork && workCards.length)
+  );
 
   let sub = $derived.by(() => {
     if (!snap.hasProjectsDir) return "Claude Code hasn't run yet";
@@ -102,9 +117,13 @@
           <button class:on={prefs.sort === "context"} onclick={() => setSort("context")}>context</button>
           <button class:on={prefs.sort === "recent"} onclick={() => setSort("recent")}>recent</button>
         </div>
-        <div class="seg" role="group" aria-label="View mode">
-          <button class:on={!compact} onclick={() => setPanelMode("expanded")}>list</button>
-          <button class:on={compact} onclick={() => setPanelMode("compact")}>compact</button>
+        <div class="seg filt" role="group" aria-label="Filter by state">
+          <button class:on={prefs.showWaiting} onclick={() => toggleFilter("waiting")}>
+            <span class="fdot wait"></span>waiting
+          </button>
+          <button class:on={prefs.showWorking} onclick={() => toggleFilter("working")}>
+            <span class="fdot work"></span>working
+          </button>
         </div>
       </div>
     {/if}
@@ -120,7 +139,7 @@
         {#if needsCards.length}
           <div class="group-head">
             <span class="group-dot attn"></span>
-            <span class="group-name">Input requested</span>
+            <span class="group-name">Permission Request</span>
             <span class="group-count">{pending.length}</span>
           </div>
           {#each needsCards as c (c.key)}
@@ -128,22 +147,33 @@
           {/each}
         {/if}
 
-        {#if workCards.length}
+        {#if waitingCards.length && showWait}
+          <div class="group-head">
+            <span class="group-dot wait"></span>
+            <span class="group-name">Waiting</span>
+            <span class="group-count">{waitingCards.length}</span>
+          </div>
+          {#each waitingCards as c (c.key)}
+            {@render sessionCard(c)}
+          {/each}
+        {/if}
+
+        {#if workCards.length && showWork}
           <div class="group-head">
             <span class="group-dot work"></span>
             <span class="group-name">Working</span>
             <span class="group-count">{workCards.length}</span>
           </div>
-          {#if compact}
-            {@render sessionCard(workCards[0])}
-            <button class="more" onclick={() => setPanelMode("expanded")}>
-              +{workCards.length - 1} more session{workCards.length - 1 > 1 ? "s" : ""}
-            </button>
-          {:else}
-            {#each workCards as c (c.key)}
-              {@render sessionCard(c)}
-            {/each}
-          {/if}
+          {#each workCards as c (c.key)}
+            {@render sessionCard(c)}
+          {/each}
+        {/if}
+
+        {#if nothingVisible}
+          <div class="filtered-empty">
+            <div class="huh">Huh ~_~ ?</div>
+            <span>Everything's filtered out.</span>
+          </div>
         {/if}
       {/if}
     </div>
@@ -317,6 +347,9 @@
     border: 1px solid var(--border-soft);
   }
   .seg button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-family: var(--font-mono);
     font-size: 10.5px;
     font-weight: 600;
@@ -336,25 +369,26 @@
     background: var(--amber-soft);
     color: var(--amber);
   }
-
-  .more {
-    width: 100%;
-    margin-top: 4px;
-    padding: 10px;
-    border-radius: var(--r-md);
-    border: 1px dashed var(--border);
-    background: transparent;
-    color: var(--ink-dim);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    cursor: pointer;
-    transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
-  }
-  .more:hover {
+  /* state filters: neutral "on" highlight (the colored LED carries the meaning) */
+  .seg.filt button.on {
+    background: var(--bg-raised);
     color: var(--ink);
-    border-color: var(--ink-faint);
+  }
+  .fdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    background: var(--ink-faint);
+    transition: background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  }
+  .seg.filt button.on .fdot.wait {
+    background: var(--sage);
+    box-shadow: 0 0 6px var(--sage);
+  }
+  .seg.filt button.on .fdot.work {
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
   }
 
   .panel-body {
@@ -381,6 +415,10 @@
   .group-dot.work {
     background: var(--amber);
     box-shadow: 0 0 8px var(--amber);
+  }
+  .group-dot.wait {
+    background: var(--sage);
+    box-shadow: 0 0 8px var(--sage);
   }
   .group-name {
     font-family: var(--font-mono);
@@ -690,6 +728,28 @@
     text-align: center;
     padding: 46px 20px;
     color: var(--ink-dim);
+  }
+
+  /* shown when every group is filtered out (e.g. both toggles off) */
+  .filtered-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+    padding: 44px 20px;
+  }
+  .filtered-empty .huh {
+    font-family: var(--font-mono);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--ink-dim);
+  }
+  .filtered-empty span {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
   }
   .empty-glyph {
     width: 46px;
