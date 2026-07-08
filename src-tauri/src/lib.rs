@@ -264,7 +264,7 @@ fn position_avatar(avatar: &WebviewWindow, cfg: &Config) {
         let sf = mon.scale_factor();
         let msz = mon.size();
         let mpos = mon.position();
-        let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(92, 108));
+        let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(108, 116));
         let margin = (24.0 * sf) as i32;
         let x = mpos.x + msz.width as i32 - asz.width as i32 - margin;
         let y = mpos.y + msz.height as i32 - asz.height as i32 - margin * 2;
@@ -280,7 +280,7 @@ fn place_panel(app: &AppHandle) {
         _ => return,
     };
     let ap = avatar.outer_position().unwrap_or(PhysicalPosition::new(0, 0));
-    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(92, 108));
+    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(108, 116));
     let sf = avatar.scale_factor().unwrap_or(1.0);
     let mut psz = panel.outer_size().unwrap_or(tauri::PhysicalSize::new(0, 0));
     if psz.width == 0 || psz.height == 0 {
@@ -313,7 +313,7 @@ fn place_toast(app: &AppHandle) {
         _ => return,
     };
     let ap = avatar.outer_position().unwrap_or(PhysicalPosition::new(0, 0));
-    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(92, 108));
+    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(108, 116));
     let sf = avatar.scale_factor().unwrap_or(1.0);
     let mut tsz = toast.outer_size().unwrap_or(tauri::PhysicalSize::new(0, 0));
     if tsz.width == 0 || tsz.height == 0 {

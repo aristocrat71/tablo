@@ -256,7 +256,7 @@
     font-weight: 700;
     display: grid;
     place-items: center;
-    border: 2px solid var(--bg-inset);
+    border: 1px solid var(--bg-inset);
   }
   .badge.perm {
     background: var(--coral);
