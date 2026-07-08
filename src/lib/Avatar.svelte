@@ -128,9 +128,15 @@
   onpointerup={onUp}
 >
   <div class="tablo-wrap" class:needs-input={needsInput} class:notif-shake={notifShake}>
-    <div class="tablo {CLASS[s]}" class:needs-input={needsInput}>
-      <span class="glyph">{GLYPH[s]}</span>
-    </div>
+    {#if s === "idle"}
+      <!-- idle: the sleeping cat sprite replaces the `I` glyph. Other states keep
+           the placeholder hex+glyph until their sheet is wired in. -->
+      <div class="sprite sleeping" aria-hidden="true"></div>
+    {:else}
+      <div class="tablo {CLASS[s]}" class:needs-input={needsInput}>
+        <span class="glyph">{GLYPH[s]}</span>
+      </div>
+    {/if}
     <div class="badges">
       {#if permCount > 0}<span class="badge perm">{permCount}</span>{/if}
       {#if waitCount > 0}<span class="badge wait">{waitCount}</span>{/if}
@@ -186,6 +192,47 @@
   }
   .avatar-hit:hover .tablo {
     transform: translateY(-3px);
+  }
+
+  /* real cat sprite. The sheet is a single row of `--frames` cells played with
+     steps(); the state glow is a drop-shadow that follows the current frame's
+     alpha, the same signal the placeholder hex used. Each state is just a
+     background-image + timing swap, so the remaining sheets drop in the same way.
+     `steps()` must match `--frames`. */
+  .sprite {
+    --frames: 4;
+    --size: 76px;
+    width: var(--size);
+    height: var(--size);
+    background-repeat: no-repeat;
+    background-position: 0 0;
+    transition: transform 0.25s var(--ease);
+  }
+  .avatar-hit:hover .sprite {
+    transform: translateY(-3px);
+  }
+
+  /* idle → sleeping: curled cat, slow breathing sage glow, drifting Zs */
+  .sprite.sleeping {
+    background-image: url(/sprites/sleeping-sprite-sheet.png);
+    background-size: calc(var(--size) * var(--frames)) 100%;
+    animation:
+      sleep-frames 2.8s steps(4) infinite,
+      sleep-glow 4.5s var(--ease) infinite;
+  }
+  @keyframes sleep-frames {
+    to {
+      background-position-x: calc(var(--size) * var(--frames) * -1);
+    }
+  }
+  @keyframes sleep-glow {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 5px color-mix(in srgb, var(--sage) 28%, transparent));
+    }
+    50% {
+      filter: drop-shadow(0 0 9px color-mix(in srgb, var(--sage) 48%, transparent));
+    }
   }
 
   /* count pips — float off the top-right edge, stacked: permission (red),
