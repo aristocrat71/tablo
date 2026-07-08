@@ -1,22 +1,11 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { store } from "./state.svelte";
-  import { prefs } from "./prefs.svelte";
-  import { beginDrag, moveAvatar, endDrag, togglePanel, onSessionWaiting } from "./bridge";
+  import { beginDrag, moveAvatar, endDrag, togglePanel } from "./bridge";
   import type { AvatarState } from "./types";
 
-  // Single source of truth for the state -> render mapping. Swapping the glyph
-  // for a sprite sheet later means changing only this table, not the wiring.
-  const GLYPH: Record<AvatarState, string> = { idle: "I", running: "A", alarmed: "!" };
-  const CLASS: Record<AvatarState, string> = {
-    idle: "idle",
-    running: "working",
-    alarmed: "alarmed",
-  };
-
   let s = $derived(store.snap.state);
-  // Pending tool approvals (Phase 4) — drive the extra-prominent "needs input"
-  // shake, distinct from the gentler context-alarm.
+  // Pending tool approvals (Phase 4) — intensify the alarmed cat's coral glow
+  // (see the shocked sprite CSS), distinct from the gentler context-alarm.
   let needsInput = $derived(store.snap.waiting > 0);
 
   // Per-state session tallies for the pips around Tablo. A session with a pending
@@ -30,25 +19,6 @@
   let workCount = $derived(
     store.snap.sessions.filter((x) => !pendingIds.has(x.id) && x.activityKind !== "waiting").length,
   );
-
-  // One-shot side-to-side shake when a waiting notification fires. Toggling the
-  // class off then on (next frame) restarts the CSS animation even mid-shake.
-  let notifShake = $state(false);
-  let shakeT: ReturnType<typeof setTimeout> | undefined;
-  function shakeOnce() {
-    notifShake = false;
-    requestAnimationFrame(() => {
-      notifShake = true;
-      clearTimeout(shakeT);
-      shakeT = setTimeout(() => (notifShake = false), 520);
-    });
-  }
-  onMount(() => {
-    const un = onSessionWaiting(() => {
-      if (prefs.notifyOnWaiting) shakeOnce();
-    });
-    return () => un.then((u) => u()).catch(() => {});
-  });
 
   // Sleep/wake transitions between the sleeping and running loops, both driven
   // off the one curl-down sheet (the wake-up just plays it in reverse). prevState
@@ -150,7 +120,7 @@
   onpointermove={onMove}
   onpointerup={onUp}
 >
-  <div class="tablo-wrap" class:needs-input={needsInput} class:notif-shake={notifShake}>
+  <div class="tablo-wrap" class:needs-input={needsInput}>
     {#if s === "idle" && transitioning}
       <!-- running → sleeping: one-shot curl-down, then the sleeping loop -->
       <div
@@ -172,10 +142,8 @@
       <!-- running → trotting cat -->
       <div class="sprite running" aria-hidden="true"></div>
     {:else}
-      <!-- alarmed still uses the placeholder glyph hex until its sheet is wired in -->
-      <div class="tablo {CLASS[s]}" class:needs-input={needsInput}>
-        <span class="glyph">{GLYPH[s]}</span>
-      </div>
+      <!-- alarmed → shocked cat (portrait box; sits bolt upright) -->
+      <div class="sprite shocked" aria-hidden="true"></div>
     {/if}
     <div class="badges">
       {#if permCount > 0}<span class="badge perm">{permCount}</span>{/if}
@@ -198,40 +166,6 @@
     position: relative;
     display: inline-grid;
     place-items: center;
-  }
-
-  /* hexagonal avatar. clip-path clips box-shadow, so the glow uses a
-     drop-shadow filter (which follows the hex), and the rim is a colored base
-     layer with an inset fill. */
-  .tablo {
-    position: relative;
-    width: 58px;
-    height: 64px;
-    display: grid;
-    place-items: center;
-    font-family: var(--font-mono);
-    font-weight: 700;
-    font-size: 20px;
-    cursor: pointer;
-    --hex: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    clip-path: var(--hex);
-    background: var(--border);
-    transition: transform 0.25s var(--ease), filter 0.35s var(--ease);
-  }
-  .tablo::before {
-    content: "";
-    position: absolute;
-    inset: 2px;
-    clip-path: var(--hex);
-    background: var(--bg-surface);
-    z-index: 0;
-  }
-  .tablo .glyph {
-    position: relative;
-    z-index: 1;
-  }
-  .avatar-hit:hover .tablo {
-    transform: translateY(-3px);
   }
 
   /* real cat sprite. The sheet is a single row of `--frames` cells played with
@@ -304,6 +238,51 @@
     }
     50% {
       filter: drop-shadow(0 0 10px color-mix(in srgb, var(--amber) 55%, transparent));
+    }
+  }
+
+  /* alarmed → shocked cat: a PORTRAIT box (the cat sits bolt upright), so it
+     overrides the shared landscape `--size` with a narrower width; height still
+     derives from the frame aspect. Fast startled frame cycle + urgent coral glow. */
+  .sprite.shocked {
+    --frames: 5;
+    --fw: 382; /* shocked-sprite-sheet.png: 1908×544, 5 frames → ~382×544 */
+    --fh: 544;
+    --size: 80px; /* narrower so the taller pose still clears the count pips */
+    background-image: url(/sprites/shocked-sprite-sheet.png);
+    background-size: calc(var(--size) * var(--frames)) 100%;
+    animation:
+      shock-frames 0.7s steps(5) infinite,
+      shock-glow 0.9s var(--ease) infinite;
+  }
+  @keyframes shock-frames {
+    to {
+      background-position-x: calc(var(--size) * var(--frames) * -1);
+    }
+  }
+  @keyframes shock-glow {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 6px color-mix(in srgb, var(--coral) 45%, transparent));
+    }
+    50% {
+      filter: drop-shadow(0 0 15px color-mix(in srgb, var(--coral) 80%, transparent));
+    }
+  }
+  /* needs-input (a pending approval) is the loudest alarm: intensify the shocked
+     cat's coral glow and quicken its startled frame cycle. */
+  .tablo-wrap.needs-input .sprite.shocked {
+    animation:
+      shock-frames 0.5s steps(5) infinite,
+      shock-glow-urgent 0.85s var(--ease) infinite;
+  }
+  @keyframes shock-glow-urgent {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 10px color-mix(in srgb, var(--coral) 60%, transparent));
+    }
+    50% {
+      filter: drop-shadow(0 0 22px color-mix(in srgb, var(--coral) 95%, transparent));
     }
   }
 
@@ -384,131 +363,4 @@
     color: #fff;
   }
 
-  /* idle: gentle sage, slow breathing glow */
-  .tablo.idle {
-    color: var(--sage);
-    background: color-mix(in srgb, var(--sage) 45%, var(--border));
-    animation: breathe 4.5s var(--ease) infinite;
-  }
-  @keyframes breathe {
-    0%,
-    100% {
-      filter: drop-shadow(0 0 7px color-mix(in srgb, var(--sage) 30%, transparent));
-    }
-    50% {
-      filter: drop-shadow(0 0 13px color-mix(in srgb, var(--sage) 55%, transparent));
-    }
-  }
-
-  /* working: amber lamp glow, quicker pulse */
-  .tablo.working {
-    color: var(--amber);
-    background: color-mix(in srgb, var(--amber) 55%, var(--border));
-    animation: work 1.8s var(--ease) infinite;
-  }
-  @keyframes work {
-    0%,
-    100% {
-      filter: drop-shadow(0 0 9px color-mix(in srgb, var(--amber) 40%, transparent));
-    }
-    50% {
-      filter: drop-shadow(0 0 16px color-mix(in srgb, var(--amber) 75%, transparent));
-    }
-  }
-
-  /* alarmed: coral, urgent flush */
-  .tablo.alarmed {
-    color: var(--coral);
-    background: color-mix(in srgb, var(--coral) 60%, var(--border));
-    animation: alarm 0.9s var(--ease) infinite;
-  }
-  @keyframes alarm {
-    0%,
-    100% {
-      filter: drop-shadow(0 0 9px color-mix(in srgb, var(--coral) 45%, transparent));
-      transform: translateX(0);
-    }
-    25% {
-      transform: translateX(-1.5px);
-    }
-    50% {
-      filter: drop-shadow(0 0 17px color-mix(in srgb, var(--coral) 80%, transparent));
-    }
-    75% {
-      transform: translateX(1.5px);
-    }
-  }
-
-  /* needs-input: a pending tool approval — much more agitated than the context
-     alarm. The shake lives on the wrap so the count badge rattles along with the
-     hex; the hex itself does a hard coral flush. */
-  .tablo-wrap.needs-input {
-    animation: shake 0.5s var(--ease) infinite;
-  }
-  @keyframes shake {
-    0%,
-    100% {
-      transform: translate3d(0, 0, 0) rotate(0deg);
-    }
-    15% {
-      transform: translate3d(-3px, 1px, 0) rotate(-4deg);
-    }
-    30% {
-      transform: translate3d(3px, -1px, 0) rotate(4deg);
-    }
-    45% {
-      transform: translate3d(-3px, 1px, 0) rotate(-3deg);
-    }
-    60% {
-      transform: translate3d(3px, -1px, 0) rotate(3deg);
-    }
-    75% {
-      transform: translate3d(-2px, 0, 0) rotate(-2deg);
-    }
-    90% {
-      transform: translate3d(1px, 0, 0) rotate(1deg);
-    }
-  }
-  /* Overrides the .alarmed animation with a harder, faster coral pulse. */
-  .tablo.needs-input {
-    color: var(--coral);
-    background: color-mix(in srgb, var(--coral) 70%, var(--border));
-    animation: needs-glow 0.85s var(--ease) infinite;
-  }
-  @keyframes needs-glow {
-    0%,
-    100% {
-      filter: drop-shadow(0 0 11px color-mix(in srgb, var(--coral) 60%, transparent));
-    }
-    50% {
-      filter: drop-shadow(0 0 24px color-mix(in srgb, var(--coral) 95%, transparent));
-    }
-  }
-
-  /* one-shot side-to-side shake when a waiting notification launches. Declared
-     last so it wins over the needs-input shake for its brief run, then reverts. */
-  .tablo-wrap.notif-shake {
-    animation: notif-shake 0.5s var(--ease);
-  }
-  @keyframes notif-shake {
-    0%,
-    100% {
-      transform: translateX(0);
-    }
-    15% {
-      transform: translateX(-6px);
-    }
-    35% {
-      transform: translateX(5px);
-    }
-    55% {
-      transform: translateX(-4px);
-    }
-    75% {
-      transform: translateX(3px);
-    }
-    90% {
-      transform: translateX(-1px);
-    }
-  }
 </style>
