@@ -241,9 +241,14 @@
      `steps()` must match `--frames`. */
   .sprite {
     --frames: 4;
-    --size: 76px;
+    --size: 88px; /* display WIDTH; height derives from the frame aspect below */
+    /* Native frame pixel dims — MUST match the referenced sheet, or the art
+       distorts. Height is computed from them so a landscape frame (wider than
+       tall) is NOT crushed into a square box. */
+    --fw: 1;
+    --fh: 1;
     width: var(--size);
-    height: var(--size);
+    height: calc(var(--size) * var(--fh) / var(--fw));
     background-repeat: no-repeat;
     background-position: 0 0;
     transition: transform 0.25s var(--ease);
@@ -254,6 +259,8 @@
 
   /* idle → sleeping: curled cat, slow breathing sage glow, drifting Zs */
   .sprite.sleeping {
+    --fw: 256; /* sleeping-sprite-sheet.png: 1024×196, 4 frames → 256×196 */
+    --fh: 196;
     background-image: url(/sprites/sleeping-sprite-sheet.png);
     background-size: calc(var(--size) * var(--frames)) 100%;
     animation:
@@ -277,6 +284,8 @@
 
   /* running → trotting cat: quick trot, energetic amber "working" glow */
   .sprite.running {
+    --fw: 600; /* running-sprite-sheet.png: 2400×477, 4 frames → 600×477 */
+    --fh: 477;
     background-image: url(/sprites/running-sprite-sheet.png);
     background-size: calc(var(--size) * var(--frames)) 100%;
     animation:
@@ -302,6 +311,8 @@
      `both` holds the final curled frame until the sleeping loop swaps in. */
   .sprite.transition {
     --frames: 5;
+    --fw: 206; /* running-to-sleeping-sprite-sheet.png: 1030×180, 5 frames → 206×180 */
+    --fh: 180;
     background-image: url(/sprites/running-to-sleeping-sprite-sheet.png);
     background-size: calc(var(--size) * var(--frames)) 100%;
     animation: trans-frames 0.6s steps(5) 1 both;
@@ -318,6 +329,8 @@
      the first (+size), so the 5 held stops are -4,-3,-2,-1,0. */
   .sprite.waking {
     --frames: 5;
+    --fw: 206; /* running-to-sleeping-sprite-sheet.png: 1030×180, 5 frames → 206×180 */
+    --fh: 180;
     background-image: url(/sprites/running-to-sleeping-sprite-sheet.png);
     background-size: calc(var(--size) * var(--frames)) 100%;
     animation: wake-frames 0.6s steps(5) 1 both;

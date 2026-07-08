@@ -15,8 +15,8 @@
       {
         "label": "avatar",
         "title": "tablo",
-        "width": 108,
-        "height": 116,
+        "width": 126,
+        "height": 134,
         "resizable": false,
         "decorations": false,
         "transparent": true,
