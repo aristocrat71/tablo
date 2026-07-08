@@ -436,13 +436,40 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                 if let Some(text) = typed_prompt_text(&v) {
                     push_log(state, "user", &text);
                 }
-                if is_user_prompt(v.get("message")) {
+                // A manual interrupt (Esc / Ctrl+C) writes a `user` line that
+                // looks like a prompt (a bare "[Request interrupted…]" text
+                // block, no tool_result), but the agent has actually stopped and
+                // handed control back. Treat it as waiting-on-you so the avatar
+                // drops out of "working" instead of showing a phantom "thinking…".
+                if is_interrupt(&v) {
+                    state.activity = "interrupted".into();
+                    state.activity_kind = "waiting".into();
+                } else if is_user_prompt(v.get("message")) {
                     state.activity = "thinking…".into();
                     state.activity_kind = "working".into();
                 }
             }
             _ => {}
         }
+    }
+}
+
+/// True when a `user` line is a manual interrupt (Esc / Ctrl+C) rather than a
+/// prompt or tool result. Claude Code tags these with a top-level
+/// `interruptedMessageId` and/or a leading "[Request interrupted…]" text block;
+/// the field is present on only some of them, so both signals are checked.
+fn is_interrupt(v: &serde_json::Value) -> bool {
+    if v.get("interruptedMessageId").is_some() {
+        return true;
+    }
+    let starts_with_marker = |t: &str| t.trim_start().starts_with("[Request interrupted");
+    match v.get("message").and_then(|m| m.get("content")) {
+        Some(serde_json::Value::String(s)) => starts_with_marker(s),
+        Some(serde_json::Value::Array(blocks)) => blocks.iter().any(|b| {
+            b.get("type").and_then(|t| t.as_str()) == Some("text")
+                && b.get("text").and_then(|t| t.as_str()).is_some_and(starts_with_marker)
+        }),
+        _ => false,
     }
 }
 
@@ -974,5 +1001,36 @@ mod tests {
         );
         assert_eq!(st.activity, "editing a.rs", "tool_result should not overwrite activity");
         assert_eq!(st.log.len(), 3, "tool_result must not add a log line");
+    }
+
+    #[test]
+    fn manual_interrupt_returns_to_waiting() {
+        // Mid tool-call, so the last real activity was "working".
+        let mut st = FileState::default();
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash","input":{"command":"sleep 100"}}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "working");
+        let log_before = st.log.len();
+
+        // Esc/Ctrl+C writes a user line with the interrupt marker (no
+        // interruptedMessageId on this variant) — must flip to waiting, not read
+        // as a fresh prompt, and must not add a log line (not a typed prompt).
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "waiting", "interrupt should hand back to the user");
+        assert_eq!(st.activity, "interrupted");
+        assert_eq!(st.log.len(), log_before, "interrupt must not add a log line");
+
+        // The structured-field variant (top-level interruptedMessageId) also counts.
+        st.activity_kind = "working".into();
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","interruptedMessageId":"msg_123","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "waiting");
     }
 }
