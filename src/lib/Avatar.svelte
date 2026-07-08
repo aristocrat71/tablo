@@ -50,6 +50,29 @@
     return () => un.then((u) => u()).catch(() => {});
   });
 
+  // Sleep/wake transitions between the sleeping and running loops, both driven
+  // off the one curl-down sheet (the wake-up just plays it in reverse). prevState
+  // is plain bookkeeping (not reactive) so this effect only re-runs when the
+  // avatar state actually changes.
+  let prevState: AvatarState | null = null;
+  let transitioning = $state(false); // running → idle: curl down to sleep
+  let waking = $state(false); // idle → running: uncurl and get up
+  $effect(() => {
+    const cur = s;
+    if (prevState === "running" && cur === "idle") {
+      transitioning = true;
+      waking = false;
+    } else if (prevState === "idle" && cur === "running") {
+      waking = true;
+      transitioning = false;
+    } else {
+      // any other change (e.g. → alarmed) cancels an in-flight transition
+      transitioning = false;
+      waking = false;
+    }
+    prevState = cur;
+  });
+
   // --- tap vs. drag ---
   const DRAG_THRESHOLD = 6; // px of movement before a press becomes a drag
   let downScreen: { x: number; y: number } | null = null;
@@ -128,7 +151,21 @@
   onpointerup={onUp}
 >
   <div class="tablo-wrap" class:needs-input={needsInput} class:notif-shake={notifShake}>
-    {#if s === "idle"}
+    {#if s === "idle" && transitioning}
+      <!-- running → sleeping: one-shot curl-down, then the sleeping loop -->
+      <div
+        class="sprite transition"
+        aria-hidden="true"
+        onanimationend={() => (transitioning = false)}
+      ></div>
+    {:else if s === "running" && waking}
+      <!-- sleeping → running: the curl sheet in reverse, then the trotting loop -->
+      <div
+        class="sprite waking"
+        aria-hidden="true"
+        onanimationend={() => (waking = false)}
+      ></div>
+    {:else if s === "idle"}
       <!-- idle → sleeping cat -->
       <div class="sprite sleeping" aria-hidden="true"></div>
     {:else if s === "running"}
@@ -258,6 +295,39 @@
     }
     50% {
       filter: drop-shadow(0 0 10px color-mix(in srgb, var(--amber) 55%, transparent));
+    }
+  }
+
+  /* running → sleeping: one-shot curl-down (5-frame v2 sheet) at normal pace;
+     `both` holds the final curled frame until the sleeping loop swaps in. */
+  .sprite.transition {
+    --frames: 5;
+    background-image: url(/sprites/running-to-sleeping-sprite-sheet.png);
+    background-size: calc(var(--size) * var(--frames)) 100%;
+    animation: trans-frames 0.6s steps(5) 1 both;
+  }
+  @keyframes trans-frames {
+    to {
+      background-position-x: calc(var(--size) * var(--frames) * -1);
+    }
+  }
+
+  /* sleeping → working: the SAME curl sheet run in reverse (uncurl → sit → up),
+     then the trotting loop takes over. Reverse without the steps() blank-frame
+     quirk: step the position from the last frame (-4·size = -(frames-1)) up past
+     the first (+size), so the 5 held stops are -4,-3,-2,-1,0. */
+  .sprite.waking {
+    --frames: 5;
+    background-image: url(/sprites/running-to-sleeping-sprite-sheet.png);
+    background-size: calc(var(--size) * var(--frames)) 100%;
+    animation: wake-frames 0.6s steps(5) 1 both;
+  }
+  @keyframes wake-frames {
+    from {
+      background-position-x: calc(var(--size) * -4);
+    }
+    to {
+      background-position-x: var(--size);
     }
   }
 
