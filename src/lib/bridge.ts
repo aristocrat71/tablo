@@ -62,7 +62,7 @@ export function onTheme(cb: (theme: string) => void): Promise<UnlistenFn> {
 
 // Fired when sessions cross from working → waiting; payload is the sessions'
 // project + title. Drives the toast (toast window) and a one-shot avatar shake.
-export type WaitingSession = { project: string; title: string | null };
+export type WaitingSession = { id: string; project: string; title: string | null; canJump: boolean };
 export function onSessionWaiting(cb: (sessions: WaitingSession[]) => void): Promise<UnlistenFn> {
   return listen<WaitingSession[]>("session-waiting", (e) => cb(e.payload));
 }

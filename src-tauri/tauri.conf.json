@@ -55,7 +55,7 @@
       {
         "label": "toast",
         "title": "tablo",
-        "width": 264,
+        "width": 300,
         "height": 84,
         "resizable": false,
         "decorations": false,
@@ -64,7 +64,8 @@
         "skipTaskbar": true,
         "shadow": false,
         "visible": false,
-        "focus": false
+        "focus": false,
+        "acceptFirstMouse": true
       }
     ],
     "security": {

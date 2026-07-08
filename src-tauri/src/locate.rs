@@ -707,6 +707,12 @@ pub fn locate_status() -> LocateStatus {
     status()
 }
 
+/// Whether the locate hook is currently wired into `~/.claude/settings.json`.
+/// Used to gate "jump" affordances so a disabled setting hides them everywhere.
+pub fn is_installed() -> bool {
+    status().installed
+}
+
 /// Enable/disable session location reporting. Like approvals this edits
 /// `~/.claude/settings.json`, so it's only ever called on explicit user action.
 #[tauri::command]

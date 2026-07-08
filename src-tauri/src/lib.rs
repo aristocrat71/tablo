@@ -305,7 +305,7 @@ fn place_toast(app: &AppHandle) {
     let sf = avatar.scale_factor().unwrap_or(1.0);
     let mut tsz = toast.outer_size().unwrap_or(tauri::PhysicalSize::new(0, 0));
     if tsz.width == 0 || tsz.height == 0 {
-        tsz = tauri::PhysicalSize::new((264.0 * sf) as u32, (84.0 * sf) as u32);
+        tsz = tauri::PhysicalSize::new((300.0 * sf) as u32, (84.0 * sf) as u32);
     }
     // The hex art (58px wide) is centered in the avatar window with a transparent
     // side margin; tuck the toast into that margin so the right-aligned card sits
@@ -373,11 +373,14 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
     }
     snap.pending = pending;
 
-    // Overlay "jump to session" availability from the location cache.
+    // Overlay "jump to session" availability from the location cache — but only
+    // while the locate hook is enabled, so a disabled jump setting hides every
+    // jump affordance (even for sessions that reported before it was turned off).
     {
+        let enabled = locate::is_installed();
         let locs = state.session_locations.lock().unwrap();
         for s in &mut snap.sessions {
-            s.can_jump = locs.contains_key(&s.id);
+            s.can_jump = enabled && locs.contains_key(&s.id);
         }
     }
 
@@ -428,9 +431,12 @@ fn fire_notifications(app: &AppHandle, state: &State<'_, AppState>, cfg: &Config
 /// session with a pending permission request is tracked as "perm" so approval
 /// flows never masquerade as a work→wait crossing.
 #[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct WaitingSession {
+    id: String,
     project: String,
     title: Option<String>,
+    can_jump: bool,
 }
 
 fn fire_waiting_events(app: &AppHandle, state: &State<'_, AppState>, snap: &Snapshot) {
@@ -448,8 +454,10 @@ fn fire_waiting_events(app: &AppHandle, state: &State<'_, AppState>, snap: &Snap
             if let Some(p) = prev.get(&s.id) {
                 if p == "working" || p == "thinking" {
                     arrived.push(WaitingSession {
+                        id: s.id.clone(),
                         project: s.project.clone(),
                         title: s.title.clone(),
+                        can_jump: s.can_jump,
                     });
                 }
             }
@@ -585,11 +593,6 @@ pub fn run() {
                 position_avatar(&avatar, &cfg);
             }
 
-            // The toast is purely visual — always click-through so it never
-            // intercepts anything beneath it.
-            if let Some(toast) = app.get_webview_window("toast") {
-                let _ = toast.set_ignore_cursor_events(true);
-            }
 
             // Panel dismisses itself when it loses focus (tap-away).
             if let Some(panel) = app.get_webview_window("panel") {
