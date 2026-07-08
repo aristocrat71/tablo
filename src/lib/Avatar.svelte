@@ -129,10 +129,13 @@
 >
   <div class="tablo-wrap" class:needs-input={needsInput} class:notif-shake={notifShake}>
     {#if s === "idle"}
-      <!-- idle: the sleeping cat sprite replaces the `I` glyph. Other states keep
-           the placeholder hex+glyph until their sheet is wired in. -->
+      <!-- idle → sleeping cat -->
       <div class="sprite sleeping" aria-hidden="true"></div>
+    {:else if s === "running"}
+      <!-- running → trotting cat -->
+      <div class="sprite running" aria-hidden="true"></div>
     {:else}
+      <!-- alarmed still uses the placeholder glyph hex until its sheet is wired in -->
       <div class="tablo {CLASS[s]}" class:needs-input={needsInput}>
         <span class="glyph">{GLYPH[s]}</span>
       </div>
@@ -232,6 +235,29 @@
     }
     50% {
       filter: drop-shadow(0 0 9px color-mix(in srgb, var(--sage) 48%, transparent));
+    }
+  }
+
+  /* running → trotting cat: quick trot, energetic amber "working" glow */
+  .sprite.running {
+    background-image: url(/sprites/running-sprite-sheet.png);
+    background-size: calc(var(--size) * var(--frames)) 100%;
+    animation:
+      run-frames 0.50s steps(4) infinite,
+      run-glow 1.6s var(--ease) infinite;
+  }
+  @keyframes run-frames {
+    to {
+      background-position-x: calc(var(--size) * var(--frames) * -1);
+    }
+  }
+  @keyframes run-glow {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 5px color-mix(in srgb, var(--amber) 30%, transparent));
+    }
+    50% {
+      filter: drop-shadow(0 0 10px color-mix(in srgb, var(--amber) 55%, transparent));
     }
   }
 
