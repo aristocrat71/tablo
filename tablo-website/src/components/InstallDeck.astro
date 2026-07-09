@@ -62,15 +62,7 @@ const tabs = [
 
     <div class="facts mono">
       <div class="fact">
-        <b>free · unsigned · Actions-built</b>
-        <span>no Apple/MS fee — the install script skips the OS prompt</span>
-      </div>
-      <div class="fact">
-        <b>mac · win · linux</b>
-        <span>one binary per platform, straight from GitHub Releases</span>
-      </div>
-      <div class="fact">
-        <b>open source</b>
+        <b>local · free · open-source</b>
         <a class="bkt" href={REPO} target="_blank" rel="noopener">
           github.com/aristocrat71/tablo
         </a>
@@ -181,7 +173,7 @@ const tabs = [
   }
 
   .facts {
-    margin-top: 24px;
+    margin-top: 20px;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -211,6 +203,9 @@ const tabs = [
 
   .releases {
     margin-top: 18px;
+    /* drop the bracket-button's left padding so the "[" lands on the shared
+       left margin (command-box border / "downloads" / facts label) */
+    padding-left: 0;
     font-size: var(--fs-mono);
   }
 
