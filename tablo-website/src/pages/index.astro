@@ -1,0 +1,1175 @@
+---
+import Screen from "../layouts/Screen.astro";
+import Cat from "../components/Cat.astro";
+import LiveWidget from "../components/LiveWidget.astro";
+import InstallDeck from "../components/InstallDeck.astro";
+
+const marqueeItems = [
+  "claude·optilife 64%",
+  "codex·api 71%",
+  "claude·tablo 23%",
+  "3 sessions · 1 waiting · 1 approval",
+];
+---
+
+<Screen>
+  <!-- ===== marquee ticker (fixed top) ===== -->
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track" data-marquee>
+      {
+        [0, 1].map(() => (
+          <span class="marquee-run">
+            {marqueeItems.map((m) => (
+              <span class="mq">
+                {m}
+                <b>▮</b>
+              </span>
+            ))}
+          </span>
+        ))
+      }
+    </div>
+  </div>
+
+  <!-- ===== the LED scrollbar ===== -->
+  <div class="scroll-led" aria-hidden="true"><i data-scroll-fill></i></div>
+
+  <!-- ===== top-right controls ===== -->
+  <div class="top-controls">
+    <button type="button" class="bkt top-reboot" data-reboot>reboot</button>
+    <button type="button" class="mode-btn" data-lightmode title="Light mode" aria-label="Light mode">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" />
+        <path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" />
+        <path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- easter-egg nag (light-mode troll) -->
+  <div class="nag" data-nag role="status" aria-live="polite">
+    <span class="nag-dot"></span>
+    <span>I don't like light mode. Bleh</span>
+  </div>
+
+  <!-- ===== Act 0 — COLD BOOT ===== -->
+  <div id="boot" data-boot>
+    <pre class="boot-log mono" data-boot-log></pre>
+    <button class="bkt boot-skip" data-boot-skip>skip</button>
+    <div class="boot-flash" data-boot-flash></div>
+  </div>
+
+  <!-- ===== Act 1 — THE FAMILIAR ===== -->
+  <section class="act hero" data-act data-lamp="blue">
+    <span class="act-num">say hi to</span>
+    <div class="hero-core">
+      <h1 class="wordmark phosphor">tablo</h1>
+      <div class="hero-cat">
+        <Cat state="sit" size={188} label="pixel cat" class="cat-hero" />
+      </div>
+
+      <!-- mood slider (vertical) — beside the cat, left edge on the title's left -->
+      <div class="mood" data-mood>
+      <div class="mood-slider-wrap">
+        <input
+          class="mood-slider"
+          type="range"
+          min="0"
+          max="4"
+          step="1"
+          value="0"
+          aria-label="cat mood slider"
+        />
+      </div>
+      <div class="mood-labels" role="group" aria-label="cat mood">
+        <button type="button" class="mood-lb" data-mood-to="0">sit</button>
+        <button type="button" class="mood-lb" data-mood-to="1">sleeping</button>
+        <button type="button" class="mood-lb" data-mood-to="2">running</button>
+        <button type="button" class="mood-lb" data-mood-to="3">playing</button>
+        <button type="button" class="mood-lb" data-mood-to="4">shocked</button>
+      </div>
+    </div>
+    </div>
+
+    <p class="tagline mono">
+      the menace monitoring your coding agents<span class="caret">▮</span>
+    </p>
+    <p class="subtag mono">
+      <span class="src">claude code</span> + <span class="src">codex</span> · one
+      cat · your corner
+    </p>
+    <div class="hero-cta">
+      <div class="cta-main">
+        <a class="bkt install-btn" href="#get">install tablo</a>
+        <a
+          class="cta-github"
+          href="https://github.com/aristocrat71/tablo"
+          target="_blank"
+          rel="noopener"
+          title="GitHub"
+          aria-label="tablo on GitHub"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C4 2 3 2 3 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 2 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
+            <path d="M9 18c-4.51 2-5-2-7-2" />
+          </svg>
+        </a>
+      </div>
+      <a class="scroll-hint mono bkt" href="#watch">scroll ↓</a>
+    </div>
+  </section>
+
+  <!-- ===== Act 2 — IT WATCHES ===== -->
+  <section class="act watch" id="watch" data-act data-lamp="blue">
+    <span class="act-num">01 · what it does</span>
+    <h2 class="act-title watch-title" data-typeon>keeps an eye, so you don't have to</h2>
+
+    <div class="watch-cat">
+      <Cat
+        state="working"
+        size={130}
+        label="pixel cat, trotting"
+        class="cat-watch"
+      />
+    </div>
+
+    <div class="chips" data-chips>
+      <div class="chip" data-chip="sage">
+        <span class="chip-dot ok"></span>
+        <div class="chip-body">
+          <b>idle</b>
+          <span>nothing running.</span>
+          <div class="led"><i class="ok" style="width:22%"></i></div>
+        </div>
+      </div>
+      <div class="chip" data-chip="amber">
+        <span class="chip-dot warn"></span>
+        <div class="chip-body">
+          <b>working</b>
+          <span>agents on the move.</span>
+          <div class="led"><i class="warn" style="width:64%"></i></div>
+        </div>
+      </div>
+      <div class="chip" data-chip="coral">
+        <span class="chip-dot crit"></span>
+        <div class="chip-body">
+          <b>alarmed</b>
+          <span>context past x%.</span>
+          <div class="led"><i class="crit" style="width:88%"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- coda: one cat, two agents -->
+    <div class="coda">
+      <span class="coda-tags">
+        <span class="src">claude</span><span class="src">codex</span>
+      </span>
+    </div>
+  </section>
+
+  <!-- ===== Act 3 — LIVE WIDGET ===== -->
+  <section class="act live" data-act data-lamp="blue">
+    <span class="act-num">02 · the whole thing, live</span>
+    <h2 class="act-title live-title" data-typeon>go on, play around with it</h2>
+    <p class="live-hint mono">
+      click the widget <span class="hint-arr">&rarr;</span> open the panel
+    </p>
+    <div class="live-stage">
+      <LiveWidget />
+    </div>
+  </section>
+
+  <!-- ===== Act 4 — GET IT ===== -->
+  <section class="act install" id="get" data-act data-lamp="blue">
+    <span class="act-num">03 · put it on your desk</span>
+    <h2 class="act-title" data-typeon>one line. clean install.</h2>
+    <div class="install-stage">
+      <InstallDeck />
+    </div>
+  </section>
+
+  <!-- ===== Act 5 — SIGN-OFF ===== -->
+  <section class="act signoff" data-act data-lamp="sage">
+    <div class="signoff-cat">
+      <Cat
+        state="idle"
+        size={150}
+        label="pixel cat, asleep"
+        class="cat-signoff"
+      />
+    </div>
+    <p class="signoff-line">made with love and late nights.</p>
+    <nav class="signoff-nav mono">
+      <a
+        class="bkt"
+        href="https://github.com/aristocrat71/tablo"
+        target="_blank"
+        rel="noopener">github</a
+      >
+      <span class="sep">·</span>
+      <span>MIT Licensed</span>
+    </nav>
+    <p class="made-by mono">
+      Dreamy <span class="sep">·</span> Projekt Dreamscape
+    </p>
+  </section>
+</Screen>
+
+<style>
+  /* ===== marquee ===== */
+  .marquee {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: var(--z-marquee);
+    overflow: hidden;
+    background: color-mix(in srgb, var(--bg-inset) 88%, transparent);
+    border-bottom: 1px solid var(--border-soft);
+    backdrop-filter: blur(4px);
+  }
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee 34s linear infinite;
+  }
+  .marquee-run {
+    display: flex;
+    flex-shrink: 0;
+  }
+  .mq {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-xs);
+    color: var(--ink-dim);
+    padding: 7px 18px;
+    white-space: nowrap;
+    letter-spacing: 0.04em;
+  }
+  .mq b {
+    color: var(--blue);
+    margin-left: 18px;
+    opacity: 0.7;
+  }
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* ===== top-right controls (reboot + light-mode troll, stacked) ===== */
+  .top-controls {
+    position: fixed;
+    top: 44px;
+    right: 22px;
+    z-index: 35;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+  }
+  /* on desktop the glass is inset by the bezel (margin 18 + padding 14 = 32px);
+     push the controls in so their right edge lands inside the glass, not on the
+     rounded corner */
+  @media (min-width: 1024px) {
+    .top-controls {
+      right: 44px;
+    }
+  }
+  .top-reboot {
+    font-size: var(--fs-mono);
+    background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(4px);
+  }
+  .mode-btn {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
+    color: var(--ink-dim);
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition:
+      color 0.2s var(--ease),
+      border-color 0.2s var(--ease),
+      background 0.2s var(--ease),
+      box-shadow 0.2s var(--ease),
+      transform 0.15s var(--ease);
+  }
+  .mode-btn svg {
+    width: 24px;
+    height: 24px;
+  }
+  .mode-btn:hover {
+    color: var(--blue);
+    border-color: color-mix(in srgb, var(--blue) 45%, transparent);
+    box-shadow: 0 0 14px -3px color-mix(in srgb, var(--blue) 55%, transparent);
+    transform: rotate(35deg);
+  }
+
+  /* ===== github icon beside the install button ===== */
+  .cta-main {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .cta-github {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--ink-dim);
+    transition:
+      color 0.2s var(--ease),
+      border-color 0.2s var(--ease),
+      box-shadow 0.2s var(--ease),
+      transform 0.15s var(--ease);
+  }
+  .cta-github svg {
+    width: 19px;
+    height: 19px;
+  }
+  .cta-github:hover {
+    color: var(--blue);
+    border-color: color-mix(in srgb, var(--blue) 45%, transparent);
+    box-shadow: 0 0 14px -3px color-mix(in srgb, var(--blue) 55%, transparent);
+    transform: translateY(-2px);
+  }
+
+  /* easter-egg nag */
+  .nag {
+    position: fixed;
+    top: 46px;
+    left: 50%;
+    z-index: 46;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 15px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--coral);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-panel);
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono);
+    color: var(--ink);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+    transition:
+      opacity 0.25s var(--ease),
+      transform 0.3s var(--ease-back);
+  }
+  .nag.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  .nag-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--coral);
+    box-shadow: 0 0 8px var(--coral);
+    flex-shrink: 0;
+  }
+
+  /* ===== hero ===== */
+  .hero {
+    gap: 2px;
+  }
+  .wordmark {
+    font-family: var(--font-mono); /* terminal wordmark */
+    font-weight: 700;
+    font-size: clamp(3rem, 11vw, 8rem);
+    letter-spacing: -0.03em;
+    color: var(--blue);
+    line-height: 0.9;
+    position: relative;
+    z-index: 1;
+  }
+  .wordmark::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      transparent 45%,
+      rgba(243, 232, 220, 0.35) 50%,
+      transparent 55%
+    );
+    background-size: 100% 300%;
+    mix-blend-mode: overlay;
+    animation: sweep 1.4s var(--ease) 0.2s 1;
+    pointer-events: none;
+  }
+  @keyframes sweep {
+    from {
+      background-position: 0 -100%;
+    }
+    to {
+      background-position: 0 200%;
+    }
+  }
+  .hero-cat {
+    margin-top: -18px;
+    z-index: var(--z-cat);
+  }
+
+  /* ===== mood slider (vertical) ===== */
+  /* hero-core is sized to the wordmark (the widest child) so left:0 lands
+     exactly on the title's left edge; the cat sits centred within it. */
+  .hero-core {
+    position: relative;
+    width: fit-content;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .mood {
+    position: absolute;
+    left: 0;
+    bottom: 34px;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 12px;
+    height: 172px;
+  }
+  .mood-slider-wrap {
+    position: relative;
+    width: 22px;
+    height: 100%;
+  }
+  .mood-labels {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-start;
+    height: 100%;
+  }
+  .mood-lb {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: var(--ink-faint);
+    background: none;
+    border: none;
+    padding: 1px 3px;
+    cursor: pointer;
+    transition:
+      color 0.2s var(--ease),
+      text-shadow 0.2s var(--ease);
+    white-space: nowrap;
+  }
+  .mood-lb:hover {
+    color: var(--ink-dim);
+  }
+  .mood-lb.active {
+    color: var(--blue);
+    text-shadow: var(--glow-blue);
+  }
+
+  .mood-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 172px; /* becomes the vertical length once rotated */
+    height: 22px;
+    background: transparent;
+    cursor: pointer;
+    /* absolute + rotate so the 172px layout box doesn't shove the labels;
+       rotate to vertical: min (sit) at top, max (shocked) at bottom */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(90deg);
+    --fill: 0%;
+  }
+  /* WebKit track + thumb */
+  .mood-slider::-webkit-slider-runnable-track {
+    height: 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border-soft);
+    background-color: var(--bg-inset);
+    background-image: linear-gradient(
+        90deg,
+        var(--blue) 0 var(--fill),
+        transparent var(--fill)
+      ),
+      repeating-linear-gradient(
+        90deg,
+        transparent 0 5px,
+        color-mix(in srgb, var(--bg-surface) 75%, black) 5px 6px
+      );
+    box-shadow: inset 0 0 8px -2px color-mix(in srgb, var(--blue) 45%, transparent);
+  }
+  .mood-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 22px;
+    margin-top: -7px;
+    border-radius: 3px;
+    background: var(--blue);
+    box-shadow: 0 0 12px var(--blue);
+    border: 2px solid var(--bg-room);
+  }
+  /* Firefox track + progress + thumb */
+  .mood-slider::-moz-range-track {
+    height: 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border-soft);
+    background-color: var(--bg-inset);
+    background-image: repeating-linear-gradient(
+      90deg,
+      transparent 0 5px,
+      color-mix(in srgb, var(--bg-surface) 75%, black) 5px 6px
+    );
+  }
+  .mood-slider::-moz-range-progress {
+    height: 10px;
+    border-radius: 3px;
+    background: var(--blue);
+    box-shadow: 0 0 8px -1px var(--blue);
+  }
+  .mood-slider::-moz-range-thumb {
+    width: 12px;
+    height: 20px;
+    border-radius: 3px;
+    background: var(--blue);
+    box-shadow: 0 0 12px var(--blue);
+    border: 2px solid var(--bg-room);
+  }
+  .mood-slider:focus-visible {
+    outline: none;
+  }
+  .mood-slider:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+  }
+  .tagline {
+    font-size: var(--fs-lead);
+    color: var(--ink);
+    margin-top: 6px;
+  }
+  .caret {
+    color: var(--blue);
+    animation: blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  .subtag {
+    font-size: var(--fs-mono-xs);
+    color: var(--ink-faint);
+    margin-top: 12px;
+    letter-spacing: 0.05em;
+  }
+  .subtag .src {
+    color: var(--ink-dim);
+  }
+  .hero-cta {
+    margin-top: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .install-btn {
+    font-size: var(--fs-mono);
+    font-weight: 600;
+    padding: 12px 26px;
+    color: var(--blue);
+    border: 1px solid color-mix(in srgb, var(--blue) 45%, transparent);
+    background: color-mix(in srgb, var(--blue) 12%, transparent);
+    box-shadow:
+      0 0 20px -4px color-mix(in srgb, var(--blue) 55%, transparent),
+      inset 0 0 16px -8px color-mix(in srgb, var(--blue) 60%, transparent);
+    text-shadow: var(--glow-blue);
+    transition:
+      transform 0.15s var(--ease),
+      background 0.2s var(--ease),
+      box-shadow 0.2s var(--ease);
+  }
+  .install-btn:hover {
+    transform: translateY(-2px);
+    background: color-mix(in srgb, var(--blue) 20%, transparent);
+    box-shadow:
+      0 0 28px -3px color-mix(in srgb, var(--blue) 70%, transparent),
+      inset 0 0 16px -6px color-mix(in srgb, var(--blue) 70%, transparent);
+  }
+  .scroll-hint {
+    font-size: var(--fs-mono-xs);
+    opacity: 0.7;
+  }
+
+  /* shared source-tag pill */
+  .src {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  /* ===== watch ===== */
+  /* keep the title on a single line; scale with the viewport so it never wraps
+     or overflows (the base .act-title caps at 18ch which forced two lines) */
+  .watch-title,
+  .live-title {
+    max-width: none;
+    white-space: nowrap;
+    font-size: min(3rem, 4.2vw);
+  }
+  .watch-cat {
+    /* the cat sprite is bottom-aligned in its stage, so the stage's top is
+       empty — a negative top margin closes the visual gap under the title
+       without clipping the cat */
+    margin: -34px 0 4px;
+  }
+  .chips {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    /* fill the row (this sits in a centered flex column, so without an explicit
+       width it shrink-to-fits its content and the boxes collapse) */
+    width: 100%;
+    /* match the (nowrap) title width so the row's left/right edges line up
+       with the title text */
+    max-width: 760px;
+    margin-top: 8px;
+  }
+  .chip {
+    /* boxes wide enough that every description fits on ONE line — keeps the
+       three context bars on the same baseline; min-width:0 keeps them one row */
+    flex: 1 1 240px;
+    min-width: 0;
+    max-width: 260px;
+    display: flex;
+    gap: 12px;
+    text-align: left;
+    padding: 16px;
+    border-radius: var(--r-md);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+      opacity 0.5s var(--ease),
+      transform 0.5s var(--ease-back),
+      border-color 0.4s var(--ease);
+  }
+  .chip.in {
+    opacity: 1;
+    transform: none;
+  }
+  .chip.hot[data-chip="sage"] {
+    border-color: color-mix(in srgb, var(--sage) 55%, var(--border));
+  }
+  .chip.hot[data-chip="amber"] {
+    border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  }
+  .chip.hot[data-chip="coral"] {
+    border-color: color-mix(in srgb, var(--coral) 55%, var(--border));
+  }
+  .chip-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    margin-top: 5px;
+    flex-shrink: 0;
+  }
+  .chip-dot.ok {
+    background: var(--sage);
+    box-shadow: 0 0 8px var(--sage);
+  }
+  .chip-dot.warn {
+    background: var(--blue);
+    box-shadow: 0 0 8px var(--blue);
+  }
+  .chip-dot.crit {
+    background: var(--coral);
+    box-shadow: 0 0 8px var(--coral);
+  }
+  /* the working card shows the app's real amber "working" colour, not the
+     brand blue — so the demo reads as sage / amber / coral like the app */
+  .chip[data-chip="amber"] .chip-dot {
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+  }
+  .chip[data-chip="amber"] .led > i {
+    background-color: var(--amber);
+    box-shadow: 0 0 9px -1px var(--amber);
+  }
+  .chip-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+  }
+  .chip-body b {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+  }
+  .chip-body span {
+    font-size: 12.5px;
+    color: var(--ink-dim);
+    line-height: 1.4;
+  }
+  .chip-body .led {
+    margin-top: 4px;
+  }
+  /* keep the three cards on one row on desktop; stack only on true mobile */
+  @media (max-width: 600px) {
+    .chips {
+      flex-wrap: wrap;
+    }
+  }
+
+  .coda {
+    margin-top: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .coda-tags {
+    display: flex;
+    gap: 10px;
+  }
+  .coda-tags .src {
+    padding: 5px 12px;
+    border-radius: var(--r-sm);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-soft);
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+  .coda-line {
+    font-size: var(--fs-mono);
+    color: var(--ink-faint);
+  }
+
+  /* ===== live ===== */
+  .live-hint {
+    margin-top: 14px;
+    font-size: var(--fs-mono-xs);
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+  }
+  .live-hint .hint-arr {
+    color: var(--blue);
+    margin: 0 5px;
+  }
+  .live-stage {
+    margin-top: 26px;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* ===== install ===== */
+  .install-stage {
+    margin-top: 32px;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+
+  /* ===== signoff ===== */
+  .signoff {
+    gap: 8px;
+  }
+  .signoff-line {
+    font-family: var(--font-round);
+    font-size: var(--fs-lead);
+    color: var(--ink-dim);
+    margin-top: 8px;
+  }
+  .signoff-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 12px;
+    font-size: var(--fs-mono);
+    color: var(--ink-faint);
+  }
+  .signoff-nav .wm {
+    color: var(--blue);
+    font-weight: 700;
+    font-family: var(--font-round);
+  }
+  .signoff-nav .sep {
+    opacity: 0.4;
+  }
+  /* very-bottom maker credit */
+  .made-by {
+    margin-top: 22px;
+    font-size: var(--fs-mono-xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    opacity: 0.75;
+  }
+  .made-by .sep {
+    opacity: 0.5;
+    margin: 0 3px;
+  }
+
+  /* ===== boot overlay ===== */
+  #boot {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-boot);
+    background: #0a0806;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.5s var(--ease);
+  }
+  #boot.done {
+    opacity: 0;
+    pointer-events: none;
+  }
+  #boot.hidden {
+    display: none;
+  }
+  /* no-JS safety: never trap visitors behind the boot overlay */
+  @media (scripting: none) {
+    #boot {
+      display: none;
+    }
+  }
+  .boot-log {
+    font-family: var(--font-mono);
+    font-size: clamp(11px, 2.6vw, 14px);
+    color: var(--blue);
+    text-shadow: var(--glow-blue);
+    line-height: 1.7;
+    white-space: pre;
+    max-width: 90vw;
+  }
+  .boot-skip {
+    position: fixed;
+    right: 20px;
+    bottom: 18px;
+    font-size: var(--fs-mono-xs);
+  }
+  .boot-flash {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 2px;
+    background: #fff;
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  .boot-flash.go {
+    animation: poweron 0.5s var(--ease) forwards;
+  }
+  @keyframes poweron {
+    0% {
+      transform: scaleY(0.5) scaleX(1);
+      opacity: 1;
+      box-shadow: 0 0 40px 8px #fff;
+    }
+    40% {
+      transform: scaleY(0.5) scaleX(1);
+      opacity: 1;
+    }
+    100% {
+      transform: scaleY(220) scaleX(1);
+      opacity: 0;
+    }
+  }
+
+  /* below ~1000px the title is narrower than the cat, so the beside-layout
+     can't align cleanly — stack the slider back under the cat instead */
+  @media (max-width: 1000px) {
+    .mood {
+      position: static;
+      margin: 16px auto 0;
+    }
+  }
+  @media (max-width: 640px) {
+    .watch-cat {
+      margin: -24px 0 4px;
+    }
+    .hero-cat {
+      margin-top: -8px;
+    }
+  }
+</style>
+
+<script>
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const glass = document.querySelector(".glass") as HTMLElement;
+
+  function lamp(color: string) {
+    glass?.style.setProperty("--lamp", `var(--${color})`);
+  }
+
+  /* ---------- Act 0: cold boot ---------- */
+  function runBoot() {
+    const boot = document.querySelector("[data-boot]") as HTMLElement;
+    if (!boot) return;
+    const logEl = boot.querySelector("[data-boot-log]") as HTMLElement;
+    const flash = boot.querySelector("[data-boot-flash]") as HTMLElement;
+    const skip = boot.querySelector("[data-boot-skip]") as HTMLElement;
+
+    const seen = sessionStorage.getItem("tablo-booted");
+    const finish = () => {
+      boot.classList.add("done");
+      setTimeout(() => boot.classList.add("hidden"), 600);
+      sessionStorage.setItem("tablo-booted", "1");
+    };
+
+    if (reduce || seen) {
+      boot.classList.add("hidden");
+      return;
+    }
+
+    const lines = [
+      "tablo v0.1.0  ·  familiar daemon",
+      "> mounting ~/.claude/projects  (claude code) ... ok",
+      "> mounting ~/.codex/sessions   (codex) ....... ok",
+      "> tailing transcripts ....................... ok",
+      "> familiar: ONLINE",
+    ];
+    let li = 0,
+      ci = 0;
+    let cancelled = false;
+
+    const powerOn = () => {
+      flash.classList.add("go");
+      setTimeout(finish, 380);
+    };
+    const type = () => {
+      if (cancelled) return;
+      if (li >= lines.length) {
+        setTimeout(powerOn, 260);
+        return;
+      }
+      const line = lines[li];
+      logEl.textContent =
+        lines.slice(0, li).join("\n") + (li ? "\n" : "") + line.slice(0, ci);
+      ci++;
+      if (ci > line.length) {
+        li++;
+        ci = 0;
+        setTimeout(type, 90);
+      } else {
+        setTimeout(type, 12);
+      }
+    };
+    skip.addEventListener("click", () => {
+      cancelled = true;
+      finish();
+    });
+    type();
+  }
+
+  /* ---------- scroll progress (LED bar) ---------- */
+  function initScroll() {
+    const fill = document.querySelector(
+      "[data-scroll-fill]",
+    ) as HTMLElement | null;
+    if (!fill) return;
+    const onScroll = () => {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const p = max > 0 ? Math.min(1, scrollY / max) : 0;
+      fill.style.height = (p * 100).toFixed(1) + "%";
+    };
+    addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+  }
+
+  /* ---------- act-driven lamp + cat states ---------- */
+  function setCat(sel: string, state: string) {
+    const c = document.querySelector(`${sel} .cat`) as HTMLElement | null;
+    if (c) c.dataset.state = state;
+  }
+
+  let watchPlayed = false;
+  function playWatchSequence() {
+    if (watchPlayed) return;
+    watchPlayed = true;
+    // reveal the state chips once (one-time entrance, not a loop); the cat
+    // stays on its running loop — no cycling through idle/working/alert.
+    const chips = Array.from(document.querySelectorAll<HTMLElement>(".chip"));
+    chips.forEach((c, i) =>
+      setTimeout(() => c.classList.add("in", "hot"), reduce ? 0 : 140 * i),
+    );
+    setCat(".cat-watch", "working");
+  }
+
+  function initActs() {
+    const acts = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-act]"),
+    );
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const el = e.target as HTMLElement;
+          lamp(el.dataset.lamp || "blue");
+          if (el.classList.contains("watch")) playWatchSequence();
+          if (el.classList.contains("signoff") && !reduce) {
+            setCat(".cat-signoff", "settling");
+            setTimeout(() => setCat(".cat-signoff", "idle"), 700);
+          }
+        }
+      },
+      { threshold: 0.5 },
+    );
+    acts.forEach((a) => io.observe(a));
+  }
+
+  /* ---------- type-on titles ---------- */
+  function initTypeOn() {
+    if (reduce) return;
+    const io = new IntersectionObserver(
+      (entries, obs) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const el = e.target as HTMLElement;
+          const full = el.dataset.full!;
+          let i = 0;
+          const tick = () => {
+            el.textContent = full.slice(0, i);
+            if (i++ <= full.length) setTimeout(tick, 26);
+          };
+          tick();
+          obs.unobserve(el);
+        }
+      },
+      { threshold: 0.6 },
+    );
+    document.querySelectorAll<HTMLElement>("[data-typeon]").forEach((el) => {
+      el.dataset.full = el.textContent || "";
+      el.textContent = "";
+      io.observe(el);
+    });
+  }
+
+  /* ---------- konami egg + reboot ---------- */
+  function initExtras() {
+    document.querySelectorAll("[data-reboot]").forEach((el) =>
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        sessionStorage.removeItem("tablo-booted");
+        const boot = document.querySelector("[data-boot]") as HTMLElement;
+        boot.classList.remove("done", "hidden");
+        const flash = boot.querySelector("[data-boot-flash]") as HTMLElement;
+        flash.classList.remove("go");
+        scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+        runBoot();
+      }),
+    );
+
+    // light-mode button: a troll. never changes the theme.
+    const nag = document.querySelector<HTMLElement>("[data-nag]");
+    const bezel = document.querySelector<HTMLElement>(".bezel");
+    let nagTimer = 0;
+    document
+      .querySelectorAll("[data-lightmode]")
+      .forEach((btn) =>
+        btn.addEventListener("click", () => {
+          if (!reduce && bezel) {
+            bezel.classList.remove("shake");
+            void bezel.offsetWidth; // reflow to restart the animation
+            bezel.classList.add("shake");
+            setTimeout(() => bezel.classList.remove("shake"), 600);
+          }
+          if (nag) {
+            nag.classList.add("show");
+            clearTimeout(nagTimer);
+            nagTimer = window.setTimeout(
+              () => nag.classList.remove("show"),
+              2600,
+            );
+          }
+        }),
+      );
+
+    const seq = [
+      "arrowup","arrowup","arrowdown","arrowdown",
+      "arrowleft","arrowright","arrowleft","arrowright","b","a",
+    ];
+    let pos = 0;
+    addEventListener("keydown", (e) => {
+      pos = e.key.toLowerCase() === seq[pos] ? pos + 1 : 0;
+      if (pos === seq.length) {
+        pos = 0;
+        // snap the mood slider to "playing" so cat + slider stay in sync
+        const ms = document.querySelector<HTMLInputElement>(".mood-slider");
+        if (ms) {
+          ms.value = "3";
+          ms.dispatchEvent(new Event("input"));
+        }
+        document
+          .querySelector("[data-marquee]")
+          ?.insertAdjacentHTML(
+            "afterbegin",
+            '<span class="marquee-run"><span class="mq">&gt; meow<b>▮</b></span></span>',
+          );
+      }
+    });
+  }
+
+  /* ---------- mood slider drives the hero cat ---------- */
+  // slider hooks (0-4) -> cat states. default 0 = static "sit" frame.
+  const MOODS = ["sit", "idle", "working", "play", "alert"];
+  function initMood() {
+    const mood = document.querySelector<HTMLElement>("[data-mood]");
+    if (!mood) return;
+    const slider = mood.querySelector<HTMLInputElement>(".mood-slider")!;
+    const labels = Array.from(
+      mood.querySelectorAll<HTMLElement>(".mood-lb"),
+    );
+    const apply = (v: number) => {
+      const i = Math.max(0, Math.min(4, v | 0));
+      setCat(".cat-hero", MOODS[i]);
+      slider.style.setProperty("--fill", ((i / 4) * 100).toFixed(1) + "%");
+      labels.forEach((l, j) => l.classList.toggle("active", j === i));
+    };
+    slider.addEventListener("input", () => apply(+slider.value));
+    labels.forEach((l) =>
+      l.addEventListener("click", () => {
+        slider.value = l.dataset.moodTo!;
+        apply(+slider.value);
+      }),
+    );
+    apply(+slider.value); // initial render (0 = sit)
+  }
+
+  let started = false;
+  function boot() {
+    if (started) return;
+    started = true;
+    runBoot();
+    initScroll();
+    initActs();
+    initTypeOn();
+    initExtras();
+    initMood();
+  }
+  boot();
+  document.addEventListener("astro:page-load", boot);
+</script>

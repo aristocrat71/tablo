@@ -1,0 +1,311 @@
+/* ============================================================
+   tablo — global base + shared components
+   ============================================================ */
+
+@import "@fontsource/quicksand/400.css";
+@import "@fontsource/quicksand/500.css";
+@import "@fontsource/quicksand/600.css";
+@import "@fontsource/quicksand/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  background: #0a0806;
+  /* hide the native scrollbar — the LED scroll bar is the only indicator */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge/IE */
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none; /* WebKit/Blink */
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  font-family: var(--font-round);
+  background: #0a0806;
+  color: var(--ink);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* custom block cursor (desktop, hover-capable only) */
+@media (hover: hover) and (pointer: fine) {
+  body.has-cursor {
+    cursor: none;
+  }
+  body.has-cursor a,
+  body.has-cursor button {
+    cursor: none;
+  }
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+/* the [hidden] attribute must win over any component display rule
+   (a class selector otherwise overrides the UA [hidden]{display:none}) */
+[hidden] {
+  display: none !important;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--blue) 40%, transparent);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- act scaffold ---- */
+.act {
+  position: relative;
+  z-index: var(--z-content);
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(48px, 9vh, 120px) clamp(20px, 5vw, 64px);
+  text-align: center;
+}
+.act-num {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-xs);
+  letter-spacing: 0.35em;
+  color: var(--blue);
+  text-transform: uppercase;
+  opacity: 0.8;
+  margin-bottom: 18px;
+}
+.act-title {
+  font-family: var(--font-round);
+  font-size: var(--fs-scene);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+  max-width: 18ch;
+}
+.act-sub {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--ink-dim);
+  margin-top: 16px;
+  max-width: 52ch;
+  line-height: 1.5;
+}
+
+/* ---- bracket button ---- */
+.bkt {
+  --bkt-c: var(--ink-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-weight: 500;
+  color: var(--bkt-c);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 8px 14px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition:
+    color 0.15s var(--ease),
+    background 0.15s var(--ease),
+    border-color 0.15s var(--ease);
+  white-space: nowrap;
+}
+.bkt::before {
+  content: "[";
+  opacity: 0.55;
+}
+.bkt::after {
+  content: "]";
+  opacity: 0.55;
+}
+.bkt:hover {
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 35%, transparent);
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+  animation: glitch 0.28s steps(2) 1;
+}
+.bkt.solid {
+  border-color: var(--border);
+  background: var(--bg-raised);
+  color: var(--ink);
+}
+@keyframes glitch {
+  0% {
+    text-shadow: -2px 0 var(--coral), 2px 0 var(--sage);
+  }
+  50% {
+    text-shadow: 2px 0 var(--coral), -2px 0 var(--sage);
+  }
+  100% {
+    text-shadow: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bkt:hover {
+    animation: none;
+  }
+}
+
+/* ---- segmented-LED meter (reusable, the signature motif) ---- */
+.led {
+  position: relative;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 5px,
+    color-mix(in srgb, var(--bg-surface) 75%, black) 5px 6px
+  );
+}
+.led > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  transition: width 0.6s var(--ease);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 5px,
+    rgba(0, 0, 0, 0.25) 5px 6px
+  );
+}
+.led > i.ok {
+  background-color: var(--sage);
+  box-shadow: 0 0 8px -1px var(--sage);
+}
+.led > i.warn {
+  background-color: var(--blue);
+  box-shadow: 0 0 9px -1px var(--blue);
+}
+.led > i.crit {
+  background-color: var(--coral);
+  box-shadow: 0 0 9px -1px var(--coral);
+}
+
+/* ---- vertical LED scroll progress (the scrollbar) ---- */
+.scroll-led {
+  position: fixed;
+  right: clamp(8px, 2vw, 22px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--z-marquee);
+  width: 12px;
+  height: min(46vh, 320px);
+  border-radius: 5px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column-reverse;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--bg-surface) 75%, black) 6px 7px
+  );
+  pointer-events: none;
+}
+.scroll-led > i {
+  width: 100%;
+  height: 0;
+  background-color: var(--lamp, var(--blue));
+  box-shadow: 0 0 10px -1px var(--lamp, var(--blue));
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0 6px,
+    rgba(0, 0, 0, 0.25) 6px 7px
+  );
+  transition:
+    background-color 0.6s var(--ease),
+    box-shadow 0.6s var(--ease);
+}
+@media (max-width: 640px) {
+  .scroll-led {
+    display: none;
+  }
+}
+
+/* ---- the block cursor + phosphor trail ---- */
+.cursor,
+.cursor-trail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: var(--z-cursor);
+  pointer-events: none;
+  width: 11px;
+  height: 16px;
+  border-radius: 1px;
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+.cursor {
+  background: var(--blue);
+  box-shadow: 0 0 8px var(--blue);
+}
+.cursor-trail {
+  background: color-mix(in srgb, var(--blue) 55%, transparent);
+  opacity: 0.5;
+}
+.cursor.tap {
+  background: var(--coral);
+  box-shadow: 0 0 10px var(--coral);
+}
+
+/* honour reduced-motion for all long transitions site-wide */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

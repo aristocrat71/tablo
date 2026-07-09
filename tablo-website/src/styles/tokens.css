@@ -1,0 +1,109 @@
+/* ============================================================
+   tablo — design tokens
+   Warm-phosphor CRT. Palette lifted from tablo-mockups-v3.html,
+   extended with website-only glow/phosphor tokens.
+   ============================================================ */
+
+:root,
+[data-theme="dark"] {
+  /* fonts — rounded = warmth/headings, mono = precision/data+terminal */
+  --font-round: "Quicksand", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  /* room + surfaces (warm near-black browns) */
+  --bg-room: #14110e;
+  --bg-surface: #201b16;
+  --bg-raised: #2a231c;
+  --bg-inset: #191410;
+  --border: #372e25;
+  --border-soft: #2c241d;
+
+  /* ink */
+  --ink: #f3e8dc;
+  --ink-dim: #b7a794;
+  --ink-faint: #7d6f5f;
+
+  /* semantic phosphor — the three meanings.
+     primary accent is tablo's eye-blue (sampled from the sprite: #6dc7e9). */
+  --blue: #6dc7e9; /* working / active / brand — the eye glow */
+  --sage: #8faa7e; /* idle / calm / healthy */
+  --coral: #e08267; /* alarmed / danger / needs-you */
+  --amber: #e0a458; /* the app's real "working" desk-lamp — used in the state demo */
+  --blue-soft: #16303d;
+  --sage-soft: #29301f;
+  --coral-soft: #3a231c;
+  --amber-soft: #3a2c1a; /* app panel: jump button / active toolbar seg */
+
+  /* glow / phosphor (website-only) */
+  --glow-blue: 0 0 12px color-mix(in srgb, var(--blue) 60%, transparent);
+  --glow-sage: 0 0 12px color-mix(in srgb, var(--sage) 55%, transparent);
+  --glow-coral: 0 0 12px color-mix(in srgb, var(--coral) 60%, transparent);
+  --shadow-panel: 0 24px 60px -12px rgba(0, 0, 0, 0.7),
+    0 8px 20px -8px rgba(0, 0, 0, 0.6);
+
+  /* CRT dials (zeroed under reduced-motion / data-crt=off) */
+  --scanline-opacity: 0.06;
+  --scanline-gap: 3px;
+  --flicker-depth: 0.03;
+  --grain-opacity: 0.05;
+  --curve: 1; /* multiplier for vignette/curvature intensity */
+
+  /* radii */
+  --r-lg: 20px;
+  --r-md: 14px;
+  --r-sm: 9px;
+  --r-pill: 999px;
+
+  /* motion */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* z-scale */
+  --z-room: 0;
+  --z-content: 10;
+  --z-cat: 20;
+  --z-marquee: 30;
+  --z-cursor: 40;
+  --z-crt: 90;
+  --z-boot: 100;
+
+  color-scheme: dark;
+}
+
+/* optional light theme — ported verbatim from the mockup, CRT dialled down */
+[data-theme="light"] {
+  --bg-room: #ddd3c4;
+  --bg-surface: #faf5ec;
+  --bg-raised: #fffcf6;
+  --bg-inset: #f0e8da;
+  --border: #e2d6c4;
+  --border-soft: #ece2d2;
+  --ink: #3a3128;
+  --ink-dim: #7a6e5e;
+  --ink-faint: #a99b87;
+  --blue: #2b8fc0;
+  --blue-soft: #d6ecf6;
+  --sage: #5f7f4e;
+  --sage-soft: #e4ecda;
+  --coral: #c85a3c;
+  --coral-soft: #f6ddd2;
+  --amber: #c67f2c;
+  --amber-soft: #f5e6cf;
+  --shadow-panel: 0 20px 44px -14px rgba(90, 70, 45, 0.32),
+    0 6px 16px -8px rgba(90, 70, 45, 0.24);
+  --scanline-opacity: 0.025;
+  --flicker-depth: 0.012;
+  --grain-opacity: 0.03;
+  color-scheme: light;
+}
+
+/* type scale */
+:root {
+  --fs-display: clamp(3.5rem, 12vw, 9rem);
+  --fs-scene: clamp(1.75rem, 4vw, 3rem);
+  --fs-lead: clamp(1rem, 2.2vw, 1.4rem);
+  --fs-body: 1rem;
+  --fs-mono-lg: 1.125rem;
+  --fs-mono: 0.8125rem;
+  --fs-mono-xs: 0.6875rem;
+}

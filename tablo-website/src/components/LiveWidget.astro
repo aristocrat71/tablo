@@ -1,0 +1,923 @@
+---
+/**
+ * LiveWidget — an EXACT static copy of the real app panel (src/lib/Panel.svelte).
+ * Markup + styles mirror the Svelte component 1:1; the only differences are the
+ * panel sizes to its content here (instead of filling a window) and the data is
+ * a fixed sample set. No animation — this is the base we'll wire interactivity
+ * onto next.
+ */
+
+// token counts: 46000 -> "46k", 1000000 -> "1M" (mirrors format.ts::tokens)
+function tokens(n: number): string {
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    return `${m >= 10 || Number.isInteger(m) ? Math.round(m) : m.toFixed(1)}M`;
+  }
+  if (n >= 1_000) return `${Math.round(n / 1000)}k`;
+  return `${n}`;
+}
+const pct = (n: number) => `${Math.round(n)}%`;
+
+type Card = {
+  key: string;
+  project: string;
+  path: string;
+  branch: string | null;
+  source: "claude" | "codex";
+  pct: number;
+  used: number;
+  limit: number;
+  level: "ok" | "warn" | "crit";
+  mode: "normal" | "auto" | "plan" | "bypass";
+  title: string | null;
+  activity: string;
+  activityKind: "working" | "waiting" | "thinking" | "";
+  canJump: boolean;
+  recent: number; // recency rank (higher = more recent) — drives the "recent" sort
+  request?: { tool: string; detail: string };
+};
+
+// sample sessions — Permission / Waiting / Working groups on display; two in
+// Working so the sort toggle visibly reorders.
+const sessions: Card[] = [
+  {
+    key: "s-tablo",
+    project: "tablo",
+    path: "~/dev/tablo/src-tauri",
+    branch: "feat/polish",
+    source: "claude",
+    pct: 38,
+    used: 76000,
+    limit: 200000,
+    level: "ok",
+    mode: "normal",
+    title: "wiring the permission hook",
+    activity: "wants to run a command",
+    activityKind: "working",
+    canJump: true,
+    recent: 4,
+    request: { tool: "Bash", detail: "rm -rf ./dist" },
+  },
+  {
+    key: "s-docs",
+    project: "docs",
+    path: "~/dev/site",
+    branch: null,
+    source: "codex",
+    pct: 24,
+    used: 62000,
+    limit: 258000,
+    level: "ok",
+    mode: "normal",
+    title: null,
+    activity: "waiting for you",
+    activityKind: "waiting",
+    canJump: false,
+    recent: 2,
+  },
+  {
+    key: "s-api",
+    project: "api",
+    path: "~/dev/api",
+    branch: "main",
+    source: "codex",
+    pct: 58,
+    used: 150000,
+    limit: 258000,
+    level: "ok",
+    mode: "auto",
+    title: "add rate-limit middleware",
+    activity: "editing scanner.rs",
+    activityKind: "working",
+    canJump: false,
+    recent: 1,
+  },
+  {
+    key: "s-web",
+    project: "web",
+    path: "~/dev/web",
+    branch: "main",
+    source: "claude",
+    pct: 41,
+    used: 82000,
+    limit: 200000,
+    level: "ok",
+    mode: "plan",
+    title: "polishing the settings pane",
+    activity: "running vitest",
+    activityKind: "working",
+    canJump: true,
+    recent: 3,
+  },
+];
+
+const warnPct = 60;
+
+// grouping mirrors Panel.svelte: Critical -> Permission Request -> Waiting -> Working
+const isCrit = (c: Card) => c.level !== "ok";
+const critCards = sessions.filter(isCrit);
+const needsCards = sessions.filter((c) => !isCrit(c) && !!c.request);
+const waitingCards = sessions.filter(
+  (c) => !isCrit(c) && !c.request && c.activityKind === "waiting",
+);
+const workCards = sessions.filter(
+  (c) => !isCrit(c) && !c.request && c.activityKind !== "waiting",
+);
+
+const groups = [
+  { id: "crit", dot: "attn", name: `Context window warning ! >${warnPct}%`, head: "crit-head", cards: critCards },
+  { id: "perm", dot: "attn", name: "Permission Request", head: "", cards: needsCards },
+  { id: "wait", dot: "wait", name: "Waiting", head: "", cards: waitingCards },
+  { id: "work", dot: "work", name: "Working", head: "", cards: workCards },
+].filter((g) => g.cards.length);
+
+const nSessions = sessions.length;
+const nWaiting = waitingCards.length;
+const sub =
+  nSessions > 1 && nWaiting > 0
+    ? `${nSessions} sessions · ${nWaiting} waiting on you`
+    : `${nSessions} session${nSessions > 1 ? "s" : ""}`;
+---
+
+<div class="panel-shell" data-panel>
+  <div class="panel">
+    <div class="panel-top">
+      <img class="panel-glyph" src="/tablo-logo-v4.png" alt="" />
+      <div class="panel-titles">
+        <div class="name">tablo</div>
+        <div class="sub">{sub}</div>
+      </div>
+      <div class="panel-actions">
+        <button class="dash-link" title="Open dashboard" type="button" data-dash>
+          dashboard <span class="arr">↗</span>
+        </button>
+      </div>
+    </div>
+
+    {
+      nSessions > 1 && (
+        <div class="panel-toolbar">
+          <div class="seg" role="group" aria-label="Sort sessions">
+            <button class="on" type="button" data-sort="context">context</button>
+            <button type="button" data-sort="recent">recent</button>
+          </div>
+          <div class="seg filt" role="group" aria-label="Filter by state">
+            <button class="on" type="button" data-filter="waiting">
+              <span class="fdot wait" />waiting
+            </button>
+            <button class="on" type="button" data-filter="working">
+              <span class="fdot work" />working
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    <div class="panel-body">
+      {
+        groups.map((g) => (
+          <div class="group" data-group={g.id}>
+            <div class:list={["group-head", g.head]}>
+              <span class:list={["group-dot", g.dot]} />
+              <span class="group-name">{g.name}</span>
+              <span class="group-count">{g.cards.length}</span>
+            </div>
+            {g.cards.map((c) => (
+              <div
+                class:list={["ucard", c.request && "needs", c.level !== "ok" && "crit"]}
+                data-card
+                data-key={c.key}
+                data-pct={c.pct}
+                data-recent={c.recent}
+                data-kind={c.activityKind}
+              >
+                <div class="session-line1">
+                  <span class="session-proj">{c.project}</span>
+                  {c.title && (
+                    <Fragment>
+                      <span class="session-sep">·</span>
+                      <span class="session-title">{c.title}</span>
+                    </Fragment>
+                  )}
+                  <span
+                    class:list={[
+                      "session-pct",
+                      c.level === "warn" && "warn",
+                      c.level === "crit" && "crit",
+                    ]}
+                  >
+                    {pct(c.pct)}
+                  </span>
+                </div>
+                <div class="session-path">
+                  {c.path}
+                  {c.branch ? ` · ${c.branch}` : ""}
+                </div>
+
+                {c.activity && (
+                  <div class:list={["session-activity", c.activityKind]}>
+                    <span class="act-dot" />
+                    <span class="act-text">{c.activity}</span>
+                  </div>
+                )}
+
+                <div class="ctx">
+                  <div class="ctx-track">
+                    <div class:list={["ctx-fill", c.level]} style={`width:${c.pct}%`} />
+                  </div>
+                  <span class="ctx-cap">
+                    {tokens(c.used)} / {tokens(c.limit)}
+                  </span>
+                </div>
+
+                <div class="card-foot">
+                  {c.canJump && (
+                    <button class="jump" title="Focus this session's window" type="button" data-jump>
+                      jump →
+                    </button>
+                  )}
+                  <span class="src-tag">{c.source}</span>
+                  <span class="mode-badge">
+                    mode : <span class:list={["mode-val", c.mode]}>{c.mode}</span>
+                  </span>
+                </div>
+
+                {c.request && (
+                  <div class="req">
+                    <div class="req-top">
+                      <span class="session-badge ask">{c.request.tool}</span>
+                      <div class="approval-actions">
+                        <button class="abtn deny" type="button" data-deny={c.key}>Deny</button>
+                        <button class="abtn allow" type="button" data-approve={c.key}>Approve</button>
+                      </div>
+                    </div>
+                    {c.request.detail && <div class="approval-detail">{c.request.detail}</div>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ))
+      }
+      <div class="filtered-empty" hidden>
+        <div class="huh">Huh ~_~ ?</div>
+        <span>Everything's filtered out.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* ---- panel container: sizes to content here (the app fills a window) ---- */
+  .panel-shell {
+    width: min(384px, 94vw);
+  }
+  .panel {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-panel);
+    overflow: hidden;
+    text-align: left;
+  }
+  /* critical group header — the context-window warning line, red */
+  .crit-head .group-name {
+    color: var(--coral);
+  }
+  .panel-top {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 16px 18px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .panel-glyph {
+    height: 36px;
+    width: auto; /* keep the logo's own (built-in-background) aspect — no crop */
+    border-radius: 7px;
+    flex: none;
+  }
+  .panel-titles {
+    flex: 1;
+    line-height: 1.25;
+  }
+  .panel-titles .name {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .panel-titles .sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 1px;
+  }
+  .panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dash-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 8px;
+    border: none;
+    background: var(--ink);
+    color: var(--bg-surface);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    transition: transform 0.15s var(--ease), opacity 0.2s var(--ease);
+  }
+  .dash-link:hover {
+    transform: translateY(-1px);
+    opacity: 0.92;
+  }
+  .dash-link .arr {
+    font-size: 12.5px;
+    line-height: 1;
+  }
+
+  .panel-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 18px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-inset);
+  }
+  .seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+  }
+  .seg button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 4px 9px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
+  }
+  .seg button:hover {
+    color: var(--ink-dim);
+  }
+  .seg button.on {
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
+  /* state filters: neutral "on" highlight (the colored LED carries the meaning) */
+  .seg.filt button.on {
+    background: var(--bg-raised);
+    color: var(--ink);
+  }
+  .fdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    background: var(--ink-faint);
+    transition: background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  }
+  .seg.filt button.on .fdot.wait {
+    background: var(--sage);
+    box-shadow: 0 0 6px var(--sage);
+  }
+  .seg.filt button.on .fdot.work {
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
+  }
+
+  .panel-body {
+    padding: 6px 12px 12px;
+  }
+
+  .group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 6px 8px;
+  }
+  .group-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+  }
+  .group-dot.attn {
+    background: var(--coral);
+    box-shadow: 0 0 8px var(--coral);
+  }
+  .group-dot.work {
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+  }
+  .group-dot.wait {
+    background: var(--sage);
+    box-shadow: 0 0 8px var(--sage);
+  }
+  .group-name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  .group-count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-left: auto;
+  }
+
+  .ucard {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    padding: 15px 14px;
+    border-radius: var(--r-md);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-soft);
+    margin-bottom: 10px;
+    transition: border-color 0.2s var(--ease);
+  }
+  .ucard:hover {
+    border-color: var(--border);
+  }
+  /* a session with pending approvals, or past the context warn line — coral card */
+  .ucard.needs,
+  .ucard.crit {
+    background: color-mix(in srgb, var(--coral) 8%, var(--bg-raised));
+    border-color: color-mix(in srgb, var(--coral) 42%, var(--border-soft));
+  }
+  /* one pending request inside a session card, divided from what's above */
+  .req {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-top: 9px;
+    border-top: 1px solid color-mix(in srgb, var(--coral) 18%, var(--border-soft));
+  }
+  .req-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .approval-detail {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-sm);
+    padding: 7px 9px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 84px;
+    overflow-y: auto;
+  }
+  .approval-actions {
+    display: flex;
+    gap: 7px;
+    margin-left: auto;
+  }
+  /* .abtn (not .act) — .act is a GLOBAL section class on this site (min-height:
+     100dvh), which would balloon these buttons; renamed to avoid the collision */
+  .abtn {
+    padding: 6px 14px;
+    border-radius: var(--r-sm);
+    font-family: var(--font-round);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: transform 0.12s var(--ease), opacity 0.2s var(--ease);
+  }
+  .abtn:hover {
+    transform: translateY(-1px);
+  }
+  .abtn.deny {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--coral) 45%, var(--border));
+    color: var(--coral);
+  }
+  .abtn.allow {
+    background: var(--sage);
+    color: var(--bg-surface);
+  }
+
+  .session-line1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .session-proj {
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-sep {
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+  /* agent source tag (e.g. codex) — neutral so it never reads as a state color */
+  .src-tag {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--bg-inset);
+    color: var(--ink-faint);
+    border: 1px solid var(--border-soft);
+  }
+  /* aiTitle — grows to fill, ellipsizes, so RUN + % stay pinned right */
+  .session-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-badge {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 5px;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+  .session-badge.ask {
+    background: var(--coral-soft);
+    color: var(--coral);
+  }
+  .session-pct {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .session-pct.warn {
+    color: var(--amber);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--amber) 55%, transparent);
+  }
+  .session-pct.crit {
+    color: var(--coral);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--coral) 55%, transparent);
+  }
+  /* card footer: jump pinned left, read-only mode badge pinned right */
+  .card-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  /* source tag + mode badge sit together, pinned to the right end (even when the
+     jump button is absent) — the tag leads, the mode display follows */
+  .card-foot .src-tag {
+    margin-left: auto;
+  }
+  .mode-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .mode-val {
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .mode-val.auto {
+    color: var(--amber);
+  }
+  .mode-val.plan {
+    color: var(--sage);
+  }
+  .mode-val.bypass {
+    color: var(--coral);
+  }
+  .jump {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--amber);
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in srgb, var(--amber) 32%, transparent);
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color 0.15s var(--ease),
+      transform 0.12s var(--ease);
+  }
+  .jump:hover {
+    transform: translateY(-1px);
+    background: color-mix(in srgb, var(--amber) 24%, var(--amber-soft));
+  }
+
+  .session-path {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: -2px;
+  }
+
+  /* live activity preview (window-render) */
+  .session-activity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 3px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  /* LED status dot, colored per kind (no glyph/emoji) */
+  .session-activity .act-dot {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--ink-faint);
+  }
+  .session-activity .act-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* working: amber dot, gently pulsing so it reads as live */
+  .session-activity.working {
+    color: var(--ink);
+  }
+  .session-activity.working .act-dot {
+    background: var(--amber);
+    box-shadow: 0 0 7px var(--amber);
+    animation: act-pulse 1.6s var(--ease) infinite;
+  }
+  /* waiting for you: calm sage dot */
+  .session-activity.waiting .act-dot {
+    background: var(--sage);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--sage) 70%, transparent);
+  }
+  .session-activity.thinking .act-dot {
+    background: var(--ink-faint);
+  }
+  @keyframes act-pulse {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .ctx {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .ctx-track {
+    flex: 1;
+    height: 8px;
+    border-radius: 3px;
+    background: var(--bg-inset);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background-image: repeating-linear-gradient(
+      90deg,
+      transparent 0 5px,
+      color-mix(in srgb, var(--bg-surface) 75%, black) 5px 6px
+    );
+  }
+  .ctx-fill {
+    height: 100%;
+    transition: width 0.5s var(--ease), background-color 0.4s var(--ease);
+    background-image: repeating-linear-gradient(90deg, transparent 0 5px, rgba(0, 0, 0, 0.25) 5px 6px);
+  }
+  .ctx-fill.ok {
+    background-color: var(--sage);
+    box-shadow: 0 0 8px -1px var(--sage);
+  }
+  .ctx-fill.warn {
+    background-color: var(--amber);
+    box-shadow: 0 0 9px -1px var(--amber);
+  }
+  .ctx-fill.crit {
+    background-color: var(--coral);
+    box-shadow: 0 0 9px -1px var(--coral);
+  }
+  .ctx-cap {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+
+  /* shown when both state filters are off (mirrors the app placeholder) */
+  .filtered-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+    padding: 44px 20px;
+  }
+  .filtered-empty .huh {
+    font-family: var(--font-mono);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--ink-dim);
+  }
+  .filtered-empty span {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+
+  /* pressed feedback for jump / dashboard (no OS window to open on the web) */
+  .jump:active,
+  .dash-link:active {
+    transform: translateY(0) scale(0.96);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .session-activity.working .act-dot {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  // Progressive enhancement: the panel renders statically (SSR), and this
+  // controller makes every button live — sort reorders, filters hide/show the
+  // Waiting/Working groups, Approve/Deny resolves a request and re-groups its
+  // card. Operates on the SSR DOM so it degrades to a static panel without JS.
+  function initPanel(root: HTMLElement) {
+    if (root.dataset.ready) return;
+    root.dataset.ready = "1";
+
+    const GROUPS = ["crit", "perm", "wait", "work"] as const;
+    const groupEls: Record<string, HTMLElement> = {};
+    const countEls: Record<string, HTMLElement> = {};
+    root.querySelectorAll<HTMLElement>("[data-group]").forEach((g) => {
+      const id = g.dataset.group!;
+      groupEls[id] = g;
+      countEls[id] = g.querySelector(".group-count") as HTMLElement;
+    });
+
+    type C = { el: HTMLElement; pct: number; recent: number; group: string };
+    const cards: C[] = Array.from(root.querySelectorAll<HTMLElement>("[data-card]")).map(
+      (el) => ({
+        el,
+        pct: Number(el.dataset.pct),
+        recent: Number(el.dataset.recent),
+        group: (el.closest("[data-group]") as HTMLElement).dataset.group!,
+      }),
+    );
+
+    let sort: "context" | "recent" = "context";
+    let showWaiting = true;
+    let showWorking = true;
+
+    const sortBtns = Array.from(root.querySelectorAll<HTMLElement>("[data-sort]"));
+    const filterBtns = Array.from(root.querySelectorAll<HTMLElement>("[data-filter]"));
+    const filteredEmpty = root.querySelector<HTMLElement>(".filtered-empty");
+
+    function apply() {
+      const cmp =
+        sort === "context"
+          ? (a: C, b: C) => b.pct - a.pct
+          : (a: C, b: C) => b.recent - a.recent;
+
+      let visible = 0;
+      for (const gid of GROUPS) {
+        const gEl = groupEls[gid];
+        if (!gEl) continue;
+        const gcards = cards.filter((c) => c.group === gid).sort(cmp);
+        // appendChild moves the node — reorders within, and relocates on approve
+        gcards.forEach((c) => gEl.appendChild(c.el));
+        if (countEls[gid]) countEls[gid].textContent = String(gcards.length);
+        let hidden = gcards.length === 0;
+        if (gid === "wait" && !showWaiting) hidden = true;
+        if (gid === "work" && !showWorking) hidden = true;
+        gEl.hidden = hidden;
+        if (!hidden) visible += gcards.length;
+      }
+
+      sortBtns.forEach((b) => b.classList.toggle("on", b.dataset.sort === sort));
+      filterBtns.forEach((b) =>
+        b.classList.toggle(
+          "on",
+          b.dataset.filter === "waiting" ? showWaiting : showWorking,
+        ),
+      );
+      if (filteredEmpty) filteredEmpty.hidden = visible > 0;
+    }
+
+    sortBtns.forEach((b) =>
+      b.addEventListener("click", () => {
+        sort = b.dataset.sort as "context" | "recent";
+        apply();
+      }),
+    );
+    filterBtns.forEach((b) =>
+      b.addEventListener("click", () => {
+        if (b.dataset.filter === "waiting") showWaiting = !showWaiting;
+        else showWorking = !showWorking;
+        apply();
+      }),
+    );
+
+    // Approve / Deny: drop the request, un-tint the card, move it to Working.
+    function resolve(key: string, decision: "allow" | "deny") {
+      const c = cards.find((x) => x.el.dataset.key === key);
+      if (!c) return;
+      c.el.querySelector(".req")?.remove();
+      c.el.classList.remove("needs", "crit");
+      const act = c.el.querySelector<HTMLElement>(".session-activity");
+      if (act) {
+        act.className = "session-activity working";
+        const t = act.querySelector<HTMLElement>(".act-text");
+        if (t) t.textContent = decision === "allow" ? "running the command" : "command denied";
+      }
+      c.group = "work";
+      c.el.dataset.kind = "working";
+      apply();
+    }
+    root.querySelectorAll<HTMLElement>("[data-approve]").forEach((b) =>
+      b.addEventListener("click", () => resolve(b.dataset.approve!, "allow")),
+    );
+    root.querySelectorAll<HTMLElement>("[data-deny]").forEach((b) =>
+      b.addEventListener("click", () => resolve(b.dataset.deny!, "deny")),
+    );
+
+    // jump / dashboard have no OS target on the web — swap the leading text node
+    // briefly so the click still gets an honest, visible acknowledgement.
+    function pressLead(btn: HTMLElement, label: string) {
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = "1";
+      const node = btn.firstChild as Text; // leading text, keeps any child span
+      const orig = node.textContent ?? "";
+      node.textContent = `${label} `;
+      (btn as HTMLButtonElement).disabled = true;
+      setTimeout(() => {
+        node.textContent = orig;
+        (btn as HTMLButtonElement).disabled = false;
+        delete btn.dataset.busy;
+      }, 850);
+    }
+    root
+      .querySelectorAll<HTMLElement>("[data-jump]")
+      .forEach((b) => b.addEventListener("click", () => pressLead(b, "focusing…")));
+    const dash = root.querySelector<HTMLElement>("[data-dash]");
+    if (dash) dash.addEventListener("click", () => pressLead(dash, "opening…"));
+
+    apply();
+  }
+
+  function boot() {
+    document.querySelectorAll<HTMLElement>("[data-panel]").forEach(initPanel);
+  }
+  boot();
+  document.addEventListener("astro:page-load", boot);
+</script>

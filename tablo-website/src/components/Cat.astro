@@ -1,0 +1,127 @@
+---
+/**
+ * Cat — the pixel-cat sprite renderer.
+ * One element, driven by data-state. Same decoupling the app uses:
+ * one state -> one render (sheet + frame vars). Sprites reused as-is.
+ *
+ * States: sit (static default) · idle (sleeping) · working (trot/standing)
+ *         · play (ball-play) · alert (shocked) · settling (run->sleep).
+ *
+ * Frame math (measured from the sheets):
+ *   sleeping  1024x196  4 frames  ar 1.306
+ *   running   2400x477  4 frames  ar 1.258
+ *   shocked   1908x544  5 frames  ar 0.701
+ *   r2s       1030x180  5 frames  ar 1.144   (running-to-sleeping)
+ *   playing    753x217  3 frames  ar 1.157   (ball-play, frames 5-6-7)
+ */
+interface Props {
+  state?: "sit" | "idle" | "alert" | "working" | "settling" | "play";
+  size?: number; // base cat height in px
+  label?: string;
+  class?: string;
+}
+const {
+  state = "sit",
+  size = 200,
+  label = "pixel cat",
+  class: klass = "",
+} = Astro.props;
+---
+
+<div class:list={["cat-stage", klass]} style={`--cat:${size}px`}>
+  <div class="cat" data-state={state} role="img" aria-label={label}></div>
+</div>
+
+<style>
+  .cat-stage {
+    --cat: 200px;
+    position: relative;
+    width: calc(var(--cat) * 1.7);
+    height: calc(var(--cat) * 1.4);
+    display: grid;
+    place-items: end center;
+    pointer-events: none;
+  }
+  .cat {
+    /* defaults (sit / static single frame) */
+    --sheet: url("/sprites/shocked-sprite-sheet.png");
+    --ar: 0.701;
+    --frames: 5;
+    --dur: 2.4s;
+    --h: calc(var(--cat) * 1.14);
+
+    height: var(--h);
+    width: calc(var(--h) * var(--ar));
+    background-image: var(--sheet);
+    background-repeat: no-repeat;
+    background-size: calc(var(--h) * var(--ar) * var(--frames)) var(--h);
+    image-rendering: pixelated;
+    animation: sprite var(--dur) steps(var(--frames)) infinite;
+  }
+
+  @keyframes sprite {
+    from {
+      background-position-x: 0;
+    }
+    to {
+      background-position-x: calc(-1 * var(--h) * var(--ar) * var(--frames));
+    }
+  }
+
+  /* ---- states ---- */
+  /* sit: a single static frame (frame 0 of the shocked sheet, calm sitting) */
+  .cat[data-state="sit"] {
+    --sheet: url("/sprites/shocked-sprite-sheet.png");
+    --ar: 0.701;
+    --frames: 5;
+    --h: calc(var(--cat) * 1.14);
+    animation: none;
+    background-position-x: 0;
+  }
+  .cat[data-state="idle"] {
+    --sheet: url("/sprites/sleeping-sprite-sheet.png");
+    --ar: 1.306;
+    --frames: 4;
+    --dur: 2.4s;
+    --h: calc(var(--cat) * 0.82);
+  }
+  .cat[data-state="working"] {
+    --sheet: url("/sprites/running-sprite-sheet.png");
+    --ar: 1.258;
+    --frames: 4;
+    --dur: 0.6s;
+    --h: calc(var(--cat) * 1);
+  }
+  .cat[data-state="play"] {
+    /* ball-play loop (frames 5-6-7 only), uniform 251x217 cells (no tail crop) */
+    --sheet: url("/sprites/playing-sprite-sheet.png");
+    --ar: 1.1567;
+    --frames: 3;
+    --dur: 0.8s;
+    --h: calc(var(--cat) * 1.02);
+  }
+  .cat[data-state="alert"] {
+    --sheet: url("/sprites/shocked-sprite-sheet.png");
+    --ar: 0.701;
+    --frames: 5;
+    --dur: 0.85s;
+    --h: calc(var(--cat) * 1.16);
+  }
+  .cat[data-state="settling"] {
+    --sheet: url("/sprites/running-to-sleeping-sprite-sheet.png");
+    --ar: 1.144;
+    --frames: 5;
+    --dur: 0.7s;
+    --h: calc(var(--cat) * 0.9);
+    animation-iteration-count: 1;
+    animation-fill-mode: forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cat {
+      animation: none !important;
+      /* show a representative single frame */
+      background-position-x: 0 !important;
+    }
+  }
+</style>

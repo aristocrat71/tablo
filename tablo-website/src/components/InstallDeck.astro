@@ -1,0 +1,278 @@
+---
+/**
+ * InstallDeck — Act 4. A faux terminal window. OS auto-detected and
+ * preselected. Copy buttons with phosphor feedback. Commands per
+ * release-plan.md (GitHub Releases, quiet install, unsigned).
+ */
+const REPO = "https://github.com/aristocrat71/tablo";
+const RAW = "https://raw.githubusercontent.com/aristocrat71/tablo/main";
+const tabs = [
+  {
+    id: "macos",
+    label: "macos",
+    cmd: `curl -fsSL ${RAW}/install.sh | bash`,
+    note: "downloads from GitHub Releases · strips the quarantine flag so Gatekeeper never prompts",
+  },
+  {
+    id: "linux",
+    label: "linux",
+    cmd: `curl -fsSL ${RAW}/install.sh | bash`,
+    note: "drops the AppImage / .deb straight from Releases · no signing prompt",
+  },
+  {
+    id: "windows",
+    label: "windows",
+    cmd: `irm ${RAW}/install.ps1 | iex`,
+    note: "runs Unblock-File so SmartScreen stays quiet · PowerShell",
+  },
+];
+---
+
+<div class="term" data-install>
+  <div class="term-bar">
+    <span class="tdots"><i></i><i></i><i></i></span>
+    <span class="term-title mono">tablo — install</span>
+    <span class="term-tabs">
+      {
+        tabs.map((t) => (
+          <button class="ttab bkt" data-tab={t.id}>
+            {t.label}
+          </button>
+        ))
+      }
+    </span>
+  </div>
+
+  <div class="term-body">
+    {
+      tabs.map((t) => (
+        <div class="pane" data-pane={t.id} hidden>
+          <div class="cmd-row">
+            <code class="cmd mono">
+              <span class="prompt">$</span> {t.cmd}
+            </code>
+            <button class="bkt copy" data-copy={t.cmd} aria-label="Copy command">
+              copy
+            </button>
+          </div>
+          <p class="note mono">{t.note}</p>
+        </div>
+      ))
+    }
+
+    <div class="facts mono">
+      <div class="fact">
+        <b>local · free · open-source</b>
+        <a class="bkt" href={REPO} target="_blank" rel="noopener">
+          github.com/aristocrat71/tablo
+        </a>
+      </div>
+    </div>
+
+    <a class="bkt releases" href={`${REPO}/releases`} target="_blank" rel="noopener">
+      view all releases →
+    </a>
+  </div>
+</div>
+
+<style>
+  .term {
+    width: min(680px, 94vw);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-panel);
+    overflow: hidden;
+    text-align: left;
+  }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-soft);
+    flex-wrap: wrap;
+  }
+  .tdots {
+    display: flex;
+    gap: 6px;
+  }
+  .tdots i {
+    width: 11px;
+    height: 11px;
+    border-radius: 999px;
+    background: var(--border);
+  }
+  .tdots i:first-child {
+    background: color-mix(in srgb, var(--coral) 70%, var(--border));
+  }
+  .tdots i:nth-child(2) {
+    background: color-mix(in srgb, var(--blue) 70%, var(--border));
+  }
+  .tdots i:last-child {
+    background: color-mix(in srgb, var(--sage) 70%, var(--border));
+  }
+  .term-title {
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+  .term-tabs {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+  }
+  .ttab {
+    font-size: 11px;
+    padding: 5px 9px;
+  }
+  .ttab[aria-selected="true"] {
+    color: var(--blue);
+    border-color: color-mix(in srgb, var(--blue) 40%, transparent);
+    background: color-mix(in srgb, var(--blue) 10%, transparent);
+  }
+
+  .term-body {
+    padding: 20px;
+  }
+  .cmd-row {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    background: var(--bg-room);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+    padding: 14px 14px;
+  }
+  .cmd {
+    flex: 1;
+    font-size: var(--fs-mono);
+    color: var(--ink);
+    line-height: 1.5;
+    word-break: break-all;
+    align-self: center;
+  }
+  .prompt {
+    color: var(--blue);
+    margin-right: 8px;
+    text-shadow: var(--glow-blue);
+  }
+  .copy {
+    align-self: center;
+  }
+  .copy.done {
+    color: var(--sage);
+    text-shadow: var(--glow-sage);
+    border-color: color-mix(in srgb, var(--sage) 40%, transparent);
+  }
+  .note {
+    font-size: var(--fs-mono-xs);
+    color: var(--ink-faint);
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+
+  .facts {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-top: 1px solid var(--border-soft);
+    padding-top: 18px;
+  }
+  .fact {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .fact b {
+    color: var(--ink);
+    font-size: var(--fs-mono);
+    font-weight: 600;
+    min-width: 210px;
+  }
+  .fact span,
+  .fact a {
+    font-size: var(--fs-mono-xs);
+    color: var(--ink-faint);
+  }
+  .fact a.bkt {
+    padding: 2px 8px;
+  }
+
+  .releases {
+    margin-top: 18px;
+    /* drop the bracket-button's left padding so the "[" lands on the shared
+       left margin (command-box border / "downloads" / facts label) */
+    padding-left: 0;
+    font-size: var(--fs-mono);
+  }
+
+  @media (max-width: 560px) {
+    .fact b {
+      min-width: 0;
+    }
+    .term-tabs {
+      width: 100%;
+    }
+  }
+</style>
+
+<script>
+  function initInstall(root: HTMLElement) {
+    if (root.dataset.ready) return;
+    root.dataset.ready = "1";
+    const tabs = Array.from(
+      root.querySelectorAll<HTMLButtonElement>("[data-tab]"),
+    );
+    const panes = Array.from(
+      root.querySelectorAll<HTMLElement>("[data-pane]"),
+    );
+
+    function select(id: string) {
+      tabs.forEach((t) =>
+        t.setAttribute("aria-selected", String(t.dataset.tab === id)),
+      );
+      panes.forEach((p) => (p.hidden = p.dataset.pane !== id));
+    }
+
+    tabs.forEach((t) =>
+      t.addEventListener("click", () => select(t.dataset.tab!)),
+    );
+
+    // OS detect
+    const ua = navigator.userAgent + " " + (navigator.platform || "");
+    let os = "macos";
+    if (/Win/i.test(ua)) os = "windows";
+    else if (/Linux|X11/i.test(ua) && !/Android/i.test(ua)) os = "linux";
+    else if (/Mac/i.test(ua)) os = "macos";
+    select(os);
+
+    // copy buttons
+    root.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.copy!);
+        } catch {
+          /* clipboard blocked — still give feedback */
+        }
+        const prev = btn.textContent;
+        btn.textContent = "✓ copied";
+        btn.classList.add("done");
+        setTimeout(() => {
+          btn.textContent = prev;
+          btn.classList.remove("done");
+        }, 1500);
+      });
+    });
+  }
+
+  function boot() {
+    document
+      .querySelectorAll<HTMLElement>("[data-install]")
+      .forEach(initInstall);
+  }
+  boot();
+  document.addEventListener("astro:page-load", boot);
+</script>
