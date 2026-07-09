@@ -127,7 +127,7 @@
 <div class="dash">
   <div class="dash-head">
     <div class="lead">
-      <h2><img class="g" src="/tablo-logo-v3.png" alt="" /> tablo</h2>
+      <h2><img class="g" src="/tablo-logo-v4.png" alt="" /> tablo</h2>
       {#if !snap.hasProjectsDir}
         <p class="statline muted">No Claude Code sessions found yet</p>
       {:else if snap.agentCount === 0 && snap.waiting === 0}
@@ -394,12 +394,9 @@
     gap: 11px;
   }
   .lead h2 .g {
-    width: 34px;
     height: 34px;
-    object-fit: contain;
-    background: #fff;
+    width: auto; /* keep the logo's own (built-in-background) aspect — no crop */
     border-radius: 7px;
-    padding: 3px;
     flex: none;
   }
   /* settings gear — top-right of the header, dashboard view only */
