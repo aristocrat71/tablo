@@ -268,7 +268,7 @@
         {/if}
       </div>
 
-      {@render toggle("Panel shortcut", "Summon the panel from anywhere with Ctrl+Cmd+T — no need to click the widget.", panelShortcutEnabled, false, () => setPanelShortcutEnabled(!panelShortcutEnabled))}
+      {@render toggle("Panel shortcut", "Summon the panel from anywhere with Ctrl+Cmd+P — no need to click the widget.", panelShortcutEnabled, false, () => setPanelShortcutEnabled(!panelShortcutEnabled))}
 
       <div class="setting">
         <div class="setting-main">

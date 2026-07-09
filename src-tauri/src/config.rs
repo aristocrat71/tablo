@@ -90,7 +90,7 @@ pub struct Config {
     pub notify_on_permission: bool,
     /// "dark" (hero) or "light".
     pub theme: String,
-    /// Global hotkey (Tauri accelerator syntax, e.g. "Control+Command+T") that
+    /// Global hotkey (Tauri accelerator syntax, e.g. "Control+Command+P") that
     /// toggles the panel from anywhere. Empty string disables it.
     pub panel_shortcut: String,
     /// Whether the global panel hotkey is registered. On by default; the Settings
@@ -131,7 +131,7 @@ impl Default for Config {
             notify_on_warn: false,
             notify_on_permission: true,
             theme: "dark".into(),
-            panel_shortcut: "Control+Command+T".into(),
+            panel_shortcut: "Control+Command+P".into(),
             panel_shortcut_enabled: true,
             locate_default_applied: false,
         }
