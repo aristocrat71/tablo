@@ -23,16 +23,17 @@
   --ink-dim: #b7a794;
   --ink-faint: #7d6f5f;
 
-  /* semantic phosphor — the three meanings */
-  --amber: #e0a458; /* working / active — the desk lamp */
+  /* semantic phosphor — the three meanings.
+     primary accent is tablo's eye-blue (sampled from the sprite: #6dc7e9). */
+  --blue: #6dc7e9; /* working / active / brand — the eye glow */
   --sage: #8faa7e; /* idle / calm / healthy */
   --coral: #e08267; /* alarmed / danger / needs-you */
-  --amber-soft: #3a2c1a;
+  --blue-soft: #16303d;
   --sage-soft: #29301f;
   --coral-soft: #3a231c;
 
   /* glow / phosphor (website-only) */
-  --glow-amber: 0 0 12px color-mix(in srgb, var(--amber) 60%, transparent);
+  --glow-blue: 0 0 12px color-mix(in srgb, var(--blue) 60%, transparent);
   --glow-sage: 0 0 12px color-mix(in srgb, var(--sage) 55%, transparent);
   --glow-coral: 0 0 12px color-mix(in srgb, var(--coral) 60%, transparent);
   --shadow-panel: 0 24px 60px -12px rgba(0, 0, 0, 0.7),
@@ -78,8 +79,8 @@
   --ink: #3a3128;
   --ink-dim: #7a6e5e;
   --ink-faint: #a99b87;
-  --amber: #c67f2c;
-  --amber-soft: #f5e6cf;
+  --blue: #2b8fc0;
+  --blue-soft: #d6ecf6;
   --sage: #5f7f4e;
   --sage-soft: #e4ecda;
   --coral: #c85a3c;

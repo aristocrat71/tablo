@@ -42,12 +42,37 @@ const marqueeItems = [
   </div>
 
   <!-- ===== Act 1 — THE FAMILIAR ===== -->
-  <section class="act hero" data-act data-lamp="sage">
-    <span class="act-num">tablo · familiar daemon</span>
-    <h1 class="wordmark phosphor">tablo</h1>
-    <div class="hero-cat">
-      <Cat reactive size={190} label="pixel cat, asleep" class="cat-hero" />
+  <section class="act hero" data-act data-lamp="blue">
+    <span class="act-num">say hi to</span>
+    <div class="hero-core">
+      <h1 class="wordmark phosphor">tablo</h1>
+      <div class="hero-cat">
+        <Cat state="sit" size={188} label="pixel cat" class="cat-hero" />
+      </div>
+
+      <!-- mood slider (vertical) — beside the cat, left edge on the title's left -->
+      <div class="mood" data-mood>
+      <div class="mood-slider-wrap">
+        <input
+          class="mood-slider"
+          type="range"
+          min="0"
+          max="4"
+          step="1"
+          value="0"
+          aria-label="cat mood slider"
+        />
+      </div>
+      <div class="mood-labels" role="group" aria-label="cat mood">
+        <button type="button" class="mood-lb" data-mood-to="0">sit</button>
+        <button type="button" class="mood-lb" data-mood-to="1">sleeping</button>
+        <button type="button" class="mood-lb" data-mood-to="2">running</button>
+        <button type="button" class="mood-lb" data-mood-to="3">playing</button>
+        <button type="button" class="mood-lb" data-mood-to="4">shocked</button>
+      </div>
     </div>
+    </div>
+
     <p class="tagline mono">
       a tiny cat that watches your coding agents<span class="caret">▮</span>
     </p>
@@ -55,11 +80,14 @@ const marqueeItems = [
       <span class="src">claude code</span> + <span class="src">codex</span> · one
       cat · your corner
     </p>
-    <a class="scroll-hint mono bkt" href="#watch">scroll ↓</a>
+    <div class="hero-cta">
+      <a class="bkt install-btn" href="#get">install tablo</a>
+      <a class="scroll-hint mono bkt" href="#watch">scroll ↓</a>
+    </div>
   </section>
 
   <!-- ===== Act 2 — IT WATCHES ===== -->
-  <section class="act watch" id="watch" data-act data-lamp="amber">
+  <section class="act watch" id="watch" data-act data-lamp="blue">
     <span class="act-num">01 · what it does</span>
     <h2 class="act-title" data-typeon>it watches, so you don't have to</h2>
 
@@ -81,7 +109,7 @@ const marqueeItems = [
           <div class="led"><i class="ok" style="width:22%"></i></div>
         </div>
       </div>
-      <div class="chip" data-chip="amber">
+      <div class="chip" data-chip="blue">
         <span class="chip-dot warn"></span>
         <div class="chip-body">
           <b>working</b>
@@ -109,7 +137,7 @@ const marqueeItems = [
   </section>
 
   <!-- ===== Act 3 — LIVE WIDGET ===== -->
-  <section class="act live" data-act data-lamp="amber">
+  <section class="act live" data-act data-lamp="blue">
     <span class="act-num">02 · the whole thing, live</span>
     <h2 class="act-title" data-typeon>every session, in real time</h2>
     <p class="act-sub">
@@ -122,7 +150,7 @@ const marqueeItems = [
   </section>
 
   <!-- ===== Act 4 — GET IT ===== -->
-  <section class="act install" data-act data-lamp="amber">
+  <section class="act install" id="get" data-act data-lamp="blue">
     <span class="act-num">03 · put it on your desk</span>
     <h2 class="act-title" data-typeon>one line. no gatekeeper dance.</h2>
     <div class="install-stage">
@@ -191,7 +219,7 @@ const marqueeItems = [
     letter-spacing: 0.04em;
   }
   .mq b {
-    color: var(--amber);
+    color: var(--blue);
     margin-left: 18px;
     opacity: 0.7;
   }
@@ -206,11 +234,11 @@ const marqueeItems = [
     gap: 2px;
   }
   .wordmark {
-    font-family: var(--font-round);
+    font-family: var(--font-mono); /* terminal wordmark */
     font-weight: 700;
-    font-size: var(--fs-display);
-    letter-spacing: -0.04em;
-    color: var(--amber);
+    font-size: clamp(3rem, 11vw, 8rem);
+    letter-spacing: -0.03em;
+    color: var(--blue);
     line-height: 0.9;
     position: relative;
     z-index: 1;
@@ -242,13 +270,146 @@ const marqueeItems = [
     margin-top: -18px;
     z-index: var(--z-cat);
   }
+
+  /* ===== mood slider (vertical) ===== */
+  /* hero-core is sized to the wordmark (the widest child) so left:0 lands
+     exactly on the title's left edge; the cat sits centred within it. */
+  .hero-core {
+    position: relative;
+    width: fit-content;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .mood {
+    position: absolute;
+    left: 0;
+    bottom: 34px;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 12px;
+    height: 172px;
+  }
+  .mood-slider-wrap {
+    position: relative;
+    width: 22px;
+    height: 100%;
+  }
+  .mood-labels {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-start;
+    height: 100%;
+  }
+  .mood-lb {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: var(--ink-faint);
+    background: none;
+    border: none;
+    padding: 1px 3px;
+    cursor: pointer;
+    transition:
+      color 0.2s var(--ease),
+      text-shadow 0.2s var(--ease);
+    white-space: nowrap;
+  }
+  .mood-lb:hover {
+    color: var(--ink-dim);
+  }
+  .mood-lb.active {
+    color: var(--blue);
+    text-shadow: var(--glow-blue);
+  }
+
+  .mood-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 172px; /* becomes the vertical length once rotated */
+    height: 22px;
+    background: transparent;
+    cursor: pointer;
+    /* absolute + rotate so the 172px layout box doesn't shove the labels;
+       rotate to vertical: min (sit) at top, max (shocked) at bottom */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(90deg);
+    --fill: 0%;
+  }
+  /* WebKit track + thumb */
+  .mood-slider::-webkit-slider-runnable-track {
+    height: 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border-soft);
+    background-color: var(--bg-inset);
+    background-image: linear-gradient(
+        90deg,
+        var(--blue) 0 var(--fill),
+        transparent var(--fill)
+      ),
+      repeating-linear-gradient(
+        90deg,
+        transparent 0 5px,
+        color-mix(in srgb, var(--bg-surface) 75%, black) 5px 6px
+      );
+    box-shadow: inset 0 0 8px -2px color-mix(in srgb, var(--blue) 45%, transparent);
+  }
+  .mood-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 22px;
+    margin-top: -7px;
+    border-radius: 3px;
+    background: var(--blue);
+    box-shadow: 0 0 12px var(--blue);
+    border: 2px solid var(--bg-room);
+  }
+  /* Firefox track + progress + thumb */
+  .mood-slider::-moz-range-track {
+    height: 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border-soft);
+    background-color: var(--bg-inset);
+    background-image: repeating-linear-gradient(
+      90deg,
+      transparent 0 5px,
+      color-mix(in srgb, var(--bg-surface) 75%, black) 5px 6px
+    );
+  }
+  .mood-slider::-moz-range-progress {
+    height: 10px;
+    border-radius: 3px;
+    background: var(--blue);
+    box-shadow: 0 0 8px -1px var(--blue);
+  }
+  .mood-slider::-moz-range-thumb {
+    width: 12px;
+    height: 20px;
+    border-radius: 3px;
+    background: var(--blue);
+    box-shadow: 0 0 12px var(--blue);
+    border: 2px solid var(--bg-room);
+  }
+  .mood-slider:focus-visible {
+    outline: none;
+  }
+  .mood-slider:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+  }
   .tagline {
     font-size: var(--fs-lead);
     color: var(--ink);
     margin-top: 6px;
   }
   .caret {
-    color: var(--amber);
+    color: var(--blue);
     animation: blink 1.05s steps(1) infinite;
   }
   @keyframes blink {
@@ -265,8 +426,37 @@ const marqueeItems = [
   .subtag .src {
     color: var(--ink-dim);
   }
+  .hero-cta {
+    margin-top: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .install-btn {
+    font-size: var(--fs-mono);
+    font-weight: 600;
+    padding: 12px 26px;
+    color: var(--blue);
+    border: 1px solid color-mix(in srgb, var(--blue) 45%, transparent);
+    background: color-mix(in srgb, var(--blue) 12%, transparent);
+    box-shadow:
+      0 0 20px -4px color-mix(in srgb, var(--blue) 55%, transparent),
+      inset 0 0 16px -8px color-mix(in srgb, var(--blue) 60%, transparent);
+    text-shadow: var(--glow-blue);
+    transition:
+      transform 0.15s var(--ease),
+      background 0.2s var(--ease),
+      box-shadow 0.2s var(--ease);
+  }
+  .install-btn:hover {
+    transform: translateY(-2px);
+    background: color-mix(in srgb, var(--blue) 20%, transparent);
+    box-shadow:
+      0 0 28px -3px color-mix(in srgb, var(--blue) 70%, transparent),
+      inset 0 0 16px -6px color-mix(in srgb, var(--blue) 70%, transparent);
+  }
   .scroll-hint {
-    margin-top: 34px;
     font-size: var(--fs-mono-xs);
     opacity: 0.7;
   }
@@ -315,8 +505,8 @@ const marqueeItems = [
   .chip.hot[data-chip="sage"] {
     border-color: color-mix(in srgb, var(--sage) 55%, var(--border));
   }
-  .chip.hot[data-chip="amber"] {
-    border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  .chip.hot[data-chip="blue"] {
+    border-color: color-mix(in srgb, var(--blue) 55%, var(--border));
   }
   .chip.hot[data-chip="coral"] {
     border-color: color-mix(in srgb, var(--coral) 55%, var(--border));
@@ -333,8 +523,8 @@ const marqueeItems = [
     box-shadow: 0 0 8px var(--sage);
   }
   .chip-dot.warn {
-    background: var(--amber);
-    box-shadow: 0 0 8px var(--amber);
+    background: var(--blue);
+    box-shadow: 0 0 8px var(--blue);
   }
   .chip-dot.crit {
     background: var(--coral);
@@ -423,7 +613,7 @@ const marqueeItems = [
     color: var(--ink-faint);
   }
   .signoff-nav .wm {
-    color: var(--amber);
+    color: var(--blue);
     font-weight: 700;
     font-family: var(--font-round);
   }
@@ -458,8 +648,8 @@ const marqueeItems = [
   .boot-log {
     font-family: var(--font-mono);
     font-size: clamp(11px, 2.6vw, 14px);
-    color: var(--amber);
-    text-shadow: var(--glow-amber);
+    color: var(--blue);
+    text-shadow: var(--glow-blue);
     line-height: 1.7;
     white-space: pre;
     max-width: 90vw;
@@ -499,6 +689,14 @@ const marqueeItems = [
     }
   }
 
+  /* below ~1000px the title is narrower than the cat, so the beside-layout
+     can't align cleanly — stack the slider back under the cat instead */
+  @media (max-width: 1000px) {
+    .mood {
+      position: static;
+      margin: 16px auto 0;
+    }
+  }
   @media (max-width: 640px) {
     .watch-cat {
       margin: 12px 0;
@@ -611,7 +809,7 @@ const marqueeItems = [
     }
     const steps: [string, string, number][] = [
       ["sage", "idle", 0],
-      ["amber", "working", 1],
+      ["blue", "working", 1],
       ["coral", "alert", 2],
     ];
     steps.forEach(([col, st, idx], i) => {
@@ -626,7 +824,7 @@ const marqueeItems = [
     });
     setTimeout(
       () => {
-        lamp("amber");
+        lamp("blue");
         setCat(".cat-watch", "working");
         chips.forEach((c) => c.classList.add("hot"));
       },
@@ -643,7 +841,7 @@ const marqueeItems = [
         for (const e of entries) {
           if (!e.isIntersecting) continue;
           const el = e.target as HTMLElement;
-          lamp(el.dataset.lamp || "amber");
+          lamp(el.dataset.lamp || "blue");
           if (el.classList.contains("watch")) playWatchSequence();
           if (el.classList.contains("signoff") && !reduce) {
             setCat(".cat-signoff", "settling");
@@ -728,8 +926,12 @@ const marqueeItems = [
       pos = e.key.toLowerCase() === seq[pos] ? pos + 1 : 0;
       if (pos === seq.length) {
         pos = 0;
-        setCat(".cat-hero", "play");
-        setTimeout(() => setCat(".cat-hero", "idle"), 2000);
+        // snap the mood slider to "playing" so cat + slider stay in sync
+        const ms = document.querySelector<HTMLInputElement>(".mood-slider");
+        if (ms) {
+          ms.value = "3";
+          ms.dispatchEvent(new Event("input"));
+        }
         document
           .querySelector("[data-marquee]")
           ?.insertAdjacentHTML(
@@ -738,6 +940,32 @@ const marqueeItems = [
           );
       }
     });
+  }
+
+  /* ---------- mood slider drives the hero cat ---------- */
+  // slider hooks (0-4) -> cat states. default 0 = static "sit" frame.
+  const MOODS = ["sit", "idle", "working", "play", "alert"];
+  function initMood() {
+    const mood = document.querySelector<HTMLElement>("[data-mood]");
+    if (!mood) return;
+    const slider = mood.querySelector<HTMLInputElement>(".mood-slider")!;
+    const labels = Array.from(
+      mood.querySelectorAll<HTMLElement>(".mood-lb"),
+    );
+    const apply = (v: number) => {
+      const i = Math.max(0, Math.min(4, v | 0));
+      setCat(".cat-hero", MOODS[i]);
+      slider.style.setProperty("--fill", ((i / 4) * 100).toFixed(1) + "%");
+      labels.forEach((l, j) => l.classList.toggle("active", j === i));
+    };
+    slider.addEventListener("input", () => apply(+slider.value));
+    labels.forEach((l) =>
+      l.addEventListener("click", () => {
+        slider.value = l.dataset.moodTo!;
+        apply(+slider.value);
+      }),
+    );
+    apply(+slider.value); // initial render (0 = sit)
   }
 
   let started = false;
@@ -749,6 +977,7 @@ const marqueeItems = [
     initActs();
     initTypeOn();
     initExtras();
+    initMood();
   }
   boot();
   document.addEventListener("astro:page-load", boot);

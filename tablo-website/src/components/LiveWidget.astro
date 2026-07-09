@@ -185,9 +185,9 @@
       filter 0.3s var(--ease);
   }
   .mini-hex[data-mini-state="working"] {
-    color: var(--amber);
-    background: color-mix(in srgb, var(--amber) 55%, var(--border));
-    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--amber) 60%, transparent));
+    color: var(--blue);
+    background: color-mix(in srgb, var(--blue) 55%, var(--border));
+    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--blue) 60%, transparent));
   }
   .mini-hex[data-mini-state="alarmed"] {
     color: var(--coral);
@@ -235,8 +235,8 @@
     font-family: var(--font-mono);
     font-weight: 700;
     font-size: 14px;
-    color: var(--amber);
-    background: var(--amber-soft);
+    color: var(--blue);
+    background: var(--blue-soft);
     clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
   }
   .panel-titles {
@@ -283,8 +283,8 @@
     box-shadow: 0 0 8px var(--coral);
   }
   .group-dot.work {
-    background: var(--amber);
-    box-shadow: 0 0 8px var(--amber);
+    background: var(--blue);
+    box-shadow: 0 0 8px var(--blue);
   }
   .group-dot.sage {
     background: var(--sage);
@@ -368,8 +368,8 @@
     color: var(--ink-dim);
   }
   .pct.warn {
-    color: var(--amber);
-    text-shadow: var(--glow-amber);
+    color: var(--blue);
+    text-shadow: var(--glow-blue);
   }
   .pct.crit {
     color: var(--coral);
@@ -395,8 +395,8 @@
     box-shadow: 0 0 6px var(--sage);
   }
   .dot.warn {
-    background: var(--amber);
-    box-shadow: 0 0 6px var(--amber);
+    background: var(--blue);
+    box-shadow: 0 0 6px var(--blue);
   }
   .dot.wait {
     background: var(--ink-faint);
@@ -622,7 +622,7 @@
       mini.dataset.miniState = "working";
       pip.hidden = true;
       toast.hidden = true;
-      setLamp("amber");
+      setLamp("blue");
       refreshGroups();
     }
 
@@ -660,7 +660,7 @@
         place("s3", "work");
         mini.dataset.miniState = "working";
         pip.hidden = true;
-        setLamp("amber");
+        setLamp("blue");
         refreshGroups();
       });
       // s1 crosses the warning line -> critical
@@ -680,7 +680,7 @@
         place("s1", "wait");
         mini.dataset.miniState = "working";
         toast.hidden = false;
-        setLamp("amber");
+        setLamp("blue");
         refreshGroups();
       });
       // loop

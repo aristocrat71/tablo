@@ -63,7 +63,7 @@
   z-index: var(--z-room);
   background: radial-gradient(
     70% 50% at 50% 100%,
-    color-mix(in srgb, var(--lamp, var(--amber)) 14%, transparent),
+    color-mix(in srgb, var(--lamp, var(--blue)) 14%, transparent),
     transparent 72%
   );
   opacity: 0.85;
@@ -122,7 +122,7 @@
   background: linear-gradient(
     to bottom,
     transparent,
-    rgba(224, 164, 88, 0.03),
+    rgba(109, 199, 233, 0.03),
     transparent
   );
   animation: crt-sweep 8s linear infinite;
@@ -139,7 +139,7 @@
   mix-blend-mode: overlay;
 }
 
-/* the little amber power LED, bottom-right of the glass */
+/* the little blue power LED, bottom-right of the glass */
 .crt-power {
   position: fixed;
   right: 22px;
@@ -159,8 +159,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--amber);
-  box-shadow: 0 0 8px var(--amber);
+  background: var(--blue);
+  box-shadow: 0 0 8px var(--blue);
   animation: crt-pwr 3.5s var(--ease) infinite;
 }
 

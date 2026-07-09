@@ -70,12 +70,12 @@ img {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--amber) 40%, transparent);
+  background: color-mix(in srgb, var(--blue) 40%, transparent);
   color: var(--ink);
 }
 
 :focus-visible {
-  outline: 2px solid var(--amber);
+  outline: 2px solid var(--blue);
   outline-offset: 3px;
   border-radius: 3px;
 }
@@ -111,7 +111,7 @@ img {
   font-family: var(--font-mono);
   font-size: var(--fs-mono-xs);
   letter-spacing: 0.35em;
-  color: var(--amber);
+  color: var(--blue);
   text-transform: uppercase;
   opacity: 0.8;
   margin-bottom: 18px;
@@ -165,9 +165,9 @@ img {
   opacity: 0.55;
 }
 .bkt:hover {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 35%, transparent);
-  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 35%, transparent);
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
   animation: glitch 0.28s steps(2) 1;
 }
 .bkt.solid {
@@ -222,8 +222,8 @@ img {
   box-shadow: 0 0 8px -1px var(--sage);
 }
 .led > i.warn {
-  background-color: var(--amber);
-  box-shadow: 0 0 9px -1px var(--amber);
+  background-color: var(--blue);
+  box-shadow: 0 0 9px -1px var(--blue);
 }
 .led > i.crit {
   background-color: var(--coral);
@@ -255,8 +255,8 @@ img {
 .scroll-led > i {
   width: 100%;
   height: 0;
-  background-color: var(--lamp, var(--amber));
-  box-shadow: 0 0 10px -1px var(--lamp, var(--amber));
+  background-color: var(--lamp, var(--blue));
+  box-shadow: 0 0 10px -1px var(--lamp, var(--blue));
   background-image: repeating-linear-gradient(
     0deg,
     transparent 0 6px,
@@ -287,11 +287,11 @@ img {
   will-change: transform;
 }
 .cursor {
-  background: var(--amber);
-  box-shadow: 0 0 8px var(--amber);
+  background: var(--blue);
+  box-shadow: 0 0 8px var(--blue);
 }
 .cursor-trail {
-  background: color-mix(in srgb, var(--amber) 55%, transparent);
+  background: color-mix(in srgb, var(--blue) 55%, transparent);
   opacity: 0.5;
 }
 .cursor.tap {
