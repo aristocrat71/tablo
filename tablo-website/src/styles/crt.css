@@ -54,6 +54,44 @@
   background: var(--bg-room);
 }
 
+/* screen shake (light-mode troll). global (not scoped) so it hits .bezel,
+   which lives in the layout — a scoped rule would never match it. */
+.bezel.shake {
+  animation: screenshake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+@keyframes screenshake {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0);
+  }
+  10% {
+    transform: translate(-11px, 6px) rotate(-0.6deg);
+  }
+  22% {
+    transform: translate(10px, -8px) rotate(0.7deg);
+  }
+  35% {
+    transform: translate(-9px, 5px) rotate(-0.5deg);
+  }
+  48% {
+    transform: translate(8px, 6px) rotate(0.5deg);
+  }
+  61% {
+    transform: translate(-7px, -4px) rotate(-0.3deg);
+  }
+  74% {
+    transform: translate(5px, 4px) rotate(0.2deg);
+  }
+  87% {
+    transform: translate(-3px, 2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bezel.shake {
+    animation: none;
+  }
+}
+
 /* ambient room glow (the desk lamp bleeding up) */
 .glass::before {
   content: "";
