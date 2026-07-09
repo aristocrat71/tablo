@@ -1,140 +1,112 @@
 # tablo
 
-A tiny floating cat that watches your Claude Code agents. Tablo lives in a
-corner of your screen and reflects live activity through its glow: it
-**breathes sage** when idle, **pulses amber** while agents are working, and
-**flushes coral** when a session needs your input or its context window crosses
+A tiny floating cat that watches your coding agents — **Claude Code and OpenAI
+Codex** — from a corner of your screen. Tablo reflects live activity through a
+small animated cat and a soft colored glow: it **sleeps and breathes sage** when
+idle, **trots and pulses amber** while agents are working, and turns **shocked
+and flushes coral** when a session needs your input or its context window crosses
 the danger line. **Tap Tablo** to open a panel with a live context meter per
 session; from there, open a fuller **dashboard** with settings.
 
-Built with **Tauri 2** (Rust backend) + **SvelteKit / Svelte 5** (webview).
+Built with **Tauri 2** (Rust) + **SvelteKit / Svelte 5**. macOS is the primary
+platform today.
 
-> The cat art is still in design — until it lands, Tablo renders as a state
-> glyph (`I` idle · `A` working · `!` alarmed) inside a hexagon. The render layer
-> is a single state→glyph table, so the sprite drops in behind it without
-> touching any of the state or event wiring.
+## The four surfaces
 
-## Surfaces (four windows)
-
-- **Avatar** — a 92×108 transparent, always-on-top window that is
-  *click-through everywhere except the cat*. Drag to reposition (persisted);
-  tap to toggle the panel. Its glow and glyph are a pure function of aggregate
-  live state.
-- **Panel** — opens on tap, anchored by the avatar. Grouped session meters.
-  Dismisses on a second tap, on tap-away/blur, or with **Esc**.
+- **Avatar** — a tiny (126×134) transparent, always-on-top window that is
+  *click-through everywhere except the cat*. Drag to reposition (remembered
+  between launches); tap to toggle the panel. The cat's animation, glow, and
+  count pips are a pure function of your aggregate live state.
+- **Panel** — opens on tap, anchored by the avatar. Grouped, live session
+  meters. Dismisses on a second tap, on tap-away/blur, or with **Esc**.
 - **Dashboard** — a larger, resizable window with per-session gauges, a live
   terminal-style activity preview, permission approvals, and a settings pane.
 - **Toast** — a small, quiet notification that flies out of the avatar when a
   working session finishes and starts waiting on you (toggleable).
 
-## What it does
+## The cat
 
-### Avatar state machine + count pips
+The avatar is a small animated cat whose state is legible at a glance, with
+precedence **alarmed → running → idle**:
 
-The avatar's glow is aggregate live state, precedence **alarmed → running → idle**:
+| State | Cat | Glow | Meaning |
+|-------|-----|------|---------|
+| **idle** | curled asleep | sage, slow breathe | nothing active, or every session is just waiting on you |
+| **running** | trotting | amber, quicker pulse | at least one session is actively working |
+| **alarmed** | ears-back, wide-eyed | coral, urgent flush | a session crossed the context warning line, **or** a tool call is waiting for your approval |
 
-| State | Glyph | Glow | Trigger |
-|-------|-------|------|---------|
-| **idle** | `I` | sage, slow breathe | no active sessions, or every one is just waiting on you |
-| **running** | `A` | amber, quicker pulse | any session is actively working |
-| **alarmed** | `!` | coral, urgent flush | any session past the context warning line, **or** any pending permission request (harder shake) |
-
-Up to three **count pips** stack off the top-right of the hex, each shown only
-when its count is non-zero:
+Transitions are animated (the cat wakes and settles rather than snapping), and
+escalation is glow-only — no jitter. Up to three **count pips** stack off the
+top-right, each shown only when non-zero:
 
 - **coral** — sessions with a pending permission request,
 - **sage** — sessions waiting on you,
 - **amber** — sessions actively working.
 
-A one-shot side-to-side shake fires when a waiting notification launches.
+## Live context meters
 
-### Live context meter
-
-Tails the JSONL transcripts under `~/.claude/projects/` (byte-offset
-incremental reads, no whole-file re-parse), computes each active session's
-context occupancy from the latest `assistant` usage block, and pushes one
-`state-update` snapshot to every window. A session counts as *active* if its
-transcript was modified within `activeWindowSecs` (default 15 min). Compaction
+Tablo tails each agent's session transcripts and computes every active session's
+context-window occupancy in real time, pushing updates to all windows. A session
+counts as *active* if its transcript changed within a configurable window
+(default 15 min), and finished sessions clear from the panel after their own
+(shorter) timer, reappearing the instant you prompt them again. Compaction
 snap-backs animate down rather than flicker.
 
-### Panel — grouped session meters
+In the **panel**, sessions group by state, most urgent first:
 
-Sessions group by state, most urgent first:
-
-1. **Critical** (pinned top) — any session past the warning line, under a red
-   `Context window warning ! > N%` header (`N` = your configured limit).
+1. **Context window warning** (pinned top) — any session past the warning line,
+   under a red `> N%` header (`N` is your configured limit).
 2. **Permission Request** — tool calls awaiting approve/deny.
 3. **Waiting** — handed back to you.
 4. **Working** — actively running.
 
-Each row shows the project name, an optional AI-generated session title, a state
-badge, context %, path/branch, and a segmented-LED context bar with the raw
-token count, coloured by threshold (sage < warn < amber < crit < coral).
-Filter chips toggle the Waiting / Working groups when more than one session is
-active.
+Each row shows the project, an optional AI-generated session title, a live
+one-line activity ("editing scanner.rs", "running cargo check", "waiting for
+you") with a colored status dot, a read-only permission-mode badge, the agent
+source (**claude** / **codex**), and a segmented-LED context bar with the raw
+token count — colored sage → amber → coral by threshold. Filter chips toggle the
+Waiting / Working groups when more than one session is active.
 
-### Notifications (toast)
+## Two agents, one cat
 
-When a working session finishes and starts waiting on you, a gentle toast slides
-out of the avatar showing `project · title` and a **jump** button. The hover
-time is configurable (seconds), and the whole feature can be switched off. Toasts
-overshadow rather than stack.
+Tablo watches both **Claude Code** (`~/.claude/projects/`) and **OpenAI Codex**
+(`~/.codex/sessions/`) sessions, side by side in the same avatar count, panel,
+and dashboard. A small neutral **`claude` / `codex` tag** on each row marks which
+agent it came from. Codex support is on by default and can be switched off in
+Settings.
 
-### Permissions — approve / deny
+For Claude sessions, Tablo auto-detects each session's context window (the
+standard window vs. the 1M-token beta) from on-disk signals — no manual toggle;
+the per-session `used / limit` readout shows what was detected. Codex reports its
+window directly, so it's always exact.
 
-Tool-call approvals via a Claude Code `PreToolUse` hook + a loopback IPC server:
+## Permissions — approve / deny
 
-- The hook `curl`s each intercepted tool call to Tablo's local server and blocks.
-- Tablo registers a pending decision, forces the avatar to **alarmed**, and
-  surfaces it in the panel's **Permission Request** group and on the dashboard.
-- You tap **Approve** / **Deny**; the decision returns to the hook and
-  un/blocks the tool.
+Tablo can gate Claude Code tool calls behind a tap:
+
+- A `PreToolUse` hook sends each intercepted tool call to Tablo and blocks.
+- Tablo forces the avatar to **alarmed**, raises a count pip, and surfaces the
+  request in the panel's **Permission Request** group and on the dashboard.
+- You tap **Approve** / **Deny**; the decision releases or blocks the tool.
 - Only mutating tools are intercepted by default
   (`Bash`/`Write`/`Edit`/`MultiEdit`/`NotebookEdit`); read-only tools never pay
   the round-trip.
-- **Fail-closed:** if you never decide within `hookTimeoutSecs` (~10 min), it
-  **denies**. If Tablo is *down*, the hook's `curl` fails fast and Claude Code
-  proceeds normally (never hangs).
+- **Fail-closed:** if you never decide within the timeout (~10 min), it
+  **denies**. If Tablo is *down*, the hook fails fast and Claude Code proceeds
+  normally — it never hangs.
 
-The hook script is written to Tablo's own dir on launch (harmless), but
-`~/.claude/settings.json` is only edited to actually intercept tools when you
-flip **approvals on** in the dashboard.
-
-### Dashboard + Settings
-
-A larger view with per-session context gauges, a live terminal-style activity
-preview (`$ live preview`), and the same live approvals. A gear opens an
-in-window **Settings** pane:
-
-- **Tool approvals** — install/remove the `PreToolUse` hook.
-- **Jump** — enable/disable the jump-to-session buttons (on by default when the
-  locator hook is installed).
-- **Context window limit** — the warning threshold, `1`–`100` (default `60`).
-  Applies live across every window.
-- **Waiting notifications** — toggle the toast, and set its hover time (≥ 1 s).
-- **Theme** — dark / light.
-
-### Themes
-
-Warm **dark** (hero) and **light**, per `tablo-mockups-v3.html`. The toggle lives
-in dashboard Settings and syncs across every window (Rust broadcasts a
-`theme-update` event); the choice is persisted.
-
-### Quiet by default
-
-Tablo runs as a macOS **Accessory** app — hidden from the Dock and Cmd+Tab. It
-becomes a **Regular** app (so it appears in Cmd+Tab) only while the dashboard is
-open, then drops back.
+Approvals are off until you enable them in Settings, and only then is Claude
+Code's hook config touched.
 
 ## Jump to session
 
-Each session card — and each toast — has a **jump** button that focuses the
+Every session card — and every toast — has a **jump** button that focuses the
 terminal a session is running in. Sessions self-report their location through a
-passive `SessionStart` / `UserPromptSubmit` hook; jump then switches tmux to the
-pane (if any) and brings the host terminal to the front.
+passive hook; jump then switches tmux to the exact pane (if any) and brings the
+host terminal to the front.
 
 Pinpointing the *exact tab* needs a terminal that exposes a per-tab tty to
-AppleScript (or a focus-by-id CLI). Support on macOS:
+AppleScript. Support on macOS:
 
 | Terminal | No tmux | Inside tmux |
 |----------|---------|-------------|
@@ -149,81 +121,62 @@ multiple tabs and no tmux it lands on the current tab — these terminals expose
 scriptable per-tab tty. **Inside tmux, jump is always exact**: tmux selects the
 pane and Tablo just foregrounds the app.
 
-Cross-platform: the tmux pane-switch works everywhere (incl. WSL); the GUI
-window-raise is macOS-only today — Linux (X11 via `wmctrl`/`xdotool`) and Windows
-(`SetForegroundWindow`) are stubbed, and Wayland / Windows-Terminal tabs stay
-honest no-ops.
+Across platforms, the tmux pane-switch works everywhere (including WSL); the GUI
+window-raise is macOS-only, so on Linux and Windows jump still switches the tmux
+pane but doesn't raise the window, and Wayland stays a no-op.
 
-## Context-window detection
+**Both agents jump.** The jump logic is shared and agent-agnostic. Claude jump is
+on by default; **Codex jump is opt-in** in Settings (it installs a hook into
+`~/.codex/hooks.json`, which Codex asks you to trust once). The two paths are
+fully independent.
 
-The transcript records the model (e.g. `claude-opus-4-8`) but **not** whether the
-1M-token beta window is active. That signal *is* on disk though —
-`~/.claude.json` records each project's last-used model string **with** its
-`[1m]` marker under `projects[<cwd>].lastModelUsage`. So Tablo resolves each
-session's window in priority order:
+## Notifications
 
-1. **Certain**: usage already past the standard window, a `[1m]` marker, or a
-   session previously seen extended (a standard session compacts before it could
-   exceed 200k, so exceeding it *is* proof of the extended window).
-2. **Per-project** from `~/.claude.json` (cached, re-read on change): a `[1m]`
-   model ⇒ 1M, otherwise the standard window.
-3. **Global lean**: for a project with no record, the majority window across all
-   projects that do.
-4. **Fallback**: `defaultContextLimit` from config.
+When a working session finishes and starts waiting on you, a gentle toast slides
+out of the avatar showing `project · title` and a **jump** button. Its on-screen
+time is configurable, and the whole feature can be switched off. Toasts
+overshadow rather than stack.
 
-All window sizes are config values. This is fully automatic — no manual toggle;
-the per-session `used / limit` readout (e.g. `354k / 1M`) shows what was detected.
+## Dashboard & Settings
 
-## Plan usage — intentionally not built
+The dashboard is a larger view with per-session context gauges, a live
+terminal-style activity preview (`$ live preview`) of what each agent is doing,
+and the same live approvals. A compact headline shows *active · waiting ·
+projects*. A gear opens an in-window **Settings** pane:
 
-Anthropic's plan-quota data (5h/weekly %, resets-in) is **not** stored in any
-local file — it only rides the API's `anthropic-ratelimit-*` response headers,
-which Claude Code holds in memory. The only way to read it is to replay your
-Claude Code subscription token against the API, which is a Terms-of-Service grey
-area (those tokens are authorized for use *by Claude Code*). We deliberately do
-**not** do that, so Tablo has no plan/quota widget — only the static subscription
-tier, which does live on disk, is read.
+- **Tool approvals** — turn Claude Code approve/deny on or off.
+- **Jump to Claude session** — enable/disable the jump buttons for Claude sessions.
+- **Watch Codex** / **Jump to Codex session** — watch Codex CLI sessions (on by
+  default), and enable jump for them (opt-in; Codex asks you to trust the hook once).
+- **Context window limit** — the warning threshold, `1`–`100`% (default `60`).
+  Applies live everywhere.
+- **Cancelled-prompt grace** — how long Tablo waits before treating a Ctrl-C'd
+  prompt as done rather than thinking (minutes).
+- **Clear waiting sessions** — how long a finished session lingers in the panel
+  before it clears (minutes); it returns the moment you prompt it again.
+- **Waiting notifications** — toggle the toast and set its on-screen time.
+- **Theme** — dark / light.
 
-## Architecture
+## Themes
 
-```
-src-tauri/src/
-  config.rs      persisted config (avatar pos, thresholds, theme, ports) — JSON in app-config dir
-  scanner.rs     transcript discovery, incremental tail, context %, activity preview, aggregate Snapshot
-  permission.rs  loopback approval server, PreToolUse hook script, settings.json install/uninstall
-  locate.rs      session-location hook (self-reported cwd/tmux) + jump target resolution
-  lib.rs         windows, event/scan loop, cursor hit-test (click-through), toast placement, commands
-src/
-  routes/+page.svelte     selects a surface by window label (avatar | panel | dashboard | toast)
-  lib/Avatar.svelte       hex + glyph + glow + count pips + tap/drag + notif shake
-  lib/Panel.svelte        grouped session meters (Critical / Permission / Waiting / Working) + filters
-  lib/Dashboard.svelte    deep view + live terminal preview + approvals + settings pane
-  lib/Toast.svelte        waiting notification
-  lib/state.svelte.ts     shared reactive store (fetch snapshot + subscribe to state/theme)
-  lib/prefs.svelte.ts     UI prefs in localStorage, cross-window synced via the storage event
-```
+Warm **dark** (the hero mode) and **light**. The toggle lives in Settings and
+syncs instantly across every window; your choice is remembered.
 
-Rust pushes one `state-update` event carrying the full `Snapshot`; each window
-takes what it needs. A newly opened window fetches the current snapshot via the
-`get_snapshot` command, then subscribes. Config lives at the Tauri app-config dir
-(macOS: `~/Library/Application Support/com.projektdreamscape.tablo/config.json`).
+## Quiet by default
+
+Tablo runs as a macOS **Accessory** app — hidden from the Dock and Cmd+Tab. It
+surfaces in Cmd+Tab only while the dashboard is open, then drops back to the
+corner. No emoji anywhere; status is shown with the cat, colored glows, and
+LED-style dots.
 
 ## Develop
 
 ```bash
 bun install
-bun run tauri dev      # launch the app (avatar appears bottom-right)
+bun run tauri dev      # launch the app (the cat appears bottom-right)
 bun run tauri build    # produce a bundle
-cargo test scan_real_transcripts -- --nocapture   # (in src-tauri) inspect the live snapshot
 ```
 
-## Status by phase
-
-| Phase | Deliverable | State |
-|-------|-------------|-------|
-| 0 | Avatar + panel two-window scaffold | ✅ built |
-| 1 | Animated cat (state + counts) + live context panel | ✅ built |
-| 2 | Multi-session list + grouping / filters | ✅ built |
-| 3 | Plan / session usage | ✖ cancelled (no live quota on disk; static tier only) |
-| 4 | Permission approve / deny | ✅ built |
-| 5 | Browser-served localhost dashboard | ⏸ on hold |
+Config is stored at the Tauri app-config dir — on macOS,
+`~/Library/Application Support/com.projektdreamscape.tablo/config.json` — and
+holds the avatar position, thresholds, timers, theme, and toggles.
