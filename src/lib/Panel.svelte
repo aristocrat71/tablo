@@ -13,7 +13,8 @@
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
-  import { prefs, setSort, toggleFilter, byMode } from "./prefs.svelte";
+  import { prefs, setSort, byMode } from "./prefs.svelte";
+  import FilterButton from "./FilterButton.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
   // One card per session, unifying its working/context state with any pending
@@ -57,18 +58,28 @@
     });
   });
 
+  // Source filter — only when sessions span >1 agent; orphan requests are Claude-side.
+  let sources = $derived(new Set(snap.sessions.map((s) => s.source)));
+  let sourceFilterActive = $derived(sources.size > 1);
+  const srcVisible = (c: Card) =>
+    !sourceFilterActive || ((c.session?.source ?? "claude") === "codex" ? prefs.showCodex : prefs.showClaude);
+
   // Sessions past the context warn threshold get pulled into a Critical group,
   // always pinned to the top, ahead of every other state.
   const isCrit = (c: Card) => !!c.session && c.session.level !== "ok";
-  let critCards = $derived(cards.filter(isCrit));
-  let needsCards = $derived(cards.filter((c) => !isCrit(c) && c.requests.length > 0));
+  let critCards = $derived(cards.filter((c) => isCrit(c) && srcVisible(c)));
+  let needsCards = $derived(cards.filter((c) => !isCrit(c) && c.requests.length > 0 && srcVisible(c)));
   // Split the remaining non-request sessions: agents waiting on the user get
   // their own green-LED group, distinct from the ones actively working.
   let waitingCards = $derived(
-    cards.filter((c) => !isCrit(c) && c.requests.length === 0 && c.session?.activityKind === "waiting")
+    cards.filter(
+      (c) => !isCrit(c) && c.requests.length === 0 && c.session?.activityKind === "waiting" && srcVisible(c)
+    )
   );
   let workCards = $derived(
-    cards.filter((c) => !isCrit(c) && c.requests.length === 0 && c.session?.activityKind !== "waiting")
+    cards.filter(
+      (c) => !isCrit(c) && c.requests.length === 0 && c.session?.activityKind !== "waiting" && srcVisible(c)
+    )
   );
   // State filters only apply while the toolbar is visible (>1 session), so a
   // lone session can never be filtered out with no way to bring it back.
@@ -125,14 +136,7 @@
           <button class:on={prefs.sort === "context"} onclick={() => setSort("context")}>context</button>
           <button class:on={prefs.sort === "recent"} onclick={() => setSort("recent")}>recent</button>
         </div>
-        <div class="seg filt" role="group" aria-label="Filter by state">
-          <button class:on={prefs.showWaiting} onclick={() => toggleFilter("waiting")}>
-            <span class="fdot wait"></span>waiting
-          </button>
-          <button class:on={prefs.showWorking} onclick={() => toggleFilter("working")}>
-            <span class="fdot work"></span>working
-          </button>
-        </div>
+        <FilterButton showSource={sourceFilterActive} />
       </div>
     {/if}
 
@@ -383,27 +387,6 @@
   .seg button.on {
     background: var(--amber-soft);
     color: var(--amber);
-  }
-  /* state filters: neutral "on" highlight (the colored LED carries the meaning) */
-  .seg.filt button.on {
-    background: var(--bg-raised);
-    color: var(--ink);
-  }
-  .fdot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    flex-shrink: 0;
-    background: var(--ink-faint);
-    transition: background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
-  }
-  .seg.filt button.on .fdot.wait {
-    background: var(--sage);
-    box-shadow: 0 0 6px var(--sage);
-  }
-  .seg.filt button.on .fdot.work {
-    background: var(--amber);
-    box-shadow: 0 0 6px var(--amber);
   }
 
   .panel-body {

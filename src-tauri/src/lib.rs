@@ -625,6 +625,55 @@ fn cursor_over_cat(app: &AppHandle, avatar: &WebviewWindow) -> Option<bool> {
     Some(dx * dx + dy * dy <= r * r)
 }
 
+// ============================ tray ============================
+
+/// Menu-bar tray for the Accessory app: show/hide the widget, open the dashboard,
+/// quit. The `toggle` item is cloned into the handler so its label can flip.
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    use tauri::tray::TrayIconBuilder;
+
+    let toggle = MenuItem::with_id(app, "toggle_widget", "Hide widget", true, None::<&str>)?;
+    let dashboard = MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit tablo", true, None::<&str>)?;
+    let sep = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&toggle, &dashboard, &sep, &quit])?;
+
+    let toggle_item = toggle.clone();
+    let mut builder = TrayIconBuilder::with_id("tablo-tray")
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .tooltip("tablo")
+        .on_menu_event(move |app, event| match event.id.as_ref() {
+            "toggle_widget" => toggle_widget(app, &toggle_item),
+            "dashboard" => {
+                let _ = open_dashboard(app.clone());
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
+/// Toggle the avatar (tucking away the panel/toast when hiding), keeping the tray
+/// label in sync with the result.
+fn toggle_widget(app: &AppHandle, item: &tauri::menu::MenuItem<tauri::Wry>) {
+    let Some(avatar) = app.get_webview_window("avatar") else { return };
+    if avatar.is_visible().unwrap_or(true) {
+        let _ = avatar.hide();
+        if let Some(p) = app.get_webview_window("panel") { let _ = p.hide(); }
+        if let Some(t) = app.get_webview_window("toast") { let _ = t.hide(); }
+        let _ = item.set_text("Show widget");
+    } else {
+        let _ = avatar.show();
+        let _ = item.set_text("Hide widget");
+    }
+}
+
 // ============================ entrypoint ============================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -714,6 +763,8 @@ pub fn run() {
             let _ = locate::write_locate_script(hook_port);
             let _ = codex_locate::write_locate_script(hook_port);
             permission::spawn_server(handle.clone());
+
+            build_tray(&handle)?;
 
             spawn_watcher(handle.clone());
             spawn_hittest(handle);

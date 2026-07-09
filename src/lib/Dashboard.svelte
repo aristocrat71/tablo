@@ -6,12 +6,12 @@
   import {
     prefs,
     byMode,
-    toggleFilter,
     setNotifyOnWaiting,
     setWaitingToastSecs,
     TOAST_SECS_MIN,
     TOAST_SECS_MAX,
   } from "./prefs.svelte";
+  import FilterButton from "./FilterButton.svelte";
   import {
     hookStatus,
     setHookEnabled,
@@ -69,10 +69,16 @@
     });
   });
 
+  // Source filter — mirrors the Panel; only when sessions span >1 agent.
+  let sources = $derived(new Set(snap.sessions.map((s) => s.source)));
+  let sourceFilterActive = $derived(sources.size > 1);
+  const srcVisible = (c: Card) =>
+    !sourceFilterActive || ((c.session?.source ?? "claude") === "codex" ? prefs.showCodex : prefs.showClaude);
+
   // Sessions past the context warn threshold get their own Critical card, pinned
   // above the rest.
   const isCrit = (c: Card) => !!c.session && c.session.level !== "ok";
-  let critCards = $derived(cards.filter(isCrit));
+  let critCards = $derived(cards.filter((c) => isCrit(c) && srcVisible(c)));
   let restCards = $derived(cards.filter((c) => !isCrit(c)));
   // Working/waiting state filters, mirroring the Panel. Only apply with >1 session
   // so a lone session can't be filtered out with no way to bring it back; a pending
@@ -81,9 +87,10 @@
   let showWork = $derived(!filtersActive || prefs.showWorking);
   let showWait = $derived(!filtersActive || prefs.showWaiting);
   let visibleRest = $derived(
-    restCards.filter((c) =>
-      c.requests.length > 0 ? true : c.session?.activityKind === "waiting" ? showWait : showWork,
-    ),
+    restCards.filter((c) => {
+      if (!srcVisible(c)) return false;
+      return c.requests.length > 0 ? true : c.session?.activityKind === "waiting" ? showWait : showWork;
+    }),
   );
   let warnPct = $derived(Math.round(snap.warnPct));
   let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
@@ -216,14 +223,7 @@
         </h3>
         {#if filtersActive}
           <div class="filt-bar">
-            <div class="seg filt" role="group" aria-label="Filter by state">
-              <button class:on={prefs.showWaiting} onclick={() => toggleFilter("waiting")}>
-                <span class="fdot wait"></span>waiting
-              </button>
-              <button class:on={prefs.showWorking} onclick={() => toggleFilter("working")}>
-                <span class="fdot work"></span>working
-              </button>
-            </div>
+            <FilterButton showSource={sourceFilterActive} />
           </div>
         {/if}
         {#if cards.length === 0}
@@ -1144,57 +1144,10 @@
     box-shadow: 0 0 8px -1px var(--coral);
   }
 
-  /* working/waiting state filters — mirrors the panel's toolbar segment */
+  /* filter popover trigger — holds the state + source toggles */
   .filt-bar {
     display: flex;
     margin: 2px 0 14px;
-  }
-  .seg {
-    display: inline-flex;
-    padding: 2px;
-    border-radius: 8px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-soft);
-  }
-  .seg button {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    padding: 4px 9px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--ink-faint);
-    cursor: pointer;
-    transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
-  }
-  .seg button:hover {
-    color: var(--ink-dim);
-  }
-  /* neutral "on" highlight — the colored LED carries the meaning */
-  .seg.filt button.on {
-    background: var(--bg-raised);
-    color: var(--ink);
-  }
-  .fdot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    flex-shrink: 0;
-    background: var(--ink-faint);
-    transition: background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
-  }
-  .seg.filt button.on .fdot.wait {
-    background: var(--sage);
-    box-shadow: 0 0 6px var(--sage);
-  }
-  .seg.filt button.on .fdot.work {
-    background: var(--amber);
-    box-shadow: 0 0 6px var(--amber);
   }
 
   .dash-empty {
