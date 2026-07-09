@@ -139,7 +139,7 @@ const marqueeItems = [
         <span class="chip-dot ok"></span>
         <div class="chip-body">
           <b>idle</b>
-          <span>curled up. nothing running.</span>
+          <span>nothing running.</span>
           <div class="led"><i class="ok" style="width:22%"></i></div>
         </div>
       </div>
@@ -147,7 +147,7 @@ const marqueeItems = [
         <span class="chip-dot warn"></span>
         <div class="chip-body">
           <b>working</b>
-          <span>agents on the move. counting them.</span>
+          <span>agents on the move.</span>
           <div class="led"><i class="warn" style="width:64%"></i></div>
         </div>
       </div>
@@ -155,7 +155,7 @@ const marqueeItems = [
         <span class="chip-dot crit"></span>
         <div class="chip-body">
           <b>alarmed</b>
-          <span>context past x%, or some permissions?</span>
+          <span>context past x%.</span>
           <div class="led"><i class="crit" style="width:88%"></i></div>
         </div>
       </div>
@@ -166,18 +166,13 @@ const marqueeItems = [
       <span class="coda-tags">
         <span class="src">claude</span><span class="src">codex</span>
       </span>
-      <span class="coda-line mono">one cat. both agents. same corner.</span>
     </div>
   </section>
 
   <!-- ===== Act 3 — LIVE WIDGET ===== -->
   <section class="act live" data-act data-lamp="blue">
     <span class="act-num">02 · the whole thing, live</span>
-    <h2 class="act-title" data-typeon>every session, in real time</h2>
-    <p class="act-sub">
-      tap the cat — context, live activity, and approvals; claude and codex side
-      by side. gate a tool call behind a tap: approve, or deny.
-    </p>
+    <h2 class="act-title live-title" data-typeon>every session, in real time</h2>
     <div class="live-stage">
       <LiveWidget />
     </div>
@@ -214,8 +209,6 @@ const marqueeItems = [
       >
       <span class="sep">·</span>
       <span>MIT</span>
-      <span class="sep">·</span>
-      <button class="bkt" data-crt-toggle>crt: on</button>
       <span class="sep">·</span>
       <a class="bkt" href="#" data-reboot>^ reboot</a>
     </nav>
@@ -630,25 +623,36 @@ const marqueeItems = [
   /* ===== watch ===== */
   /* keep the title on a single line; scale with the viewport so it never wraps
      or overflows (the base .act-title caps at 18ch which forced two lines) */
-  .watch-title {
+  .watch-title,
+  .live-title {
     max-width: none;
     white-space: nowrap;
     font-size: min(3rem, 4.2vw);
   }
   .watch-cat {
-    margin: 24px 0 8px;
+    /* the cat sprite is bottom-aligned in its stage, so the stage's top is
+       empty — a negative top margin closes the visual gap under the title
+       without clipping the cat */
+    margin: -34px 0 4px;
   }
   .chips {
     display: flex;
     gap: 16px;
-    flex-wrap: wrap;
     justify-content: center;
-    max-width: 900px;
+    /* fill the row (this sits in a centered flex column, so without an explicit
+       width it shrink-to-fits its content and the boxes collapse) */
+    width: 100%;
+    /* match the (nowrap) title width so the row's left/right edges line up
+       with the title text */
+    max-width: 760px;
     margin-top: 8px;
   }
   .chip {
+    /* boxes wide enough that every description fits on ONE line — keeps the
+       three context bars on the same baseline; min-width:0 keeps them one row */
     flex: 1 1 240px;
-    max-width: 280px;
+    min-width: 0;
+    max-width: 260px;
     display: flex;
     gap: 12px;
     text-align: left;
@@ -725,6 +729,12 @@ const marqueeItems = [
   }
   .chip-body .led {
     margin-top: 4px;
+  }
+  /* keep the three cards on one row on desktop; stack only on true mobile */
+  @media (max-width: 600px) {
+    .chips {
+      flex-wrap: wrap;
+    }
   }
 
   .coda {
@@ -874,7 +884,7 @@ const marqueeItems = [
   }
   @media (max-width: 640px) {
     .watch-cat {
-      margin: 12px 0;
+      margin: -24px 0 4px;
     }
     .hero-cat {
       margin-top: -8px;
@@ -1033,31 +1043,8 @@ const marqueeItems = [
     });
   }
 
-  /* ---------- konami egg + crt toggle + reboot ---------- */
+  /* ---------- konami egg + reboot ---------- */
   function initExtras() {
-    const stored = localStorage.getItem("tablo-crt");
-    if (stored === "off") document.documentElement.dataset.crt = "off";
-    document
-      .querySelectorAll<HTMLElement>("[data-crt-toggle]")
-      .forEach((btn) => {
-        const sync = () => {
-          const off = document.documentElement.dataset.crt === "off";
-          btn.textContent = "crt: " + (off ? "off" : "on");
-        };
-        sync();
-        btn.addEventListener("click", () => {
-          const off = document.documentElement.dataset.crt === "off";
-          if (off) {
-            delete document.documentElement.dataset.crt;
-            localStorage.setItem("tablo-crt", "on");
-          } else {
-            document.documentElement.dataset.crt = "off";
-            localStorage.setItem("tablo-crt", "off");
-          }
-          sync();
-        });
-      });
-
     document.querySelectorAll("[data-reboot]").forEach((el) =>
       el.addEventListener("click", (e) => {
         e.preventDefault();
