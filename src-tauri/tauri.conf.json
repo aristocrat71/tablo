@@ -21,6 +21,7 @@
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
         "skipTaskbar": true,
         "shadow": false,
         "visible": true,
@@ -36,6 +37,7 @@
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
         "skipTaskbar": true,
         "shadow": false,
         "visible": false
@@ -61,6 +63,7 @@
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
         "skipTaskbar": true,
         "shadow": false,
         "visible": false,
