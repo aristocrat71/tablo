@@ -65,6 +65,9 @@ pub struct SessionView {
     /// Whether Tablo knows where this session lives (drives the "jump" button).
     /// Set false by `scan`; the emit path overlays it from the location cache.
     pub can_jump: bool,
+    /// Which agent this session belongs to: "claude" | "codex". Drives the small
+    /// source tag on the session row.
+    pub source: String,
 }
 
 /// Full aggregate pushed to every window as the `state-update` event.
@@ -78,7 +81,8 @@ pub struct Snapshot {
     pub projects: u32,
     pub sessions: Vec<SessionView>,
     pub generated_at: i64,
-    /// False when `~/.claude/projects` doesn't exist (friendly empty state).
+    /// False only when *neither* agent has a data dir (`~/.claude/projects` and
+    /// `~/.codex/sessions` both missing) — the friendly "nothing yet" empty state.
     pub has_projects_dir: bool,
     /// Raw subscription tier (e.g. "default_claude_max_5x"), or None if absent.
     /// Static account metadata — not live quota. Frontend renders a chip.
@@ -94,6 +98,8 @@ pub struct Snapshot {
     pub cancel_grace_mins: u64,
     /// Waiting-session clear window (minutes), echoed for the Settings input.
     pub clear_waiting_mins: u64,
+    /// Whether Codex sessions are being watched, echoed for the Settings toggle.
+    pub watch_codex: bool,
 }
 
 impl Default for Snapshot {
@@ -111,42 +117,60 @@ impl Default for Snapshot {
             warn_pct: 60.0,
             cancel_grace_mins: 3,
             clear_waiting_mins: 10,
+            watch_codex: true,
         }
     }
 }
 
+/// Which agent produced a transcript. Selects the parser and a few source-specific
+/// render choices (project resolution, context-window sizing, mode badge).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Source {
+    #[default]
+    Claude,
+    Codex,
+}
+
 /// Per-file tail state, kept across scans so we read only appended bytes
-/// (CLAUDE.md Step 1.3 — no whole-file re-parse).
+/// (CLAUDE.md Step 1.3 — no whole-file re-parse). Fields are `pub(crate)` so the
+/// sibling `codex` parser can populate the same shape.
 #[derive(Default, Clone)]
 pub struct FileState {
-    offset: u64,
-    used: u64,
-    model: String,
-    cwd: String,
-    branch: Option<String>,
-    session_id: String,
-    /// Last *resting* permission mode, raw Claude Code value ("default" |
-    /// "acceptEdits" | "plan" | "bypassPermissions"). The transient "auto"
-    /// heartbeat is ignored so the badge doesn't flicker. Empty until first seen.
-    mode: String,
-    /// Sticky once we've inferred the 1M window for this session.
-    is_1m: bool,
+    /// Which agent this transcript belongs to (set by the scan from the file's
+    /// directory; picks the parser). Default Claude.
+    pub(crate) source: Source,
+    pub(crate) offset: u64,
+    pub(crate) used: u64,
+    pub(crate) model: String,
+    pub(crate) cwd: String,
+    pub(crate) branch: Option<String>,
+    pub(crate) session_id: String,
+    /// Last *resting* permission mode. For Claude Code the raw value ("default" |
+    /// "acceptEdits" | "plan" | "bypassPermissions"); for Codex the raw
+    /// `approval_policy`. Mapped to the badge by each source's `display_mode`.
+    /// Empty until first seen.
+    pub(crate) mode: String,
+    /// Sticky once we've inferred the 1M window for this session (Claude only).
+    pub(crate) is_1m: bool,
+    /// Context window reported verbatim by the transcript (Codex `token_count` /
+    /// `task_started` `model_context_window`). 0 = unknown → source fallback.
+    pub(crate) ctx_window: u64,
     /// Live activity preview (window-render): a one-line summary of what the
-    /// session is doing right now, plus its kind for UI styling, and Claude
-    /// Code's own AI-generated title for the session.
-    title: Option<String>,
-    activity: String,
+    /// session is doing right now, plus its kind for UI styling, and (Claude
+    /// Code's) AI-generated title / (Codex) first-prompt stand-in title.
+    pub(crate) title: Option<String>,
+    pub(crate) activity: String,
     /// "working" | "waiting" | "thinking" | "" (unknown / no assistant line yet).
-    activity_kind: String,
+    pub(crate) activity_kind: String,
     /// True after a typed prompt set the optimistic "thinking…" placeholder but
     /// before any assistant line has confirmed the turn. Cleared by the first
     /// assistant line (real work) or an interrupt. While true, a long transcript
     /// silence is read as an early cancel (see `cancel_grace_mins`).
-    awaiting_first: bool,
+    pub(crate) awaiting_first: bool,
     /// Rolling recent-activity buffer (capped at ACTIVITY_LOG_CAP) + its
     /// monotonic sequence source, for the dashboard terminal.
-    log: Vec<ActivityEntry>,
-    seq: u64,
+    pub(crate) log: Vec<ActivityEntry>,
+    pub(crate) seq: u64,
 }
 
 pub fn now_ms() -> i64 {
@@ -156,7 +180,7 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn mtime_ms(meta: &std::fs::Metadata) -> i64 {
+pub(crate) fn mtime_ms(meta: &std::fs::Metadata) -> i64 {
     meta.modified()
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
@@ -269,6 +293,15 @@ fn read_new_lines(path: &Path, from: u64) -> (u64, Vec<String>) {
         .map(|s| s.to_string())
         .collect();
     (from + consume as u64, lines)
+}
+
+/// Read a whole transcript into its non-empty lines. Test-only convenience for
+/// the smoke tests that parse a real rollout end-to-end.
+#[cfg(test)]
+pub(crate) fn read_all_lines(path: &Path) -> Vec<String> {
+    std::fs::read_to_string(path)
+        .map(|t| t.lines().filter(|l| !l.trim().is_empty()).map(|s| s.to_string()).collect())
+        .unwrap_or_default()
 }
 
 /// `input + cache_creation + cache_read + output` from a usage object.
@@ -572,16 +605,16 @@ fn update_activity(state: &mut FileState, msg: &serde_json::Value) {
 }
 
 /// Max chars for the panel's compact single-line activity preview.
-const ACTIVITY_MAX: usize = 52;
+pub(crate) const ACTIVITY_MAX: usize = 52;
 /// Max chars kept per rolling-log line. The dashboard terminal is far wider than
 /// the panel, so it stores a longer line and lets CSS ellipsize the overflow.
-const TERM_LINE_MAX: usize = 120;
+pub(crate) const TERM_LINE_MAX: usize = 120;
 /// Recent-activity lines retained per session for the terminal tail.
 const ACTIVITY_LOG_CAP: usize = 8;
 
 /// Append one line to the rolling terminal log, skipping an exact repeat of the
 /// last line (a re-emitted message shouldn't duplicate) and capping the buffer.
-fn push_log(state: &mut FileState, kind: &str, text: &str) {
+pub(crate) fn push_log(state: &mut FileState, kind: &str, text: &str) {
     let dup = state
         .log
         .last()
@@ -628,7 +661,7 @@ fn typed_prompt_text(v: &serde_json::Value) -> Option<String> {
     }
 }
 
-fn base_name(p: &str) -> &str {
+pub(crate) fn base_name(p: &str) -> &str {
     Path::new(p).file_name().and_then(|s| s.to_str()).unwrap_or(p)
 }
 
@@ -697,13 +730,13 @@ fn summarize_activity(tool: &str, input: &serde_json::Value) -> String {
 
 /// Collapse whitespace and trim leading markdown so a text block reads as one
 /// clean line.
-fn snippet(s: &str) -> String {
+pub(crate) fn snippet(s: &str) -> String {
     let cleaned = s.trim_start_matches(|c: char| "#*->` \t".contains(c));
     let one_line = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
     truncate_activity(&one_line, TERM_LINE_MAX)
 }
 
-fn truncate_activity(s: &str, max: usize) -> String {
+pub(crate) fn truncate_activity(s: &str, max: usize) -> String {
     let s = s.trim();
     if s.chars().count() <= max {
         s.to_string()
@@ -713,131 +746,198 @@ fn truncate_activity(s: &str, max: usize) -> String {
     }
 }
 
-/// One full pass: refresh tail state for every active transcript and build the
-/// aggregate snapshot. `files` is retained across calls for incremental reads.
+/// Context fill as a clamped, one-decimal percentage.
+fn pct_of(used: u64, limit: u64) -> f64 {
+    if limit == 0 {
+        return 0.0;
+    }
+    let pct = ((used as f64 / limit as f64) * 100.0).clamp(0.0, 100.0);
+    (pct * 10.0).round() / 10.0
+}
+
+/// Incrementally fold a transcript's newly-appended bytes into its tail state and
+/// apply the cross-source guards (early-cancel, waiting-clear). `source` selects
+/// the parser and is recorded on the entry (a file's source is fixed by its
+/// directory). Returns false when the session should drop from the panel now (a
+/// long-finished waiting session). Shared by the Claude Code and Codex walks.
+fn tail_file(
+    path: &Path,
+    size: u64,
+    mtime: i64,
+    now: i64,
+    source: Source,
+    files: &mut HashMap<PathBuf, FileState>,
+    cfg: &Config,
+) -> bool {
+    // Enforce the 1-minute floor the UI also guards.
+    let cancel_grace_ms = cfg.cancel_grace_mins.max(1) as i64 * 60_000;
+    let clear_waiting_ms = cfg.clear_waiting_mins.max(1) as i64 * 60_000;
+
+    let st = files.entry(path.to_path_buf()).or_default();
+    st.source = source;
+    // Truncation / rotation → reset the tail (keep the known source).
+    if size < st.offset {
+        *st = FileState { source, ..Default::default() };
+    }
+    // First sight of a large file: skip to a bounded tail (we only need the
+    // file's end for the latest usage).
+    if st.offset == 0 && size > cfg.initial_tail_cap_bytes {
+        st.offset = size - cfg.initial_tail_cap_bytes;
+    }
+    if size > st.offset {
+        let (new_offset, lines) = read_new_lines(path, st.offset);
+        st.offset = new_offset;
+        match source {
+            Source::Claude => ingest(st, &lines),
+            Source::Codex => crate::codex::ingest(st, &lines),
+        }
+    }
+
+    // Early-cancel guard (see FileState::awaiting_first): a typed prompt with no
+    // assistant line yet, and a transcript silent past the grace window, reads as
+    // a Ctrl+C before the response — hand back to the user so the avatar drops out
+    // of "working". Checked here (not in ingest) precisely because the tell is the
+    // *absence* of new lines.
+    if st.awaiting_first && now - mtime > cancel_grace_ms {
+        st.activity_kind = "waiting".into();
+        st.activity = "cancelled".into();
+        st.awaiting_first = false;
+    }
+
+    // Dedicated waiting-clear: a finished (waiting-on-you) session the user hasn't
+    // returned to leaves the panel sooner than the general active window. It stays
+    // in `seen` (tail state retained), so it reappears the instant they submit
+    // again — mtime bumps back under the threshold. Working sessions are untouched.
+    !(st.activity_kind == "waiting" && now - mtime > clear_waiting_ms)
+}
+
+/// One full pass: refresh tail state for every active transcript (Claude Code and
+/// Codex both) and build the aggregate snapshot. `files` is retained across calls
+/// for incremental reads, keyed by absolute path so the two source trees never
+/// collide.
 pub fn scan(
     cfg: &Config,
     files: &mut HashMap<PathBuf, FileState>,
     claude_cfg: &mut ClaudeConfigCache,
 ) -> Snapshot {
     refresh_claude_config(claude_cfg);
-    let dir = match projects_dir() {
-        Some(d) => d,
-        None => {
-            return Snapshot {
-                has_projects_dir: false,
-                generated_at: now_ms(),
-                ..Default::default()
-            }
-        }
+    let claude_dir = projects_dir().filter(|d| d.exists());
+    let codex_dir = if cfg.watch_codex {
+        crate::codex::sessions_dir().filter(|d| d.exists())
+    } else {
+        None
     };
-    if !dir.exists() {
+    // Neither agent has any data dir → the friendly "nothing yet" empty state.
+    if claude_dir.is_none() && codex_dir.is_none() {
         return Snapshot {
             has_projects_dir: false,
             generated_at: now_ms(),
+            watch_codex: cfg.watch_codex,
             ..Default::default()
         };
     }
 
     let now = now_ms();
     let active_ms = cfg.active_window_secs as i64 * 1000;
-    // Enforce the 1-minute floor the UI also guards.
-    let cancel_grace_ms = cfg.cancel_grace_mins.max(1) as i64 * 60_000;
-    let clear_waiting_ms = cfg.clear_waiting_mins.max(1) as i64 * 60_000;
     let mut sessions: Vec<SessionView> = Vec::new();
     let mut seen: Vec<PathBuf> = Vec::new();
 
-    // project slug dirs
-    let project_dirs = match std::fs::read_dir(&dir) {
-        Ok(rd) => rd,
-        Err(_) => return Snapshot { generated_at: now, ..Default::default() },
-    };
+    // ---- Claude Code: ~/.claude/projects/<slug>/*.jsonl ----
+    if let Some(dir) = claude_dir {
+        if let Ok(project_dirs) = std::fs::read_dir(&dir) {
+            for pd in project_dirs.flatten() {
+                let pdir = pd.path();
+                if !pdir.is_dir() {
+                    continue;
+                }
+                let entries = match std::fs::read_dir(&pdir) {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                for e in entries.flatten() {
+                    let path = e.path();
+                    // top-level *.jsonl only (skips subagents/…)
+                    if !path.is_file() || path.extension().and_then(|x| x.to_str()) != Some("jsonl") {
+                        continue;
+                    }
+                    let meta = match e.metadata() {
+                        Ok(m) => m,
+                        Err(_) => continue,
+                    };
+                    let mtime = mtime_ms(&meta);
+                    if now - mtime > active_ms {
+                        continue; // not active (Step 1.2)
+                    }
+                    seen.push(path.clone());
+                    if !tail_file(&path, meta.len(), mtime, now, Source::Claude, files, cfg) {
+                        continue;
+                    }
 
-    for pd in project_dirs.flatten() {
-        let pdir = pd.path();
-        if !pdir.is_dir() {
-            continue;
+                    let st = files.get_mut(&path).unwrap();
+                    let slug = pdir.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                    let (project, root) = resolve_project(slug, &st.cwd);
+                    // Definitive window from ~/.claude.json, keyed by the project
+                    // root (falling back to the raw cwd).
+                    let project_ext = claude_cfg
+                        .windows
+                        .get(&root)
+                        .or_else(|| claude_cfg.windows.get(&st.cwd))
+                        .copied();
+                    // Per-project record wins; else the user's global lean.
+                    let window_hint = project_ext.or(claude_cfg.global_ext);
+                    let (limit, is_ext) = resolve_limit(&st.model, st.used, st.is_1m, window_hint, cfg);
+                    st.is_1m = is_ext;
+                    let st = &*st; // reborrow immutable for the view build
+                    let pct = pct_of(st.used, limit);
+                    let session_id = if st.session_id.is_empty() {
+                        path.file_stem().and_then(|s| s.to_str()).unwrap_or("session").to_string()
+                    } else {
+                        st.session_id.clone()
+                    };
+
+                    sessions.push(SessionView {
+                        id: session_id,
+                        project,
+                        path: abbreviate_home(&root),
+                        branch: st.branch.clone(),
+                        pct,
+                        used: st.used,
+                        limit,
+                        model: st.model.clone(),
+                        state: "run".into(), // Phase 4 will surface "ask"
+                        mode: display_mode(&st.mode).into(),
+                        level: level_for(pct, cfg).into(),
+                        last_active: mtime,
+                        title: st.title.clone(),
+                        activity: st.activity.clone(),
+                        activity_kind: st.activity_kind.clone(),
+                        activity_log: st.log.clone(),
+                        can_jump: false, // overlaid in the emit path from the cache
+                        source: "claude".into(),
+                    });
+                }
+            }
         }
-        let entries = match std::fs::read_dir(&pdir) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        for e in entries.flatten() {
-            let path = e.path();
-            // top-level *.jsonl only (skips subagents/…)
-            if !path.is_file() || path.extension().and_then(|x| x.to_str()) != Some("jsonl") {
-                continue;
-            }
-            let meta = match e.metadata() {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            let mtime = mtime_ms(&meta);
-            if now - mtime > active_ms {
-                continue; // not active (Step 1.2)
-            }
+    }
+
+    // ---- Codex: ~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl ----
+    if let Some(dir) = codex_dir {
+        let mut rollouts = Vec::new();
+        crate::codex::collect_active(&dir, now, active_ms, &mut rollouts);
+        for (path, size, mtime) in rollouts {
             seen.push(path.clone());
-
-            let size = meta.len();
-            let st = files.entry(path.clone()).or_default();
-            // Truncation / rotation → reset the tail.
-            if size < st.offset {
-                *st = FileState::default();
-            }
-            // First sight of a large file: skip to a bounded tail (we only need
-            // the file's end for the latest usage).
-            if st.offset == 0 && size > cfg.initial_tail_cap_bytes {
-                st.offset = size - cfg.initial_tail_cap_bytes;
-            }
-            if size > st.offset {
-                let (new_offset, lines) = read_new_lines(&path, st.offset);
-                st.offset = new_offset;
-                ingest(st, &lines);
-            }
-
-            // Early-cancel guard (see FileState::awaiting_first): a typed prompt
-            // with no assistant line yet, and a transcript silent past the grace
-            // window, reads as a Ctrl+C before the response — hand back to the
-            // user so the avatar drops out of "working". Checked here (not in
-            // ingest) precisely because the tell is the *absence* of new lines.
-            if st.awaiting_first && now - mtime > cancel_grace_ms {
-                st.activity_kind = "waiting".into();
-                st.activity = "cancelled".into();
-                st.awaiting_first = false;
-            }
-
-            // Dedicated waiting-clear: a finished (waiting-on-you) session the user
-            // hasn't returned to leaves the panel sooner than the general active
-            // window above. It stays in `seen` (tail state retained), so it
-            // reappears the instant they submit again — mtime bumps back under the
-            // threshold. Working/thinking sessions are untouched by this.
-            if st.activity_kind == "waiting" && now - mtime > clear_waiting_ms {
+            if !tail_file(&path, size, mtime, now, Source::Codex, files, cfg) {
                 continue;
             }
-
-            let slug = pdir.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            let (project, root) = resolve_project(slug, &st.cwd);
-            // Definitive window from ~/.claude.json, keyed by the project root
-            // (falling back to the raw cwd).
-            let project_ext = claude_cfg
-                .windows
-                .get(&root)
-                .or_else(|| claude_cfg.windows.get(&st.cwd))
-                .copied();
-            // Per-project record wins; else the user's global lean.
-            let window_hint = project_ext.or(claude_cfg.global_ext);
-
-            let (limit, is_ext) = resolve_limit(&st.model, st.used, st.is_1m, window_hint, cfg);
-            st.is_1m = is_ext;
-            let pct = if limit > 0 {
-                ((st.used as f64 / limit as f64) * 100.0).clamp(0.0, 100.0)
-            } else {
-                0.0
-            };
-            let pct = (pct * 10.0).round() / 10.0;
-
+            let st = files.get(&path).unwrap();
+            let (project, root) = crate::codex::resolve_project(&st.cwd);
+            // Codex reports the window verbatim; fall back to config only until the
+            // first token_count / task_started lands.
+            let limit = if st.ctx_window > 0 { st.ctx_window } else { cfg.codex_context_limit };
+            let pct = pct_of(st.used, limit);
             let session_id = if st.session_id.is_empty() {
-                path.file_stem().and_then(|s| s.to_str()).unwrap_or("session").to_string()
+                crate::codex::session_id_from_path(&path)
+                    .unwrap_or_else(|| path.file_stem().and_then(|s| s.to_str()).unwrap_or("session").to_string())
             } else {
                 st.session_id.clone()
             };
@@ -846,20 +946,21 @@ pub fn scan(
                 id: session_id,
                 project,
                 path: abbreviate_home(&root),
-                branch: st.branch.clone(),
+                branch: None, // Codex doesn't record the git branch
                 pct,
                 used: st.used,
                 limit,
                 model: st.model.clone(),
-                state: "run".into(), // Phase 4 will surface "ask"
-                mode: display_mode(&st.mode).into(),
+                state: "run".into(),
+                mode: crate::codex::display_mode(&st.mode).into(),
                 level: level_for(pct, cfg).into(),
                 last_active: mtime,
                 title: st.title.clone(),
                 activity: st.activity.clone(),
                 activity_kind: st.activity_kind.clone(),
                 activity_log: st.log.clone(),
-                can_jump: false, // overlaid in the emit path from the location cache
+                can_jump: false, // "jump" is Claude-only for now
+                source: "codex".into(),
             });
         }
     }
@@ -910,6 +1011,7 @@ pub fn scan(
         warn_pct: cfg.warn_pct,
         cancel_grace_mins: cfg.cancel_grace_mins.max(1),
         clear_waiting_mins: cfg.clear_waiting_mins.max(1),
+        watch_codex: cfg.watch_codex,
     }
 }
 
@@ -947,6 +1049,32 @@ mod tests {
         for s in &snap.sessions {
             assert!(s.pct >= 0.0 && s.pct <= 100.0, "pct out of range: {}", s.pct);
             assert!(s.limit > 0, "limit must be positive");
+        }
+    }
+
+    /// Exercise the full `scan()` path over both source trees, widening the
+    /// active window so historical Codex rollouts count as active. Prints any
+    /// Codex-sourced sessions so we can eyeball the end-to-end wiring (project,
+    /// context %, model, source tag). Non-asserting: a machine without Codex just
+    /// prints zero.
+    #[test]
+    fn scan_surfaces_codex_sessions() {
+        let mut cfg = Config::default();
+        cfg.active_window_secs = 60 * 60 * 24 * 3650; // ~10y — reach old rollouts
+        cfg.clear_waiting_mins = 60 * 24 * 3650; // don't clear the (finished) old ones
+        let mut files = HashMap::new();
+        let mut cc = ClaudeConfigCache::default();
+        let snap = scan(&cfg, &mut files, &mut cc);
+        let codex: Vec<_> = snap.sessions.iter().filter(|s| s.source == "codex").collect();
+        println!("\ncodex sessions via scan(): {}", codex.len());
+        for s in &codex {
+            println!(
+                "  {:<16} [{}] {:>5}% used={}/{} model={} kind={}",
+                s.project, s.source, s.pct, s.used, s.limit, s.model, s.activity_kind
+            );
+            assert_eq!(s.source, "codex");
+            assert!(s.limit > 0, "codex session must have a positive window");
+            assert!(s.pct >= 0.0 && s.pct <= 100.0);
         }
     }
 

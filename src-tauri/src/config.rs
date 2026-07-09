@@ -35,6 +35,16 @@ pub struct Config {
     /// isn't lost — it reappears the instant the user submits again. Min 1 minute.
     pub clear_waiting_mins: u64,
 
+    // ---- Codex support ----
+    /// Also watch OpenAI Codex CLI sessions (`~/.codex/sessions/**/*.jsonl`)
+    /// alongside Claude Code. Default on; a user who only wants Claude Code can
+    /// turn it off in Settings.
+    pub watch_codex: bool,
+    /// Fallback context window for a Codex session before its first `token_count`
+    /// / `task_started` reports the real `model_context_window`. The live value
+    /// almost always arrives first, so this rarely applies.
+    pub codex_context_limit: u64,
+
     // ---- context window sizing (Open Question #4) ----
     /// Denominator used when a session's window can't be determined and its
     /// usage is below `standard_context_limit`. Set to `extended_context_limit`
@@ -94,6 +104,8 @@ impl Default for Config {
             active_window_secs: 900,
             cancel_grace_mins: 3,
             clear_waiting_mins: 10,
+            watch_codex: true,
+            codex_context_limit: 256_000,
             default_context_limit: 200_000,
             standard_context_limit: 200_000,
             extended_context_limit: 1_000_000,

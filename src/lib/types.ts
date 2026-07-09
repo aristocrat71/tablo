@@ -24,7 +24,11 @@ export interface SessionView {
   activityKind: ActivityKind; // UI hint for icon + state suffix
   activityLog: ActivityEntry[]; // rolling tail for the dashboard terminal
   canJump: boolean; // Tablo knows where this session lives (jump button)
+  source: SessionSource; // which agent produced this session
 }
+
+// Which agent a session belongs to — drives the small source tag on each row.
+export type SessionSource = "claude" | "codex";
 
 export type ActivityKind = "working" | "waiting" | "thinking" | "";
 
@@ -63,6 +67,7 @@ export interface Snapshot {
   warnPct: number; // context warn threshold (%), echoed for the Critical group
   cancelGraceMins: number; // early-cancel grace window (min), echoed for Settings
   clearWaitingMins: number; // waiting-session clear window (min), echoed for Settings
+  watchCodex: boolean; // whether Codex sessions are watched, echoed for Settings
 }
 
 // Mirrors Rust `permission::HookStatus`.
@@ -127,4 +132,5 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   warnPct: 60,
   cancelGraceMins: 3,
   clearWaitingMins: 10,
+  watchCodex: true,
 };

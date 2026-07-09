@@ -85,7 +85,7 @@
   );
 
   let sub = $derived.by(() => {
-    if (!snap.hasProjectsDir) return "Claude Code hasn't run yet";
+    if (!snap.hasProjectsDir) return "no agents have run yet";
     const n = snap.sessions.length;
     if (n === 0 && pending.length === 0) return "no active sessions";
     const base = n > 0 ? `${n} session${n > 1 ? "s" : ""}` : "idle";
@@ -140,7 +140,7 @@
       {#if cards.length === 0}
         <div class="empty">
           <div class="empty-glyph">~_~</div>
-          <p>{snap.hasProjectsDir ? "Nothing running right now." : "No Claude Code sessions found yet."}</p>
+          <p>{snap.hasProjectsDir ? "Nothing running right now." : "No agent sessions found yet."}</p>
           <span>Tablo wakes up when an agent starts working.</span>
         </div>
       {:else}
@@ -244,6 +244,7 @@
             jump &rarr;
           </button>
         {/if}
+        <span class="src-tag">{c.session.source}</span>
         <span class="mode-badge">mode : <span class="mode-val {c.session.mode}">{c.session.mode}</span></span>
       </div>
     {/if}
@@ -542,6 +543,20 @@
     color: var(--ink-faint);
     flex-shrink: 0;
   }
+  /* agent source tag (e.g. codex) — neutral so it never reads as a state color */
+  .src-tag {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--bg-inset);
+    color: var(--ink-faint);
+    border: 1px solid var(--border-soft);
+  }
   /* aiTitle — grows to fill, ellipsizes, so RUN + % stay pinned right */
   .session-title {
     flex: 1;
@@ -586,8 +601,12 @@
     align-items: center;
     gap: 8px;
   }
+  /* source tag + mode badge sit together, pinned to the right end (even when the
+     jump button is absent) — the tag leads, the mode display follows */
+  .card-foot .src-tag {
+    margin-left: auto;
+  }
   .mode-badge {
-    margin-left: auto; /* pins to the right end even when jump is absent */
     font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.02em;

@@ -23,6 +23,7 @@
     setWarnPct,
     setCancelGraceMins,
     setClearWaitingMins,
+    setWatchCodex,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -85,6 +86,7 @@
   let warnPct = $derived(Math.round(snap.warnPct));
   let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
   let clearWaitingMins = $derived(Math.round(snap.clearWaitingMins));
+  let watchCodex = $derived(snap.watchCodex);
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -143,7 +145,7 @@
     <div class="lead">
       <h2><img class="g" src="/tablo-logo-v4.png" alt="" /> tablo</h2>
       {#if !snap.hasProjectsDir}
-        <p class="statline muted">No Claude Code sessions found yet</p>
+        <p class="statline muted">No agent sessions found yet</p>
       {:else if snap.agentCount === 0 && snap.waiting === 0}
         <p class="statline muted">No active sessions right now</p>
       {:else}
@@ -238,6 +240,8 @@
           {@render toggle("Jump to session", "Focus the terminal window a session lives in (reads its tmux pane / terminal app).", loc.installed, locBusy, toggleLocate)}
         {/if}
       </div>
+
+      {@render toggle("Watch Codex", "Show OpenAI Codex CLI sessions (~/.codex) alongside Claude Code.", watchCodex, false, () => setWatchCodex(!watchCodex))}
 
       <div class="setting">
         <div class="setting-main">
@@ -353,6 +357,7 @@
         <div class="path">{c.path}{c.branch ? ` · ${c.branch}` : ""}</div>
       </div>
       {#if c.session}
+        <span class="src-tag">{c.session.source}</span>
         <span class="mode-badge">mode : <span class="mode-val {c.session.mode}">{c.session.mode}</span></span>
         <div class="gauge">
           <div class="lab">
@@ -913,6 +918,22 @@
   .drow .jump:hover {
     background: color-mix(in srgb, var(--amber) 22%, var(--amber-soft));
     transform: translateY(-1px);
+  }
+  /* agent source tag (claude / codex) — neutral (never a state color), sits just
+     left of the mode display, dropped to the row's bottom so they line up */
+  .drow .src-tag {
+    flex-shrink: 0;
+    align-self: flex-end;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--bg-inset);
+    color: var(--ink-faint);
+    border: 1px solid var(--border-soft);
   }
   /* read-only permission-mode badge — sits just left of the context gauge,
      dropped to the bottom of the row so it lines up with the path/branch text */

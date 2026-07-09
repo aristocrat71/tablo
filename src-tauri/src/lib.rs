@@ -9,6 +9,7 @@
 //! `state-update` event to every window; a second thread polls the cursor to
 //! keep only the cat interactive.
 
+mod codex;
 mod config;
 mod locate;
 mod permission;
@@ -145,6 +146,18 @@ fn set_clear_waiting_mins(app: AppHandle, state: State<'_, AppState>, mins: u64)
     {
         let mut cfg = state.config.lock().unwrap();
         cfg.clear_waiting_mins = mins.max(1);
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
+/// Toggle whether Codex CLI sessions are watched alongside Claude Code. Persists
+/// and re-scans so the change takes effect at once.
+#[tauri::command]
+fn set_watch_codex(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.watch_codex = enabled;
         cfg.save(&state.config_dir);
     }
     recompute_and_emit(&app);
@@ -706,6 +719,7 @@ pub fn run() {
             set_warn_pct,
             set_cancel_grace_mins,
             set_clear_waiting_mins,
+            set_watch_codex,
             toggle_panel,
             open_dashboard,
             hide_dashboard,
