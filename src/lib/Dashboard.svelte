@@ -24,6 +24,8 @@
     setCancelGraceMins,
     setClearWaitingMins,
     setWatchCodex,
+    codexLocateStatus,
+    setCodexLocateEnabled,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -94,10 +96,14 @@
   // ---- window-render: session-location ("jump") hook status ----
   let loc = $state<LocateStatus | null>(null);
   let locBusy = $state(false);
+  // Codex jump — a separate hook (~/.codex/hooks.json), independent toggle.
+  let codexLoc = $state<LocateStatus | null>(null);
+  let codexLocBusy = $state(false);
 
   onMount(() => {
     hookStatus().then((s) => (hook = s)).catch(() => {});
     locateStatus().then((s) => (loc = s)).catch(() => {});
+    codexLocateStatus().then((s) => (codexLoc = s)).catch(() => {});
     // Esc closes the dashboard window (it hides, so it can reopen later) and
     // returns Tablo to a switcher-hidden widget.
     const onKey = (e: KeyboardEvent) => {
@@ -128,6 +134,18 @@
       /* leave prior status */
     } finally {
       locBusy = false;
+    }
+  }
+
+  async function toggleCodexLocate() {
+    if (codexLocBusy) return;
+    codexLocBusy = true;
+    try {
+      codexLoc = await setCodexLocateEnabled(!(codexLoc?.installed ?? false));
+    } catch {
+      /* leave prior status */
+    } finally {
+      codexLocBusy = false;
     }
   }
 
@@ -242,6 +260,10 @@
       </div>
 
       {@render toggle("Watch Codex", "Show OpenAI Codex CLI sessions (~/.codex) alongside Claude Code.", watchCodex, false, () => setWatchCodex(!watchCodex))}
+
+      {#if codexLoc && watchCodex}
+        {@render toggle("Jump to Codex session", "Focus the terminal a Codex session lives in (installs a hook in ~/.codex/hooks.json — Codex asks you to trust it once).", codexLoc.installed, codexLocBusy, toggleCodexLocate)}
+      {/if}
 
       <div class="setting">
         <div class="setting-main">

@@ -53,6 +53,11 @@ export const jumpToSession = (sessionId: string) =>
 export const locateStatus = () => invoke<LocateStatus>("locate_status");
 export const setLocateEnabled = (enabled: boolean) =>
   invoke<LocateStatus>("set_locate_enabled", { enabled });
+// Codex "jump" — a separate hook installed into ~/.codex/hooks.json; shares the
+// same jump engine (jumpToSession) and LocateStatus shape.
+export const codexLocateStatus = () => invoke<LocateStatus>("codex_locate_status");
+export const setCodexLocateEnabled = (enabled: boolean) =>
+  invoke<LocateStatus>("set_codex_locate_enabled", { enabled });
 
 export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
   return listen<Snapshot>("state-update", (e) => cb(e.payload));
