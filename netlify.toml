@@ -10,4 +10,6 @@
 [build]
   base = "tablo-website"
   command = '[ -f ../.svelte-kit/tsconfig.json ] || { mkdir -p ../.svelte-kit && echo "{}" > ../.svelte-kit/tsconfig.json; }; bun run build'
-  publish = "tablo-website/dist"
+  # NOTE: in netlify.toml, publish is relative to `base` — so this resolves to
+  # tablo-website/dist (do NOT prefix with tablo-website/ or it doubles).
+  publish = "dist"
