@@ -9,6 +9,8 @@
 //! `state-update` event to every window; a second thread polls the cursor to
 //! keep only the cat interactive.
 
+mod codex;
+mod codex_locate;
 mod config;
 mod locate;
 mod permission;
@@ -145,6 +147,18 @@ fn set_clear_waiting_mins(app: AppHandle, state: State<'_, AppState>, mins: u64)
     {
         let mut cfg = state.config.lock().unwrap();
         cfg.clear_waiting_mins = mins.max(1);
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
+/// Toggle whether Codex CLI sessions are watched alongside Claude Code. Persists
+/// and re-scans so the change takes effect at once.
+#[tauri::command]
+fn set_watch_codex(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.watch_codex = enabled;
         cfg.save(&state.config_dir);
     }
     recompute_and_emit(&app);
@@ -416,13 +430,17 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
     snap.pending = pending;
 
     // Overlay "jump to session" availability from the location cache — but only
-    // while the locate hook is enabled, so a disabled jump setting hides every
-    // jump affordance (even for sessions that reported before it was turned off).
+    // while the relevant locate hook is enabled, so a disabled jump setting hides
+    // every jump affordance (even for sessions that reported before it was turned
+    // off). Gated per source: Claude sessions on the Claude locate hook, Codex
+    // sessions on the Codex one — each is independent.
     {
-        let enabled = locate::is_installed();
+        let claude_on = locate::is_installed();
+        let codex_on = codex_locate::is_installed();
         let locs = state.session_locations.lock().unwrap();
         for s in &mut snap.sessions {
-            s.can_jump = enabled && locs.contains_key(&s.id);
+            let on = if s.source == "codex" { codex_on } else { claude_on };
+            s.can_jump = on && locs.contains_key(&s.id);
         }
     }
 
@@ -690,9 +708,11 @@ pub fn run() {
             // idempotent — it's Tablo's own file). Enabling approvals, which
             // edits ~/.claude/settings.json, stays an explicit UI action.
             let _ = permission::write_hook_script(hook_port, hook_timeout);
-            // Locate hook script is written too (harmless, Tablo's own file);
-            // wiring it into settings.json stays an explicit UI action.
+            // Locate hook scripts are written too (harmless, Tablo's own files);
+            // wiring them into the agents' hook configs stays an explicit UI
+            // action. Claude → ~/.claude/settings.json; Codex → ~/.codex/hooks.json.
             let _ = locate::write_locate_script(hook_port);
+            let _ = codex_locate::write_locate_script(hook_port);
             permission::spawn_server(handle.clone());
 
             spawn_watcher(handle.clone());
@@ -706,6 +726,7 @@ pub fn run() {
             set_warn_pct,
             set_cancel_grace_mins,
             set_clear_waiting_mins,
+            set_watch_codex,
             toggle_panel,
             open_dashboard,
             hide_dashboard,
@@ -720,6 +741,8 @@ pub fn run() {
             locate::jump_to_session,
             locate::locate_status,
             locate::set_locate_enabled,
+            codex_locate::codex_locate_status,
+            codex_locate::set_codex_locate_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

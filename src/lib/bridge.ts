@@ -23,6 +23,7 @@ export const setTheme = (theme: string) => invoke("set_theme", { theme });
 export const setWarnPct = (pct: number) => invoke("set_warn_pct", { pct });
 export const setCancelGraceMins = (mins: number) => invoke("set_cancel_grace_mins", { mins });
 export const setClearWaitingMins = (mins: number) => invoke("set_clear_waiting_mins", { mins });
+export const setWatchCodex = (enabled: boolean) => invoke("set_watch_codex", { enabled });
 export const togglePanel = () => invoke("toggle_panel");
 export const openDashboard = () => invoke("open_dashboard");
 // Hide whichever window this webview lives in (Esc dismiss). The panel's blur
@@ -52,6 +53,11 @@ export const jumpToSession = (sessionId: string) =>
 export const locateStatus = () => invoke<LocateStatus>("locate_status");
 export const setLocateEnabled = (enabled: boolean) =>
   invoke<LocateStatus>("set_locate_enabled", { enabled });
+// Codex "jump" — a separate hook installed into ~/.codex/hooks.json; shares the
+// same jump engine (jumpToSession) and LocateStatus shape.
+export const codexLocateStatus = () => invoke<LocateStatus>("codex_locate_status");
+export const setCodexLocateEnabled = (enabled: boolean) =>
+  invoke<LocateStatus>("set_codex_locate_enabled", { enabled });
 
 export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
   return listen<Snapshot>("state-update", (e) => cb(e.payload));
