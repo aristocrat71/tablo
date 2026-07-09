@@ -3,6 +3,7 @@
   import Avatar from "$lib/Avatar.svelte";
   import Panel from "$lib/Panel.svelte";
   import Dashboard from "$lib/Dashboard.svelte";
+  import Toast from "$lib/Toast.svelte";
   import { currentLabel } from "$lib/bridge";
   import { initStore } from "$lib/state.svelte";
 
@@ -21,4 +22,6 @@
   <Panel />
 {:else if surface === "dashboard"}
   <Dashboard />
+{:else if surface === "toast"}
+  <Toast />
 {/if}

@@ -8,24 +8,48 @@ import { browser } from "$app/environment";
 import type { SessionView } from "./types";
 
 export type SortMode = "context" | "recent";
-export type PanelMode = "expanded" | "compact";
+export type StateFilter = "working" | "waiting";
 
 const KEY = "tablo.viewPrefs";
 
 interface Prefs {
   sort: SortMode;
-  panelMode: PanelMode;
+  // Per-state visibility toggles for the panel groups. Both on by default (show
+  // everything); the Permission Request group is never filtered.
+  showWorking: boolean;
+  showWaiting: boolean;
+  // Toast when a session finishes working and starts waiting on you. Default on.
+  notifyOnWaiting: boolean;
+  // How long that toast stays on screen, in seconds. Default 2.
+  waitingToastSecs: number;
 }
 
-// Defaults reproduce the pre-Phase-2 behaviour exactly: the backend already
-// orders sessions by highest context fill, and the panel showed the full list.
-const DEFAULTS: Prefs = { sort: "context", panelMode: "expanded" };
+// Bounds for the toast hover time (seconds).
+export const TOAST_SECS_MIN = 1;
+export const TOAST_SECS_MAX = 30;
+
+function clampSecs(n: unknown): number {
+  const v = Math.round(Number(n));
+  if (!Number.isFinite(v)) return 2;
+  return Math.min(TOAST_SECS_MAX, Math.max(TOAST_SECS_MIN, v));
+}
+
+const DEFAULTS: Prefs = {
+  sort: "context",
+  showWorking: true,
+  showWaiting: true,
+  notifyOnWaiting: true,
+  waitingToastSecs: 2,
+};
 
 function coerce(raw: unknown): Prefs {
   const p = (raw ?? {}) as Partial<Prefs>;
   return {
     sort: p.sort === "recent" ? "recent" : "context",
-    panelMode: p.panelMode === "compact" ? "compact" : "expanded",
+    showWorking: p.showWorking !== false,
+    showWaiting: p.showWaiting !== false,
+    notifyOnWaiting: p.notifyOnWaiting !== false,
+    waitingToastSecs: p.waitingToastSecs == null ? 2 : clampSecs(p.waitingToastSecs),
   };
 }
 
@@ -44,7 +68,16 @@ export const prefs = $state<Prefs>(load());
 function persist() {
   if (!browser) return;
   try {
-    localStorage.setItem(KEY, JSON.stringify({ sort: prefs.sort, panelMode: prefs.panelMode }));
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        sort: prefs.sort,
+        showWorking: prefs.showWorking,
+        showWaiting: prefs.showWaiting,
+        notifyOnWaiting: prefs.notifyOnWaiting,
+        waitingToastSecs: prefs.waitingToastSecs,
+      })
+    );
   } catch {
     /* storage unavailable — keep the in-memory value */
   }
@@ -55,8 +88,19 @@ export function setSort(mode: SortMode) {
   persist();
 }
 
-export function setPanelMode(mode: PanelMode) {
-  prefs.panelMode = mode;
+export function toggleFilter(kind: StateFilter) {
+  if (kind === "working") prefs.showWorking = !prefs.showWorking;
+  else prefs.showWaiting = !prefs.showWaiting;
+  persist();
+}
+
+export function setNotifyOnWaiting(on: boolean) {
+  prefs.notifyOnWaiting = on;
+  persist();
+}
+
+export function setWaitingToastSecs(secs: number) {
+  prefs.waitingToastSecs = clampSecs(secs);
   persist();
 }
 
@@ -69,7 +113,10 @@ if (browser) {
     try {
       const next = coerce(JSON.parse(e.newValue));
       prefs.sort = next.sort;
-      prefs.panelMode = next.panelMode;
+      prefs.showWorking = next.showWorking;
+      prefs.showWaiting = next.showWaiting;
+      prefs.notifyOnWaiting = next.notifyOnWaiting;
+      prefs.waitingToastSecs = next.waitingToastSecs;
     } catch {
       /* ignore malformed cross-window payload */
     }

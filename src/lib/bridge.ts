@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Config, HookStatus, LocateStatus, PermDecision, Snapshot } from "./types";
 
 export function currentLabel(): string {
@@ -19,8 +20,18 @@ export function currentLabel(): string {
 export const getSnapshot = () => invoke<Snapshot>("get_snapshot");
 export const getConfig = () => invoke<Config>("get_config");
 export const setTheme = (theme: string) => invoke("set_theme", { theme });
+export const setWarnPct = (pct: number) => invoke("set_warn_pct", { pct });
+export const setCancelGraceMins = (mins: number) => invoke("set_cancel_grace_mins", { mins });
 export const togglePanel = () => invoke("toggle_panel");
 export const openDashboard = () => invoke("open_dashboard");
+// Hide whichever window this webview lives in (Esc dismiss). The panel's blur
+// handler then records the dismiss so a follow-up avatar tap doesn't re-open it.
+export const hideCurrentWindow = () => getCurrentWindow().hide();
+// Dashboard Esc: hide + drop Tablo back out of the Dock / Cmd+Tab switcher.
+export const hideDashboard = () => invoke("hide_dashboard");
+// Toast window: position next to the avatar + reveal / hide after its animation.
+export const showToast = () => invoke("show_toast");
+export const hideToast = () => invoke("hide_toast");
 export const beginDrag = () => invoke<{ x: number; y: number }>("begin_drag");
 export const moveAvatar = (x: number, y: number) =>
   invoke("move_avatar", { x: Math.round(x), y: Math.round(y) });
@@ -43,4 +54,17 @@ export const setLocateEnabled = (enabled: boolean) =>
 
 export function onState(cb: (s: Snapshot) => void): Promise<UnlistenFn> {
   return listen<Snapshot>("state-update", (e) => cb(e.payload));
+}
+
+// Theme is app-wide: any window can flip it, and Rust rebroadcasts so all
+// surfaces update live.
+export function onTheme(cb: (theme: string) => void): Promise<UnlistenFn> {
+  return listen<string>("theme-update", (e) => cb(e.payload));
+}
+
+// Fired when sessions cross from working → waiting; payload is the sessions'
+// project + title. Drives the toast (toast window) and a one-shot avatar shake.
+export type WaitingSession = { id: string; project: string; title: string | null; canJump: boolean };
+export function onSessionWaiting(cb: (sessions: WaitingSession[]) => void): Promise<UnlistenFn> {
+  return listen<WaitingSession[]>("session-waiting", (e) => cb(e.payload));
 }

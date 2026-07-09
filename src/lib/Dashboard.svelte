@@ -2,8 +2,15 @@
   import { onMount } from "svelte";
   import { store } from "./state.svelte";
   import { fade } from "svelte/transition";
-  import { pct, planTier, activityMark, terminalStatus } from "./format";
-  import { prefs, byMode } from "./prefs.svelte";
+  import { pct, activityMark, terminalStatus } from "./format";
+  import {
+    prefs,
+    byMode,
+    setNotifyOnWaiting,
+    setWaitingToastSecs,
+    TOAST_SECS_MIN,
+    TOAST_SECS_MAX,
+  } from "./prefs.svelte";
   import {
     hookStatus,
     setHookEnabled,
@@ -11,8 +18,12 @@
     locateStatus,
     setLocateEnabled,
     jumpToSession,
+    hideDashboard,
+    setWarnPct,
+    setCancelGraceMins,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
+  import ThemeToggle from "./ThemeToggle.svelte";
 
   type Card = {
     key: string;
@@ -24,7 +35,9 @@
   };
 
   let snap = $derived(store.snap);
-  let tier = $derived(planTier(snap.planTier));
+
+  // Header tabs: the sessions dashboard vs. the settings pane.
+  let view = $state<"dashboard" | "settings">("dashboard");
 
   // One card per session, its context gauge unified with any pending requests
   // it owns. Needs-input sessions sort first, then the panel's chosen sort.
@@ -51,6 +64,14 @@
     });
   });
 
+  // Sessions past the context warn threshold get their own Critical card, pinned
+  // above the rest.
+  const isCrit = (c: Card) => !!c.session && c.session.level !== "ok";
+  let critCards = $derived(cards.filter(isCrit));
+  let restCards = $derived(cards.filter((c) => !isCrit(c)));
+  let warnPct = $derived(Math.round(snap.warnPct));
+  let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
+
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
   let busy = $state(false);
@@ -61,6 +82,13 @@
   onMount(() => {
     hookStatus().then((s) => (hook = s)).catch(() => {});
     locateStatus().then((s) => (loc = s)).catch(() => {});
+    // Esc closes the dashboard window (it hides, so it can reopen later) and
+    // returns Tablo to a switcher-hidden widget.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") hideDashboard().catch(() => {});
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   });
 
   async function toggleApprovals() {
@@ -99,7 +127,7 @@
 <div class="dash">
   <div class="dash-head">
     <div class="lead">
-      <h2><span class="g">a</span> tablo</h2>
+      <h2><img class="g" src="/tablo-logo-v3.png" alt="" /> tablo</h2>
       {#if !snap.hasProjectsDir}
         <p class="statline muted">No Claude Code sessions found yet</p>
       {:else if snap.agentCount === 0 && snap.waiting === 0}
@@ -114,63 +142,161 @@
         </p>
       {/if}
     </div>
-    <div class="head-meta">
-      {#if hook}
-        <button
-          class="approvals-toggle"
-          class:on={hook.installed}
-          disabled={busy}
-          title={hook.serverUp
-            ? `Intercepts ${hook.tools.join(", ")} on :${hook.port}`
-            : "Approval server not running"}
-          onclick={toggleApprovals}
-        >
-          <span class="dot"></span>
-          approvals {hook.installed ? "on" : "off"}
-        </button>
-      {/if}
-      {#if loc}
-        <button
-          class="approvals-toggle"
-          class:on={loc.installed}
-          disabled={locBusy}
-          title="Lets Tablo focus the window a session lives in. Reports each session's tmux pane / terminal app (no tool interception)."
-          onclick={toggleLocate}
-        >
-          <span class="dot"></span>
-          jump {loc.installed ? "on" : "off"}
-        </button>
-      {/if}
-      {#if tier}
-        <div class="plan-chip" title="Subscription tier (live quota isn't exposed locally)">
-          {tier} <span>plan</span>
-        </div>
-      {/if}
-    </div>
+    {#if view === "dashboard"}
+      <button class="settings-btn" title="Settings" aria-label="Settings" onclick={() => (view = "settings")}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+    {/if}
   </div>
 
+  {#if view === "dashboard"}
   <div class="dash-grid">
-    <div class="card">
-      <h3>Sessions <span class="n">{cards.length}</span></h3>
-      {#if cards.length === 0}
-        <div class="dash-empty">Nothing running. Tablo is watching.</div>
-      {:else}
-        <div class="legend" aria-hidden="true">
-          <span><i class="lmk user">#</i> user prompt</span>
-          <span><i class="lmk agent">&gt;</i> agent response</span>
-        </div>
-        {#each cards as c (c.key)}
+    {#if critCards.length}
+      <div class="card crit-card">
+        <h3 class="crit-h3">
+          <span class="crit-led"></span>
+          Context window warning ! &gt;{warnPct}%
+          <span class="n">{critCards.length}</span>
+        </h3>
+        {#each critCards as c (c.key)}
           {@render sessionCard(c)}
         {/each}
+      </div>
+    {/if}
+
+    {#if cards.length === 0 || restCards.length}
+      <div class="card">
+        <h3>
+          Sessions
+          {#if restCards.length > 0}
+            <span class="sep">·</span>
+            <span class="legend" aria-hidden="true">
+              <span><i class="lmk user">#</i> user prompt</span>
+              <span><i class="lmk agent">&gt;</i> agent response</span>
+            </span>
+          {/if}
+          <span class="n">{restCards.length}</span>
+        </h3>
+        {#if cards.length === 0}
+          <div class="dash-empty">Nothing running. Tablo is watching.</div>
+        {:else}
+          {#each restCards as c (c.key)}
+            {@render sessionCard(c)}
+          {/each}
+        {/if}
+      </div>
+    {/if}
+  </div>
+  {:else}
+  <button class="back" onclick={() => (view = "dashboard")}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+    Back to Dashboard
+  </button>
+  <div class="dash-grid">
+    <div class="card settings-card">
+      <h3>Settings</h3>
+
+      <div class="setting-grid">
+        {#if hook}
+          {@render toggle("Tool approvals", hook.serverUp ? `Intercept ${hook.tools.join(", ")} so you can approve or deny before they run.` : "Approval server not running.", hook.installed, busy, toggleApprovals)}
+        {/if}
+        {#if loc}
+          {@render toggle("Jump to session", "Focus the terminal window a session lives in (reads its tmux pane / terminal app).", loc.installed, locBusy, toggleLocate)}
+        {/if}
+      </div>
+
+      <div class="setting">
+        <div class="setting-main">
+          <div class="setting-title">Context window limit</div>
+          <div class="setting-sub">Warn (and mark critical) once a session's context passes this.</div>
+        </div>
+        <div class="num">
+          <input
+            type="number"
+            min="1"
+            max="100"
+            step="1"
+            value={warnPct}
+            onchange={(e) => setWarnPct(Math.max(1, Math.min(100, Math.round(+e.currentTarget.value) || 60)))}
+          />
+          <span class="unit">%</span>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-main">
+          <div class="setting-title">Cancelled-prompt grace</div>
+          <div class="setting-sub">If you Ctrl+C a prompt before Claude responds, Tablo can't tell it apart from a long think — so it waits this long, then drops back to idle.</div>
+        </div>
+        <div class="num">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={cancelGraceMins}
+            onchange={(e) => setCancelGraceMins(Math.max(1, Math.round(+e.currentTarget.value) || 3))}
+          />
+          <span class="unit">min</span>
+        </div>
+      </div>
+
+      {@render toggle("Waiting notifications", "A gentle nudge from the widget when a session finishes and starts waiting on you.", prefs.notifyOnWaiting, false, () => setNotifyOnWaiting(!prefs.notifyOnWaiting))}
+
+      {#if prefs.notifyOnWaiting}
+        <div class="setting">
+          <div class="setting-main">
+            <div class="setting-title">Notification hover time</div>
+            <div class="setting-sub">How long the waiting toast stays on screen.</div>
+          </div>
+          <div class="num">
+            <input
+              type="number"
+              min={TOAST_SECS_MIN}
+              max={TOAST_SECS_MAX}
+              step="1"
+              value={prefs.waitingToastSecs}
+              onchange={(e) => setWaitingToastSecs(+e.currentTarget.value)}
+            />
+            <span class="unit">sec</span>
+          </div>
+        </div>
       {/if}
+
+      <div class="setting">
+        <div class="setting-main">
+          <div class="setting-title">Theme</div>
+          <div class="setting-sub">Switch between the warm dark and light looks.</div>
+        </div>
+        <ThemeToggle />
+      </div>
     </div>
   </div>
+  {/if}
 </div>
+
+{#snippet toggle(title: string, sub: string, on: boolean, busy: boolean, onToggle: () => void)}
+  <div class="setting">
+    <div class="setting-main">
+      <div class="setting-title">{title}</div>
+      <div class="setting-sub">{sub}</div>
+    </div>
+    <button class="approvals-toggle" class:on disabled={busy} onclick={onToggle}>
+      <span class="dot"></span>
+      {on ? "on" : "off"}
+    </button>
+  </div>
+{/snippet}
 
 {#snippet sessionCard(c: Card)}
   <div class="scard" class:needs={c.requests.length > 0}>
     <div class="drow">
-      <span class="st {c.requests.length ? 'ask' : 'run'}"></span>
+      <span class="st {c.requests.length ? 'ask' : c.session?.activityKind || 'run'}"></span>
       <div class="info">
         <div class="p">
           <span class="pname">{c.project}</span>
@@ -223,8 +349,7 @@
 {#snippet terminal(s: SessionView)}
   <div class="term {s.activityKind || 'idle'}">
     <div class="term-bar">
-      <span class="term-led"></span>
-      <span class="term-name">tablo{s.branch ? `:${s.branch}` : ""}</span>
+      <span class="term-name"><span class="term-dollar">$</span> live preview</span>
       <span class="term-state">{terminalStatus(s.activityKind)}</span>
     </div>
     <div class="term-scroll">
@@ -269,16 +394,59 @@
     gap: 11px;
   }
   .lead h2 .g {
-    width: 30px;
+    width: 34px;
     height: 34px;
-    background: var(--amber-soft);
-    color: var(--amber);
+    object-fit: contain;
+    background: #fff;
+    border-radius: 7px;
+    padding: 3px;
+    flex: none;
+  }
+  /* settings gear — top-right of the header, dashboard view only */
+  .settings-btn {
+    align-self: flex-start;
+    width: 34px;
+    height: 34px;
     display: grid;
     place-items: center;
-    font-family: var(--font-mono);
-    font-size: 14px;
-    font-weight: 700;
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg-raised);
+    color: var(--ink-dim);
+    cursor: pointer;
+    transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
+  }
+  .settings-btn:hover,
+  .back:hover {
+    color: var(--ink);
+    border-color: var(--ink-faint);
+  }
+  .settings-btn svg {
+    width: 17px;
+    height: 17px;
+    display: block;
+  }
+  /* back link, settings view */
+  .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 16px;
+    padding: 6px 12px 6px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--ink-dim);
+    font-family: var(--font-round);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
+  }
+  .back svg {
+    width: 15px;
+    height: 15px;
+    display: block;
   }
   .statline {
     display: flex;
@@ -304,25 +472,76 @@
   .statline.muted {
     color: var(--ink-faint);
   }
-  .head-meta {
+  /* settings pane rows */
+  .settings-card {
+    display: flex;
+    flex-direction: column;
+  }
+  /* approvals + jump share one two-column row; the on/off + theme rows stack
+     below it, each a full-width row divided by a top border. */
+  .setting-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    padding-bottom: 4px;
+  }
+  .setting {
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: space-between;
+    gap: 16px;
   }
-  .plan-chip {
+  .settings-card > .setting {
+    padding: 15px 0;
+    border-top: 1px solid var(--border-soft);
+  }
+  .setting-main {
+    min-width: 0;
+  }
+  .num {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .num input {
+    width: 50px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-inset);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: right;
+  }
+  .num input:focus {
+    outline: none;
+    border-color: var(--ink-faint);
+  }
+  /* plain text box — no spinner arrows */
+  .num input::-webkit-outer-spin-button,
+  .num input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .num .unit {
     font-family: var(--font-mono);
     font-size: 11px;
-    font-weight: 600;
-    color: var(--amber);
-    background: var(--amber-soft);
-    border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
-    border-radius: 999px;
-    padding: 4px 11px;
-    white-space: nowrap;
-  }
-  .plan-chip span {
     color: var(--ink-faint);
-    font-weight: 500;
+  }
+  .setting-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .setting-sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 3px;
+    line-height: 1.5;
   }
   .approvals-toggle {
     display: flex;
@@ -454,6 +673,11 @@
     border-radius: var(--r-md);
     padding: 18px;
   }
+  /* Light mode only: the card sits on a soft warm beige, gently darker than the
+     near-white page (see app.css) — the full "room" beige read too muddy. */
+  :global([data-theme="light"]) .card {
+    background: var(--bg-inset);
+  }
   .card h3 {
     font-size: 12px;
     font-family: var(--font-mono);
@@ -471,23 +695,42 @@
     margin-left: auto;
   }
 
-  /* key for the terminal markers, shown once above the session list */
-  .legend {
-    display: flex;
-    gap: 18px;
-    padding: 0 2px 12px;
-    margin-bottom: 4px;
-    border-bottom: 1px solid var(--border-soft);
-    font-family: var(--font-mono);
+  /* Critical card: over-threshold sessions, pinned above the rest with a red
+     border + warning header. */
+  .card.crit-card {
+    border-color: color-mix(in srgb, var(--coral) 45%, var(--border));
+  }
+  .card h3.crit-h3 {
+    color: var(--coral);
+  }
+  .crit-led {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--coral);
+    box-shadow: 0 0 8px var(--coral);
+    flex-shrink: 0;
+  }
+
+  /* separator + inline key for the terminal markers, beside the Sessions title */
+  .card h3 .sep {
+    color: var(--ink-faint);
+    font-weight: 400;
+  }
+  .card h3 .legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
     font-size: 10px;
+    font-weight: 500;
     letter-spacing: 0.02em;
     color: var(--ink-faint);
     text-transform: none;
   }
-  .legend .lmk {
+  .card h3 .legend .lmk {
     font-style: normal;
     font-weight: 700;
-    margin-right: 6px;
+    margin-right: 5px;
     color: var(--amber);
   }
 
@@ -503,9 +746,19 @@
     border-radius: 999px;
     flex-shrink: 0;
   }
-  .drow .st.run {
+  /* per-session state LED: working = amber, waiting-for-input = sage,
+     permission request = coral. `run` is the fallback for unknown activity. */
+  .drow .st.run,
+  .drow .st.waiting {
     background: var(--sage);
     box-shadow: 0 0 7px var(--sage);
+  }
+  .drow .st.working {
+    background: var(--amber);
+    box-shadow: 0 0 7px var(--amber);
+  }
+  .drow .st.thinking {
+    background: var(--ink-faint);
   }
   .drow .st.ask {
     background: var(--coral);
@@ -584,15 +837,13 @@
     position: relative;
     z-index: 1;
   }
-  .term-led {
-    width: 7px;
-    height: 7px;
-    border-radius: 999px;
-    background: #6f6250;
-    flex-shrink: 0;
-  }
   .term-name {
     color: #9c8c78;
+  }
+  .term-dollar {
+    color: #e0a458;
+    font-weight: 700;
+    margin-right: 3px;
   }
   .term-state {
     margin-left: auto;
@@ -645,24 +896,11 @@
   .drow .mode-val.bypass {
     color: var(--coral);
   }
-  .term.working .term-led {
-    background: #e0a458;
-    box-shadow: 0 0 9px #e0a458;
-    animation: term-pulse 1.5s var(--ease) infinite;
-  }
   .term.working .term-state {
     color: #e0a458;
   }
-  .term.waiting .term-led {
-    background: #8faa7e;
-    box-shadow: 0 0 8px rgba(143, 170, 126, 0.75);
-  }
   .term.waiting .term-state {
     color: #8faa7e;
-  }
-  .term.thinking .term-led {
-    background: #e0a458;
-    opacity: 0.55;
   }
 
   .term-scroll {
@@ -765,15 +1003,6 @@
       opacity: 0.08;
     }
   }
-  @keyframes term-pulse {
-    0%,
-    100% {
-      opacity: 0.5;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
   .drow .gauge {
     width: 168px;
     flex-shrink: 0;
@@ -801,6 +1030,9 @@
     border-radius: 2px;
     background: var(--bg-inset);
     overflow: hidden;
+    /* Outline the well so the empty track stays legible even when it shares the
+       card's color (light mode) — matches the panel's context track. */
+    border: 1px solid var(--border);
     background-image: repeating-linear-gradient(
       90deg,
       transparent 0 4px,

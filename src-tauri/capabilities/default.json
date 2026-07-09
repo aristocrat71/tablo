@@ -2,10 +2,11 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capabilities shared by the avatar, panel, and dashboard windows",
-  "windows": ["avatar", "panel", "dashboard"],
+  "windows": ["avatar", "panel", "dashboard", "toast"],
   "permissions": [
     "core:default",
     "core:event:default",
+    "core:window:allow-hide",
     "opener:default",
     "notification:default"
   ]

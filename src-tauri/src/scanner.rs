@@ -86,6 +86,12 @@ pub struct Snapshot {
     /// Tool calls awaiting a human approve/deny (Phase 4). Populated in the emit
     /// path, not by the scan itself — `scan` always leaves it empty.
     pub pending: Vec<crate::permission::PendingRequest>,
+    /// Context warn threshold (percent), echoed so every window can label the
+    /// Critical group ("> N%") without its own config fetch.
+    pub warn_pct: f64,
+    /// Early-cancel grace window (minutes), echoed so the Settings input shows
+    /// the live floored value.
+    pub cancel_grace_mins: u64,
 }
 
 impl Default for Snapshot {
@@ -100,6 +106,8 @@ impl Default for Snapshot {
             has_projects_dir: true,
             plan_tier: None,
             pending: Vec::new(),
+            warn_pct: 60.0,
+            cancel_grace_mins: 3,
         }
     }
 }
@@ -127,6 +135,11 @@ pub struct FileState {
     activity: String,
     /// "working" | "waiting" | "thinking" | "" (unknown / no assistant line yet).
     activity_kind: String,
+    /// True after a typed prompt set the optimistic "thinking…" placeholder but
+    /// before any assistant line has confirmed the turn. Cleared by the first
+    /// assistant line (real work) or an interrupt. While true, a long transcript
+    /// silence is read as an early cancel (see `cancel_grace_mins`).
+    awaiting_first: bool,
     /// Rolling recent-activity buffer (capped at ACTIVITY_LOG_CAP) + its
     /// monotonic sequence source, for the dashboard terminal.
     log: Vec<ActivityEntry>,
@@ -413,6 +426,9 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                         state.model = model.to_string();
                     }
                     update_activity(state, msg);
+                    // An assistant line confirms the turn is really running, so
+                    // the "awaiting first line" cancel-guard no longer applies.
+                    state.awaiting_first = false;
                 }
             }
             // Claude Code's own AI-generated session title.
@@ -432,13 +448,45 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                 if let Some(text) = typed_prompt_text(&v) {
                     push_log(state, "user", &text);
                 }
-                if is_user_prompt(v.get("message")) {
+                // A manual interrupt (Esc / Ctrl+C) writes a `user` line that
+                // looks like a prompt (a bare "[Request interrupted…]" text
+                // block, no tool_result), but the agent has actually stopped and
+                // handed control back. Treat it as waiting-on-you so the avatar
+                // drops out of "working" instead of showing a phantom "thinking…".
+                if is_interrupt(&v) {
+                    state.activity = "interrupted".into();
+                    state.activity_kind = "waiting".into();
+                    state.awaiting_first = false;
+                } else if is_user_prompt(v.get("message")) {
                     state.activity = "thinking…".into();
                     state.activity_kind = "working".into();
+                    // Optimistic — not yet confirmed by an assistant line. If the
+                    // user Ctrl+C's before the assistant responds, no marker is
+                    // written; the cancel-guard downgrades this after a silence.
+                    state.awaiting_first = true;
                 }
             }
             _ => {}
         }
+    }
+}
+
+/// True when a `user` line is a manual interrupt (Esc / Ctrl+C) rather than a
+/// prompt or tool result. Claude Code tags these with a top-level
+/// `interruptedMessageId` and/or a leading "[Request interrupted…]" text block;
+/// the field is present on only some of them, so both signals are checked.
+fn is_interrupt(v: &serde_json::Value) -> bool {
+    if v.get("interruptedMessageId").is_some() {
+        return true;
+    }
+    let starts_with_marker = |t: &str| t.trim_start().starts_with("[Request interrupted");
+    match v.get("message").and_then(|m| m.get("content")) {
+        Some(serde_json::Value::String(s)) => starts_with_marker(s),
+        Some(serde_json::Value::Array(blocks)) => blocks.iter().any(|b| {
+            b.get("type").and_then(|t| t.as_str()) == Some("text")
+                && b.get("text").and_then(|t| t.as_str()).is_some_and(starts_with_marker)
+        }),
+        _ => false,
     }
 }
 
@@ -690,6 +738,8 @@ pub fn scan(
 
     let now = now_ms();
     let active_ms = cfg.active_window_secs as i64 * 1000;
+    // Enforce the 1-minute floor the UI also guards.
+    let cancel_grace_ms = cfg.cancel_grace_mins.max(1) as i64 * 60_000;
     let mut sessions: Vec<SessionView> = Vec::new();
     let mut seen: Vec<PathBuf> = Vec::new();
 
@@ -739,6 +789,17 @@ pub fn scan(
                 let (new_offset, lines) = read_new_lines(&path, st.offset);
                 st.offset = new_offset;
                 ingest(st, &lines);
+            }
+
+            // Early-cancel guard (see FileState::awaiting_first): a typed prompt
+            // with no assistant line yet, and a transcript silent past the grace
+            // window, reads as a Ctrl+C before the response — hand back to the
+            // user so the avatar drops out of "working". Checked here (not in
+            // ingest) precisely because the tell is the *absence* of new lines.
+            if st.awaiting_first && now - mtime > cancel_grace_ms {
+                st.activity_kind = "waiting".into();
+                st.activity = "cancelled".into();
+                st.awaiting_first = false;
             }
 
             let slug = pdir.file_name().and_then(|s| s.to_str()).unwrap_or("");
@@ -810,12 +871,17 @@ pub fn scan(
         p.dedup();
         p.len() as u32
     };
-    let state = if sessions.is_empty() {
-        "idle"
-    } else if sessions.iter().any(|s| s.level != "ok") {
+    // Avatar state (Avatar State Model), precedence alarmed > running > idle:
+    //  - "alarmed": any session's context is in the danger zone (>60%, level != ok).
+    //    Permission requests also force "alarmed" in `recompute_and_emit`.
+    //  - "running": any session is actively working — anything but waiting-on-you.
+    //  - "idle": no sessions, or every one is just waiting.
+    let state = if sessions.iter().any(|s| s.level != "ok") {
         "alarmed"
-    } else {
+    } else if sessions.iter().any(|s| s.activity_kind != "waiting") {
         "running"
+    } else {
+        "idle"
     };
 
     Snapshot {
@@ -828,6 +894,8 @@ pub fn scan(
         has_projects_dir: true,
         plan_tier: claude_cfg.plan_tier.clone(),
         pending: Vec::new(),
+        warn_pct: cfg.warn_pct,
+        cancel_grace_mins: cfg.cancel_grace_mins.max(1),
     }
 }
 
@@ -964,5 +1032,68 @@ mod tests {
         );
         assert_eq!(st.activity, "editing a.rs", "tool_result should not overwrite activity");
         assert_eq!(st.log.len(), 3, "tool_result must not add a log line");
+    }
+
+    #[test]
+    fn manual_interrupt_returns_to_waiting() {
+        // Mid tool-call, so the last real activity was "working".
+        let mut st = FileState::default();
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash","input":{"command":"sleep 100"}}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "working");
+        let log_before = st.log.len();
+
+        // Esc/Ctrl+C writes a user line with the interrupt marker (no
+        // interruptedMessageId on this variant) — must flip to waiting, not read
+        // as a fresh prompt, and must not add a log line (not a typed prompt).
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "waiting", "interrupt should hand back to the user");
+        assert_eq!(st.activity, "interrupted");
+        assert_eq!(st.log.len(), log_before, "interrupt must not add a log line");
+
+        // The structured-field variant (top-level interruptedMessageId) also counts.
+        st.activity_kind = "working".into();
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","interruptedMessageId":"msg_123","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "waiting");
+    }
+
+    #[test]
+    fn awaiting_first_gates_the_cancel_guard() {
+        let mut st = FileState::default();
+        // A typed prompt arms the guard (optimistic "thinking…", unconfirmed).
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","promptSource":"typed","message":{"content":"do the thing"}}"#.into()],
+        );
+        assert_eq!(st.activity_kind, "working");
+        assert!(st.awaiting_first, "a fresh prompt should arm the cancel guard");
+
+        // The first assistant line confirms real work → guard disarmed, so a
+        // later silence must NOT be mistaken for a cancel.
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/x/a.rs"}}]}}"#.into()],
+        );
+        assert!(!st.awaiting_first, "an assistant line disarms the guard");
+
+        // A new prompt re-arms it; an interrupt (not a silence) disarms immediately.
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","promptSource":"typed","message":{"content":"again"}}"#.into()],
+        );
+        assert!(st.awaiting_first);
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","interruptedMessageId":"m","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#.into()],
+        );
+        assert!(!st.awaiting_first, "an interrupt disarms the guard too");
     }
 }

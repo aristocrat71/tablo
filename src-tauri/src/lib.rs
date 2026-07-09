@@ -55,6 +55,9 @@ pub(crate) struct AppState {
     claude_cfg: Mutex<ClaudeConfigCache>,
     /// Last emitted level per session id, for one-shot warning notifications.
     prev_levels: Mutex<HashMap<String, String>>,
+    /// Last seen activity kind per session id (perm/working/thinking/waiting/""),
+    /// to fire a one-shot "session-waiting" event on a working→waiting crossing.
+    prev_activity: Mutex<HashMap<String, String>>,
     /// True while the avatar is being dragged (keeps it interactive).
     dragging: AtomicBool,
     /// When the panel was last auto-hidden on blur, to debounce the tap that
@@ -99,10 +102,40 @@ fn get_config(state: State<'_, AppState>) -> Config {
 }
 
 #[tauri::command]
-fn set_theme(state: State<'_, AppState>, theme: String) {
-    let mut cfg = state.config.lock().unwrap();
-    cfg.theme = theme;
-    cfg.save(&state.config_dir);
+fn set_theme(app: AppHandle, state: State<'_, AppState>, theme: String) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.theme = theme.clone();
+        cfg.save(&state.config_dir);
+    }
+    // Broadcast to every window so the panel, dashboard, and avatar switch in
+    // lockstep — theme is a single app-wide setting, not per-surface.
+    let _ = app.emit("theme-update", &theme);
+}
+
+/// Set the context warn threshold (percent). Persists and re-levels every
+/// session immediately so the Critical group updates without a restart.
+#[tauri::command]
+fn set_warn_pct(app: AppHandle, state: State<'_, AppState>, pct: f64) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.warn_pct = pct.clamp(1.0, 100.0);
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
+/// Set the early-cancel grace window (minutes). A typed prompt with no assistant
+/// response and a transcript silent past this window is treated as cancelled.
+/// Floored at 1 minute. Persists and re-scans so the change takes effect at once.
+#[tauri::command]
+fn set_cancel_grace_mins(app: AppHandle, state: State<'_, AppState>, mins: u64) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.cancel_grace_mins = mins.max(1);
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
 }
 
 /// Toggle the panel open/closed, anchored near the avatar.
@@ -130,36 +163,58 @@ fn toggle_panel(app: AppHandle, state: State<'_, AppState>) -> Result<(), String
     Ok(())
 }
 
-/// Keep a window alive across the OS close button: hide instead of destroy, so
-/// it can be reopened.
-fn install_hide_on_close(app: &AppHandle, window: &WebviewWindow, label: &'static str) {
+/// macOS: control whether Tablo shows in the Dock + Cmd+Tab app switcher.
+/// `Accessory` hides it (a pure floating widget); `Regular` presents it like a
+/// normal app. We flip to `Regular` only while the dashboard is open, so the
+/// avatar and panel alone never clutter the switcher. No-op off macOS.
+fn set_switcher_visible(app: &AppHandle, visible: bool) {
+    let policy = if visible {
+        tauri::ActivationPolicy::Regular
+    } else {
+        tauri::ActivationPolicy::Accessory
+    };
+    let _ = app.set_activation_policy(policy);
+}
+
+/// Hide the dashboard (kept alive so it can reopen) and drop Tablo back to a
+/// switcher-hidden widget. Shared by the Esc command and the OS close button.
+fn hide_dashboard_impl(app: &AppHandle) {
+    if let Some(dash) = app.get_webview_window("dashboard") {
+        let _ = dash.hide();
+    }
+    set_switcher_visible(app, false);
+}
+
+/// Route the dashboard's OS close button to a hide (not destroy) + switcher reset.
+fn install_dashboard_close(app: &AppHandle, window: &WebviewWindow) {
     let h = app.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
-            if let Some(w) = h.get_webview_window(label) {
-                let _ = w.hide();
-            }
+            hide_dashboard_impl(&h);
         }
     });
 }
 
 #[tauri::command]
 fn open_dashboard(app: AppHandle) -> Result<(), String> {
+    // Becoming a Regular app puts Tablo in the Dock + Cmd+Tab while the dashboard
+    // is up; hiding it (Esc / close button) flips back to Accessory.
+    set_switcher_visible(&app, true);
     // Recreate the window if it was ever destroyed (belt-and-suspenders — the
     // close handler normally hides it instead).
     let dash = match app.get_webview_window("dashboard") {
         Some(w) => w,
         None => {
             let w = tauri::WebviewWindowBuilder::new(&app, "dashboard", tauri::WebviewUrl::default())
-                .title("tablo — dashboard")
+                .title("tablo")
                 .inner_size(980.0, 720.0)
                 .min_inner_size(640.0, 480.0)
                 .resizable(true)
                 .visible(false)
                 .build()
                 .map_err(|e| e.to_string())?;
-            install_hide_on_close(&app, &w, "dashboard");
+            install_dashboard_close(&app, &w);
             w
         }
     };
@@ -167,6 +222,13 @@ fn open_dashboard(app: AppHandle) -> Result<(), String> {
     dash.show().map_err(|e| e.to_string())?;
     dash.set_focus().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Hide the dashboard from the frontend (Esc). Also returns Tablo to a
+/// switcher-hidden widget.
+#[tauri::command]
+fn hide_dashboard(app: AppHandle) {
+    hide_dashboard_impl(&app);
 }
 
 /// Begin an avatar drag: pin it interactive and report its current logical
@@ -215,7 +277,7 @@ fn position_avatar(avatar: &WebviewWindow, cfg: &Config) {
         let sf = mon.scale_factor();
         let msz = mon.size();
         let mpos = mon.position();
-        let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(92, 108));
+        let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(126, 134));
         let margin = (24.0 * sf) as i32;
         let x = mpos.x + msz.width as i32 - asz.width as i32 - margin;
         let y = mpos.y + msz.height as i32 - asz.height as i32 - margin * 2;
@@ -231,7 +293,7 @@ fn place_panel(app: &AppHandle) {
         _ => return,
     };
     let ap = avatar.outer_position().unwrap_or(PhysicalPosition::new(0, 0));
-    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(92, 108));
+    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(126, 134));
     let sf = avatar.scale_factor().unwrap_or(1.0);
     let mut psz = panel.outer_size().unwrap_or(tauri::PhysicalSize::new(0, 0));
     if psz.width == 0 || psz.height == 0 {
@@ -254,6 +316,62 @@ fn place_panel(app: &AppHandle) {
         py = py.clamp(mpos.y, max_y);
     }
     let _ = panel.set_position(PhysicalPosition::new(px, py));
+}
+
+/// Anchor the toast just left of (or right of, if clipped) the avatar, vertically
+/// centered on it, clamped to the monitor. Mirrors `place_panel`.
+fn place_toast(app: &AppHandle) {
+    let (avatar, toast) = match (app.get_webview_window("avatar"), app.get_webview_window("toast")) {
+        (Some(a), Some(t)) => (a, t),
+        _ => return,
+    };
+    let ap = avatar.outer_position().unwrap_or(PhysicalPosition::new(0, 0));
+    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(126, 134));
+    let sf = avatar.scale_factor().unwrap_or(1.0);
+    let mut tsz = toast.outer_size().unwrap_or(tauri::PhysicalSize::new(0, 0));
+    if tsz.width == 0 || tsz.height == 0 {
+        tsz = tauri::PhysicalSize::new((300.0 * sf) as u32, (84.0 * sf) as u32);
+    }
+    // The hex art (58px wide) is centered in the avatar window with a transparent
+    // side margin; tuck the toast into that margin so the right-aligned card sits
+    // right beside the cat rather than a whole window-width away.
+    let inset = (asz.width as i32 - (58.0 * sf) as i32) / 2;
+    let gap = (3.0 * sf) as i32;
+
+    let mut tx = ap.x + inset - gap - tsz.width as i32;
+    let mut ty = ap.y + (asz.height as i32 - tsz.height as i32) / 2;
+
+    if let Ok(Some(mon)) = avatar.current_monitor() {
+        let mpos = mon.position();
+        let msz = mon.size();
+        if tx < mpos.x {
+            tx = ap.x + asz.width as i32 - inset + gap; // flip to the right of the hex
+        }
+        let max_x = (mpos.x + msz.width as i32 - tsz.width as i32).max(mpos.x);
+        let max_y = (mpos.y + msz.height as i32 - tsz.height as i32).max(mpos.y);
+        tx = tx.clamp(mpos.x, max_x);
+        ty = ty.clamp(mpos.y, max_y);
+    }
+    let _ = toast.set_position(PhysicalPosition::new(tx, ty));
+}
+
+/// Position the toast next to the avatar and reveal it (non-activating).
+#[tauri::command]
+fn show_toast(app: AppHandle) -> Result<(), String> {
+    place_toast(&app);
+    if let Some(t) = app.get_webview_window("toast") {
+        t.show().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Hide the toast once its dismiss animation has finished.
+#[tauri::command]
+fn hide_toast(app: AppHandle) -> Result<(), String> {
+    if let Some(t) = app.get_webview_window("toast") {
+        t.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 // ============================ background loops ============================
@@ -280,16 +398,20 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
     }
     snap.pending = pending;
 
-    // Overlay "jump to session" availability from the location cache.
+    // Overlay "jump to session" availability from the location cache — but only
+    // while the locate hook is enabled, so a disabled jump setting hides every
+    // jump affordance (even for sessions that reported before it was turned off).
     {
+        let enabled = locate::is_installed();
         let locs = state.session_locations.lock().unwrap();
         for s in &mut snap.sessions {
-            s.can_jump = locs.contains_key(&s.id);
+            s.can_jump = enabled && locs.contains_key(&s.id);
         }
     }
 
     fire_notifications(app, &state, &cfg, &snap);
     fire_permission_notifications(app, &state, &cfg, &snap);
+    fire_waiting_events(app, &state, &snap);
 
     let changed = {
         let mut cur = state.snapshot.lock().unwrap();
@@ -326,6 +448,51 @@ fn fire_notifications(app: &AppHandle, state: &State<'_, AppState>, cfg: &Config
         next.insert(s.id.clone(), s.level.clone());
     }
     *prev = next;
+}
+
+/// Emit `session-waiting` (with the project names) when a session finishes
+/// working and starts waiting on the user. The toast and the avatar both listen
+/// and decide whether to react per the frontend `notifyOnWaiting` preference. A
+/// session with a pending permission request is tracked as "perm" so approval
+/// flows never masquerade as a work→wait crossing.
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct WaitingSession {
+    id: String,
+    project: String,
+    title: Option<String>,
+    can_jump: bool,
+}
+
+fn fire_waiting_events(app: &AppHandle, state: &State<'_, AppState>, snap: &Snapshot) {
+    let pending_ids: HashSet<&str> = snap.pending.iter().map(|p| p.session_id.as_str()).collect();
+    let mut prev = state.prev_activity.lock().unwrap();
+    let mut arrived: Vec<WaitingSession> = Vec::new();
+    let mut next = HashMap::new();
+    for s in &snap.sessions {
+        let kind = if pending_ids.contains(s.id.as_str()) {
+            "perm"
+        } else {
+            s.activity_kind.as_str()
+        };
+        if kind == "waiting" {
+            if let Some(p) = prev.get(&s.id) {
+                if p == "working" || p == "thinking" {
+                    arrived.push(WaitingSession {
+                        id: s.id.clone(),
+                        project: s.project.clone(),
+                        title: s.title.clone(),
+                        can_jump: s.can_jump,
+                    });
+                }
+            }
+        }
+        next.insert(s.id.clone(), kind.to_string());
+    }
+    *prev = next;
+    if !arrived.is_empty() {
+        let _ = app.emit("session-waiting", &arrived);
+    }
 }
 
 /// Notify once per newly-arrived approval request (Phase 4).
@@ -433,11 +600,16 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
+            // Start as a switcher-hidden widget: no Dock icon, no Cmd+Tab entry.
+            // Opening the dashboard promotes Tablo to a Regular app (see
+            // open_dashboard); hiding it drops back here.
+            set_switcher_visible(&handle, false);
+
             let config_dir = app
                 .path()
                 .app_config_dir()
                 .unwrap_or_else(|_| std::env::temp_dir().join("tablo"));
-            let cfg = Config::load(&config_dir);
+            let mut cfg = Config::load(&config_dir);
             // Capture hook params before `cfg` is moved into managed state.
             let (hook_port, hook_timeout) = (cfg.permission_port, cfg.hook_timeout_secs);
 
@@ -445,6 +617,7 @@ pub fn run() {
                 let _ = avatar.set_ignore_cursor_events(true);
                 position_avatar(&avatar, &cfg);
             }
+
 
             // Panel dismisses itself when it loses focus (tap-away).
             if let Some(panel) = app.get_webview_window("panel") {
@@ -463,9 +636,19 @@ pub fn run() {
                 });
             }
 
-            // Dashboard hides (not destroys) on close so it can reopen.
+            // Dashboard hides (not destroys) on close so it can reopen, and
+            // resets Tablo to a switcher-hidden widget.
             if let Some(dash) = app.get_webview_window("dashboard") {
-                install_hide_on_close(&handle, &dash, "dashboard");
+                install_dashboard_close(&handle, &dash);
+            }
+
+            // "Jump to session" is on by default: wire the locate hook into
+            // ~/.claude/settings.json on the first launch only. The guard flag
+            // means a later user-disable sticks — we never re-enable behind them.
+            if !cfg.locate_default_applied {
+                let _ = locate::install(&cfg);
+                cfg.locate_default_applied = true;
+                cfg.save(&config_dir);
             }
 
             app.manage(AppState {
@@ -475,6 +658,7 @@ pub fn run() {
                 files: Mutex::new(HashMap::new()),
                 claude_cfg: Mutex::new(ClaudeConfigCache::default()),
                 prev_levels: Mutex::new(HashMap::new()),
+                prev_activity: Mutex::new(HashMap::new()),
                 dragging: AtomicBool::new(false),
                 panel_last_hidden: Mutex::new(None),
                 pending: Mutex::new(Vec::new()),
@@ -502,8 +686,13 @@ pub fn run() {
             get_snapshot,
             get_config,
             set_theme,
+            set_warn_pct,
+            set_cancel_grace_mins,
             toggle_panel,
             open_dashboard,
+            hide_dashboard,
+            show_toast,
+            hide_toast,
             begin_drag,
             move_avatar,
             end_drag,

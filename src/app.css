@@ -84,10 +84,46 @@ body[data-surface="dashboard"] {
   background: var(--bg-room);
   overflow: auto;
 }
+/* Light mode only: flip the dashboard page/card contrast — a near-white page
+   with cards sitting on the darker "room" beige (see Dashboard.svelte .card). */
+[data-theme="light"] body[data-surface="dashboard"] {
+  background: var(--bg-raised);
+}
 
 /* Avatar window: center the cat in a transparent frame. */
 body[data-surface="avatar"] {
   display: grid;
   place-items: center;
+  background: transparent;
+}
+
+/* Toast window: right-align the card so it hugs the avatar side (the window is
+   positioned just to the left of the cat). */
+body[data-surface="toast"] {
+  display: grid;
+  place-items: center end;
+  background: transparent;
+}
+
+/* ---- Themed scrollbars (WebKit) — thin, warm, unobtrusive. The transparent
+   track + padding-boxed thumb reads as a slim pill that adapts per theme. ---- */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
   background: transparent;
 }

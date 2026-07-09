@@ -15,8 +15,8 @@
       {
         "label": "avatar",
         "title": "tablo",
-        "width": 92,
-        "height": 108,
+        "width": 126,
+        "height": 134,
         "resizable": false,
         "decorations": false,
         "transparent": true,
@@ -24,7 +24,8 @@
         "skipTaskbar": true,
         "shadow": false,
         "visible": true,
-        "focus": false
+        "focus": false,
+        "acceptFirstMouse": true
       },
       {
         "label": "panel",
@@ -41,7 +42,7 @@
       },
       {
         "label": "dashboard",
-        "title": "tablo — dashboard",
+        "title": "tablo",
         "width": 980,
         "height": 720,
         "minWidth": 640,
@@ -50,6 +51,21 @@
         "decorations": true,
         "transparent": false,
         "visible": false
+      },
+      {
+        "label": "toast",
+        "title": "tablo",
+        "width": 300,
+        "height": 84,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false,
+        "acceptFirstMouse": true
       }
     ],
     "security": {

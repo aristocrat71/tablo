@@ -1,8 +1,19 @@
 <script lang="ts">
-  import { store, applyTheme } from "./state.svelte";
-  import { setTheme, openDashboard, resolvePermission, jumpToSession } from "./bridge";
-  import { tokens, pct, activitySuffix } from "./format";
-  import { prefs, setSort, setPanelMode, byMode } from "./prefs.svelte";
+  import { onMount } from "svelte";
+  import { store } from "./state.svelte";
+  import { openDashboard, resolvePermission, jumpToSession, hideCurrentWindow } from "./bridge";
+  import { tokens, pct } from "./format";
+
+  // Esc collapses the panel (matches tap-away). The webview persists across
+  // show/hide, so binding once on mount covers every open.
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") hideCurrentWindow().catch(() => {});
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  import { prefs, setSort, toggleFilter, byMode } from "./prefs.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
   // One card per session, unifying its working/context state with any pending
@@ -46,10 +57,32 @@
     });
   });
 
-  let needsCards = $derived(cards.filter((c) => c.requests.length > 0));
-  let workCards = $derived(cards.filter((c) => c.requests.length === 0));
-  // Compact collapses only the purely-working sessions; requests never hide.
-  let compact = $derived(prefs.panelMode === "compact" && workCards.length > 1);
+  // Sessions past the context warn threshold get pulled into a Critical group,
+  // always pinned to the top, ahead of every other state.
+  const isCrit = (c: Card) => !!c.session && c.session.level !== "ok";
+  let critCards = $derived(cards.filter(isCrit));
+  let needsCards = $derived(cards.filter((c) => !isCrit(c) && c.requests.length > 0));
+  // Split the remaining non-request sessions: agents waiting on the user get
+  // their own green-LED group, distinct from the ones actively working.
+  let waitingCards = $derived(
+    cards.filter((c) => !isCrit(c) && c.requests.length === 0 && c.session?.activityKind === "waiting")
+  );
+  let workCards = $derived(
+    cards.filter((c) => !isCrit(c) && c.requests.length === 0 && c.session?.activityKind !== "waiting")
+  );
+  // State filters only apply while the toolbar is visible (>1 session), so a
+  // lone session can never be filtered out with no way to bring it back.
+  let filtersActive = $derived(snap.sessions.length > 1);
+  let showWork = $derived(!filtersActive || prefs.showWorking);
+  let showWait = $derived(!filtersActive || prefs.showWaiting);
+  // Everything filtered away (e.g. both toggles off) with no permission request
+  // forcing itself in — show a friendly placeholder instead of blank space.
+  let nothingVisible = $derived(
+    critCards.length === 0 &&
+      needsCards.length === 0 &&
+      !(showWait && waitingCards.length) &&
+      !(showWork && workCards.length)
+  );
 
   let sub = $derived.by(() => {
     if (!snap.hasProjectsDir) return "Claude Code hasn't run yet";
@@ -59,6 +92,9 @@
     return snap.waiting > 0 ? `${base} · ${snap.waiting} waiting on you` : base;
   });
 
+  // Warn threshold (%), shown in the Critical group header (live from the snapshot).
+  let warnPct = $derived(Math.round(snap.warnPct));
+
   function decide(id: string, decision: PermDecision) {
     resolvePermission(id, decision);
   }
@@ -66,19 +102,12 @@
   function jump(sessionId: string) {
     jumpToSession(sessionId).catch(() => {});
   }
-
-  function toggleTheme() {
-    const next = store.config.theme === "dark" ? "light" : "dark";
-    store.config.theme = next;
-    applyTheme(next);
-    setTheme(next);
-  }
 </script>
 
 <div class="panel-shell">
   <div class="panel">
     <div class="panel-top">
-      <div class="panel-glyph">a</div>
+      <img class="panel-glyph" src="/tablo-logo-v3.png" alt="" />
       <div class="panel-titles">
         <div class="name">tablo</div>
         <div class="sub">{sub}</div>
@@ -87,7 +116,6 @@
         <button class="dash-link" title="Open dashboard" onclick={() => openDashboard()}>
           dashboard <span class="arr">↗</span>
         </button>
-        <button class="mini" title="Toggle theme" onclick={toggleTheme} aria-label="Toggle theme">☾</button>
       </div>
     </div>
 
@@ -97,9 +125,13 @@
           <button class:on={prefs.sort === "context"} onclick={() => setSort("context")}>context</button>
           <button class:on={prefs.sort === "recent"} onclick={() => setSort("recent")}>recent</button>
         </div>
-        <div class="seg" role="group" aria-label="View mode">
-          <button class:on={!compact} onclick={() => setPanelMode("expanded")}>list</button>
-          <button class:on={compact} onclick={() => setPanelMode("compact")}>compact</button>
+        <div class="seg filt" role="group" aria-label="Filter by state">
+          <button class:on={prefs.showWaiting} onclick={() => toggleFilter("waiting")}>
+            <span class="fdot wait"></span>waiting
+          </button>
+          <button class:on={prefs.showWorking} onclick={() => toggleFilter("working")}>
+            <span class="fdot work"></span>working
+          </button>
         </div>
       </div>
     {/if}
@@ -112,33 +144,55 @@
           <span>Tablo wakes up when an agent starts working.</span>
         </div>
       {:else}
+        {#if critCards.length}
+          <div class="group-head crit-head">
+            <span class="group-dot attn"></span>
+            <span class="group-name">Context window warning ! &gt;{warnPct}%</span>
+            <span class="group-count">{critCards.length}</span>
+          </div>
+          {#each critCards as c (c.key)}
+            {@render sessionCard(c)}
+          {/each}
+        {/if}
+
         {#if needsCards.length}
           <div class="group-head">
             <span class="group-dot attn"></span>
-            <span class="group-name">Input requested</span>
-            <span class="group-count">{pending.length}</span>
+            <span class="group-name">Permission Request</span>
+            <span class="group-count">{needsCards.length}</span>
           </div>
           {#each needsCards as c (c.key)}
             {@render sessionCard(c)}
           {/each}
         {/if}
 
-        {#if workCards.length}
+        {#if waitingCards.length && showWait}
+          <div class="group-head">
+            <span class="group-dot wait"></span>
+            <span class="group-name">Waiting</span>
+            <span class="group-count">{waitingCards.length}</span>
+          </div>
+          {#each waitingCards as c (c.key)}
+            {@render sessionCard(c)}
+          {/each}
+        {/if}
+
+        {#if workCards.length && showWork}
           <div class="group-head">
             <span class="group-dot work"></span>
             <span class="group-name">Working</span>
             <span class="group-count">{workCards.length}</span>
           </div>
-          {#if compact}
-            {@render sessionCard(workCards[0])}
-            <button class="more" onclick={() => setPanelMode("expanded")}>
-              +{workCards.length - 1} more session{workCards.length - 1 > 1 ? "s" : ""}
-            </button>
-          {:else}
-            {#each workCards as c (c.key)}
-              {@render sessionCard(c)}
-            {/each}
-          {/if}
+          {#each workCards as c (c.key)}
+            {@render sessionCard(c)}
+          {/each}
+        {/if}
+
+        {#if nothingVisible}
+          <div class="filtered-empty">
+            <div class="huh">Huh ~_~ ?</div>
+            <span>Everything's filtered out.</span>
+          </div>
         {/if}
       {/if}
     </div>
@@ -146,7 +200,7 @@
 </div>
 
 {#snippet sessionCard(c: Card)}
-  <div class="ucard" class:needs={c.requests.length > 0}>
+  <div class="ucard" class:needs={c.requests.length > 0} class:crit={!!c.session && c.session.level !== "ok"}>
     <div class="session-line1">
       <span class="session-proj">{c.project}</span>
       {#if c.session?.title}
@@ -171,9 +225,6 @@
       <div class="session-activity {c.session.activityKind}">
         <span class="act-dot"></span>
         <span class="act-text">{c.session.activity}</span>
-        {#if activitySuffix(c.session.activityKind)}
-          <span class="act-suffix">· {activitySuffix(c.session.activityKind)}</span>
-        {/if}
       </div>
     {/if}
 
@@ -229,6 +280,10 @@
     box-shadow: var(--shadow-panel);
     overflow: hidden;
   }
+  /* critical group header — the context-window warning line, red */
+  .crit-head .group-name {
+    color: var(--coral);
+  }
   .panel-top {
     display: flex;
     align-items: center;
@@ -237,16 +292,13 @@
     border-bottom: 1px solid var(--border-soft);
   }
   .panel-glyph {
-    width: 34px;
-    height: 38px;
-    display: grid;
-    place-items: center;
-    font-family: var(--font-mono);
-    font-weight: 700;
-    font-size: 15px;
-    color: var(--amber);
-    background: var(--amber-soft);
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 7px;
+    padding: 3px;
+    flex: none;
   }
   .panel-titles {
     flex: 1;
@@ -262,22 +314,6 @@
     font-size: 11px;
     color: var(--ink-faint);
     margin-top: 1px;
-  }
-  .mini {
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--ink-dim);
-    cursor: pointer;
-    display: grid;
-    place-items: center;
-    transition: all 0.2s var(--ease);
-  }
-  .mini:hover {
-    color: var(--ink);
-    border-color: var(--ink-faint);
   }
   .panel-actions {
     display: flex;
@@ -328,6 +364,9 @@
     border: 1px solid var(--border-soft);
   }
   .seg button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-family: var(--font-mono);
     font-size: 10.5px;
     font-weight: 600;
@@ -347,25 +386,26 @@
     background: var(--amber-soft);
     color: var(--amber);
   }
-
-  .more {
-    width: 100%;
-    margin-top: 4px;
-    padding: 10px;
-    border-radius: var(--r-md);
-    border: 1px dashed var(--border);
-    background: transparent;
-    color: var(--ink-dim);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    cursor: pointer;
-    transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
-  }
-  .more:hover {
+  /* state filters: neutral "on" highlight (the colored LED carries the meaning) */
+  .seg.filt button.on {
+    background: var(--bg-raised);
     color: var(--ink);
-    border-color: var(--ink-faint);
+  }
+  .fdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    background: var(--ink-faint);
+    transition: background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  }
+  .seg.filt button.on .fdot.wait {
+    background: var(--sage);
+    box-shadow: 0 0 6px var(--sage);
+  }
+  .seg.filt button.on .fdot.work {
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
   }
 
   .panel-body {
@@ -392,6 +432,10 @@
   .group-dot.work {
     background: var(--amber);
     box-shadow: 0 0 8px var(--amber);
+  }
+  .group-dot.wait {
+    background: var(--sage);
+    box-shadow: 0 0 8px var(--sage);
   }
   .group-name {
     font-family: var(--font-mono);
@@ -422,8 +466,9 @@
   .ucard:hover {
     border-color: var(--border);
   }
-  /* a session with pending approvals — coral card, sorted to the top */
-  .ucard.needs {
+  /* a session with pending approvals, or past the context warn line — coral card */
+  .ucard.needs,
+  .ucard.crit {
     background: color-mix(in srgb, var(--coral) 8%, var(--bg-raised));
     border-color: color-mix(in srgb, var(--coral) 42%, var(--border-soft));
   }
@@ -620,10 +665,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .session-activity .act-suffix {
-    flex-shrink: 0;
-    color: var(--ink-faint);
-  }
   /* working: amber dot, gently pulsing so it reads as live */
   .session-activity.working {
     color: var(--ink);
@@ -662,7 +703,7 @@
     border-radius: 3px;
     background: var(--bg-inset);
     overflow: hidden;
-    border: 1px solid var(--border-soft);
+    border: 1px solid var(--border);
     background-image: repeating-linear-gradient(
       90deg,
       transparent 0 5px,
@@ -701,6 +742,28 @@
     text-align: center;
     padding: 46px 20px;
     color: var(--ink-dim);
+  }
+
+  /* shown when every group is filtered out (e.g. both toggles off) */
+  .filtered-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+    padding: 44px 20px;
+  }
+  .filtered-empty .huh {
+    font-family: var(--font-mono);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--ink-dim);
+  }
+  .filtered-empty span {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
   }
   .empty-glyph {
     width: 46px;
