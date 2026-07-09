@@ -100,6 +100,8 @@ pub struct Snapshot {
     pub clear_waiting_mins: u64,
     /// Whether Codex sessions are being watched, echoed for the Settings toggle.
     pub watch_codex: bool,
+    /// Whether the global panel-summon hotkey is enabled, echoed for the Settings toggle.
+    pub panel_shortcut_enabled: bool,
 }
 
 impl Default for Snapshot {
@@ -118,6 +120,7 @@ impl Default for Snapshot {
             cancel_grace_mins: 3,
             clear_waiting_mins: 10,
             watch_codex: true,
+            panel_shortcut_enabled: true,
         }
     }
 }
@@ -833,6 +836,7 @@ pub fn scan(
             has_projects_dir: false,
             generated_at: now_ms(),
             watch_codex: cfg.watch_codex,
+            panel_shortcut_enabled: cfg.panel_shortcut_enabled,
             ..Default::default()
         };
     }
@@ -1012,6 +1016,7 @@ pub fn scan(
         cancel_grace_mins: cfg.cancel_grace_mins.max(1),
         clear_waiting_mins: cfg.clear_waiting_mins.max(1),
         watch_codex: cfg.watch_codex,
+        panel_shortcut_enabled: cfg.panel_shortcut_enabled,
     }
 }
 

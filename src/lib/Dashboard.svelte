@@ -24,6 +24,7 @@
     setCancelGraceMins,
     setClearWaitingMins,
     setWatchCodex,
+    setPanelShortcutEnabled,
     codexLocateStatus,
     setCodexLocateEnabled,
   } from "./bridge";
@@ -96,6 +97,7 @@
   let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
   let clearWaitingMins = $derived(Math.round(snap.clearWaitingMins));
   let watchCodex = $derived(snap.watchCodex);
+  let panelShortcutEnabled = $derived(snap.panelShortcutEnabled);
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -265,6 +267,8 @@
           {@render toggle("Jump to Codex session", "Focus the terminal a Codex session lives in (installs a hook in ~/.codex/hooks.json — Codex asks you to trust it once).", codexLoc.installed, codexLocBusy, toggleCodexLocate)}
         {/if}
       </div>
+
+      {@render toggle("Panel shortcut", "Summon the panel from anywhere with Ctrl+Cmd+T — no need to click the widget.", panelShortcutEnabled, false, () => setPanelShortcutEnabled(!panelShortcutEnabled))}
 
       <div class="setting">
         <div class="setting-main">

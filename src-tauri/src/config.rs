@@ -90,6 +90,12 @@ pub struct Config {
     pub notify_on_permission: bool,
     /// "dark" (hero) or "light".
     pub theme: String,
+    /// Global hotkey (Tauri accelerator syntax, e.g. "Control+Command+T") that
+    /// toggles the panel from anywhere. Empty string disables it.
+    pub panel_shortcut: String,
+    /// Whether the global panel hotkey is registered. On by default; the Settings
+    /// toggle flips it live (register / unregister) without losing the keystroke.
+    pub panel_shortcut_enabled: bool,
     /// One-time guard: whether "jump to session" has been auto-enabled once. Set
     /// true after the first launch wires it in, so a later user-disable sticks
     /// and we never silently re-enable it behind their back.
@@ -125,6 +131,8 @@ impl Default for Config {
             notify_on_warn: false,
             notify_on_permission: true,
             theme: "dark".into(),
+            panel_shortcut: "Control+Command+T".into(),
+            panel_shortcut_enabled: true,
             locate_default_applied: false,
         }
     }

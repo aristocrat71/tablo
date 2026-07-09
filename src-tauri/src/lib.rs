@@ -164,17 +164,18 @@ fn set_watch_codex(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
     recompute_and_emit(&app);
 }
 
-/// Toggle the panel open/closed, anchored near the avatar.
-#[tauri::command]
-fn toggle_panel(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let panel = win(&app, "panel")?;
+/// Toggle the panel open/closed, anchored near the avatar. Shared by the tap
+/// command and the global shortcut.
+fn toggle_panel_impl(app: &AppHandle) -> Result<(), String> {
+    let panel = win(app, "panel")?;
     if panel.is_visible().unwrap_or(false) {
         panel.hide().map_err(|e| e.to_string())?;
         return Ok(());
     }
     // If a blur just hid the panel, this same tap is what closed it — don't
     // immediately re-open.
-    let recently_hidden = state
+    let recently_hidden = app
+        .state::<AppState>()
         .panel_last_hidden
         .lock()
         .unwrap()
@@ -183,10 +184,49 @@ fn toggle_panel(app: AppHandle, state: State<'_, AppState>) -> Result<(), String
     if recently_hidden {
         return Ok(());
     }
-    place_panel(&app);
+    place_panel(app);
     panel.show().map_err(|e| e.to_string())?;
     panel.set_focus().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+fn toggle_panel(app: AppHandle) -> Result<(), String> {
+    toggle_panel_impl(&app)
+}
+
+/// Register or unregister the global panel hotkey to match `enabled`. Empty
+/// keystroke ⇒ nothing to do. Best-effort: any stale registration is cleared
+/// first so re-enabling can't double-register, and errors are ignored (a bad
+/// accelerator, or a combo already owned by another app, just no-ops).
+fn apply_panel_shortcut(app: &AppHandle, enabled: bool, shortcut: &str) {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+    if shortcut.is_empty() {
+        return;
+    }
+    let gs = app.global_shortcut();
+    let _ = gs.unregister(shortcut);
+    if enabled {
+        let _ = gs.on_shortcut(shortcut, |app, _s, event| {
+            if event.state == ShortcutState::Pressed {
+                let _ = toggle_panel_impl(app);
+            }
+        });
+    }
+}
+
+/// Enable/disable the global panel hotkey. Persists and applies live, then
+/// re-emits so the Settings toggle reflects it across windows.
+#[tauri::command]
+fn set_panel_shortcut_enabled(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
+    let shortcut = {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.panel_shortcut_enabled = enabled;
+        cfg.save(&state.config_dir);
+        cfg.panel_shortcut.clone()
+    };
+    apply_panel_shortcut(&app, enabled, &shortcut);
+    recompute_and_emit(&app);
 }
 
 /// macOS: control whether Tablo shows in the Dock + Cmd+Tab app switcher.
@@ -681,6 +721,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -696,6 +737,8 @@ pub fn run() {
             let mut cfg = Config::load(&config_dir);
             // Capture hook params before `cfg` is moved into managed state.
             let (hook_port, hook_timeout) = (cfg.permission_port, cfg.hook_timeout_secs);
+            let panel_shortcut = cfg.panel_shortcut.clone();
+            let panel_shortcut_enabled = cfg.panel_shortcut_enabled;
 
             if let Some(avatar) = app.get_webview_window("avatar") {
                 let _ = avatar.set_ignore_cursor_events(true);
@@ -766,6 +809,10 @@ pub fn run() {
 
             build_tray(&handle)?;
 
+            // Global hotkey to summon the panel from anywhere, without touching
+            // the widget. Config-driven + toggleable in Settings.
+            apply_panel_shortcut(&handle, panel_shortcut_enabled, &panel_shortcut);
+
             spawn_watcher(handle.clone());
             spawn_hittest(handle);
             Ok(())
@@ -778,6 +825,7 @@ pub fn run() {
             set_cancel_grace_mins,
             set_clear_waiting_mins,
             set_watch_codex,
+            set_panel_shortcut_enabled,
             toggle_panel,
             open_dashboard,
             hide_dashboard,

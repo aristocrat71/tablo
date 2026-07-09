@@ -28,3 +28,4 @@ notify = "6"
 dirs = "5"
 # Tiny synchronous HTTP server for the PreToolUse approval hook (Phase 4).
 tiny_http = "0.12"
+tauri-plugin-global-shortcut = "2"
