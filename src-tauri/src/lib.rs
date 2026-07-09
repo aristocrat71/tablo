@@ -138,6 +138,18 @@ fn set_cancel_grace_mins(app: AppHandle, state: State<'_, AppState>, mins: u64) 
     recompute_and_emit(&app);
 }
 
+/// Set how long a finished (waiting) session lingers before it clears from the
+/// panel (minutes). Floored at 1. Persists and re-scans so it applies at once.
+#[tauri::command]
+fn set_clear_waiting_mins(app: AppHandle, state: State<'_, AppState>, mins: u64) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.clear_waiting_mins = mins.max(1);
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
 /// Toggle the panel open/closed, anchored near the avatar.
 #[tauri::command]
 fn toggle_panel(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
@@ -332,20 +344,25 @@ fn place_toast(app: &AppHandle) {
     if tsz.width == 0 || tsz.height == 0 {
         tsz = tauri::PhysicalSize::new((300.0 * sf) as u32, (84.0 * sf) as u32);
     }
-    // The hex art (58px wide) is centered in the avatar window with a transparent
-    // side margin; tuck the toast into that margin so the right-aligned card sits
-    // right beside the cat rather than a whole window-width away.
-    let inset = (asz.width as i32 - (58.0 * sf) as i32) / 2;
-    let gap = (3.0 * sf) as i32;
+    // Anchor the toast just OUTSIDE the avatar's circular cursor hit-test. That
+    // radius (see `cursor_over_cat`) flips the avatar interactive when the cursor
+    // is near the cat — and since the toast's right-aligned "jump" button sits on
+    // the side nearest the cat, tucking it into the avatar's margin let the avatar
+    // steal the button's clicks (the "jump works only sometimes" bug). Placing the
+    // toast's right edge a clearance past the steal-zone keeps the button clickable
+    // and stops it overlapping the sprite. Flip to the right if the left runs off.
+    let r = (asz.width.min(asz.height) as f64 * HIT_RADIUS_FRACTION) as i32;
+    let cx = ap.x + asz.width as i32 / 2;
+    let clearance = (8.0 * sf) as i32;
 
-    let mut tx = ap.x + inset - gap - tsz.width as i32;
+    let mut tx = cx - r - clearance - tsz.width as i32; // toast right edge left of the steal-zone
     let mut ty = ap.y + (asz.height as i32 - tsz.height as i32) / 2;
 
     if let Ok(Some(mon)) = avatar.current_monitor() {
         let mpos = mon.position();
         let msz = mon.size();
         if tx < mpos.x {
-            tx = ap.x + asz.width as i32 - inset + gap; // flip to the right of the hex
+            tx = cx + r + clearance; // flip to the right, just past the steal-zone
         }
         let max_x = (mpos.x + msz.width as i32 - tsz.width as i32).max(mpos.x);
         let max_y = (mpos.y + msz.height as i32 - tsz.height as i32).max(mpos.y);
@@ -688,6 +705,7 @@ pub fn run() {
             set_theme,
             set_warn_pct,
             set_cancel_grace_mins,
+            set_clear_waiting_mins,
             toggle_panel,
             open_dashboard,
             hide_dashboard,

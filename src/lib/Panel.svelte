@@ -107,7 +107,7 @@
 <div class="panel-shell">
   <div class="panel">
     <div class="panel-top">
-      <img class="panel-glyph" src="/tablo-logo-v3.png" alt="" />
+      <img class="panel-glyph" src="/tablo-logo-v4.png" alt="" />
       <div class="panel-titles">
         <div class="name">tablo</div>
         <div class="sub">{sub}</div>
@@ -139,7 +139,7 @@
     <div class="panel-body">
       {#if cards.length === 0}
         <div class="empty">
-          <div class="empty-glyph">I</div>
+          <div class="empty-glyph">~_~</div>
           <p>{snap.hasProjectsDir ? "Nothing running right now." : "No Claude Code sessions found yet."}</p>
           <span>Tablo wakes up when an agent starts working.</span>
         </div>
@@ -292,12 +292,9 @@
     border-bottom: 1px solid var(--border-soft);
   }
   .panel-glyph {
-    width: 36px;
     height: 36px;
-    object-fit: contain;
-    background: #fff;
+    width: auto; /* keep the logo's own (built-in-background) aspect — no crop */
     border-radius: 7px;
-    padding: 3px;
     flex: none;
   }
   .panel-titles {
@@ -766,17 +763,12 @@
     color: var(--ink-faint);
   }
   .empty-glyph {
-    width: 46px;
-    height: 51px;
-    display: grid;
-    place-items: center;
     font-family: var(--font-mono);
     font-weight: 700;
-    font-size: 18px;
+    font-size: 22px;
+    letter-spacing: 0.06em;
     color: var(--sage);
-    background: color-mix(in srgb, var(--sage) 20%, var(--bg-raised));
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
   .empty p {
     font-size: 13.5px;

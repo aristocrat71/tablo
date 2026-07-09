@@ -6,6 +6,7 @@
   import {
     prefs,
     byMode,
+    toggleFilter,
     setNotifyOnWaiting,
     setWaitingToastSecs,
     TOAST_SECS_MIN,
@@ -21,6 +22,7 @@
     hideDashboard,
     setWarnPct,
     setCancelGraceMins,
+    setClearWaitingMins,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -69,8 +71,20 @@
   const isCrit = (c: Card) => !!c.session && c.session.level !== "ok";
   let critCards = $derived(cards.filter(isCrit));
   let restCards = $derived(cards.filter((c) => !isCrit(c)));
+  // Working/waiting state filters, mirroring the Panel. Only apply with >1 session
+  // so a lone session can't be filtered out with no way to bring it back; a pending
+  // permission request always shows, others gate by their state.
+  let filtersActive = $derived(snap.sessions.length > 1);
+  let showWork = $derived(!filtersActive || prefs.showWorking);
+  let showWait = $derived(!filtersActive || prefs.showWaiting);
+  let visibleRest = $derived(
+    restCards.filter((c) =>
+      c.requests.length > 0 ? true : c.session?.activityKind === "waiting" ? showWait : showWork,
+    ),
+  );
   let warnPct = $derived(Math.round(snap.warnPct));
   let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
+  let clearWaitingMins = $derived(Math.round(snap.clearWaitingMins));
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -127,7 +141,7 @@
 <div class="dash">
   <div class="dash-head">
     <div class="lead">
-      <h2><img class="g" src="/tablo-logo-v3.png" alt="" /> tablo</h2>
+      <h2><img class="g" src="/tablo-logo-v4.png" alt="" /> tablo</h2>
       {#if !snap.hasProjectsDir}
         <p class="statline muted">No Claude Code sessions found yet</p>
       {:else if snap.agentCount === 0 && snap.waiting === 0}
@@ -180,10 +194,24 @@
           {/if}
           <span class="n">{restCards.length}</span>
         </h3>
+        {#if filtersActive}
+          <div class="filt-bar">
+            <div class="seg filt" role="group" aria-label="Filter by state">
+              <button class:on={prefs.showWaiting} onclick={() => toggleFilter("waiting")}>
+                <span class="fdot wait"></span>waiting
+              </button>
+              <button class:on={prefs.showWorking} onclick={() => toggleFilter("working")}>
+                <span class="fdot work"></span>working
+              </button>
+            </div>
+          </div>
+        {/if}
         {#if cards.length === 0}
           <div class="dash-empty">Nothing running. Tablo is watching.</div>
+        {:else if visibleRest.length === 0}
+          <div class="dash-empty">Everything's filtered out.</div>
         {:else}
-          {#each restCards as c (c.key)}
+          {#each visibleRest as c (c.key)}
             {@render sessionCard(c)}
           {/each}
         {/if}
@@ -241,6 +269,23 @@
             step="1"
             value={cancelGraceMins}
             onchange={(e) => setCancelGraceMins(Math.max(1, Math.round(+e.currentTarget.value) || 3))}
+          />
+          <span class="unit">min</span>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-main">
+          <div class="setting-title">Clear waiting sessions</div>
+          <div class="setting-sub">How long a finished session waiting on you stays in the panel before it clears. It reappears the moment you send it a new prompt.</div>
+        </div>
+        <div class="num">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={clearWaitingMins}
+            onchange={(e) => setClearWaitingMins(Math.max(1, Math.round(+e.currentTarget.value) || 10))}
           />
           <span class="unit">min</span>
         </div>
@@ -394,12 +439,9 @@
     gap: 11px;
   }
   .lead h2 .g {
-    width: 34px;
     height: 34px;
-    object-fit: contain;
-    background: #fff;
+    width: auto; /* keep the logo's own (built-in-background) aspect — no crop */
     border-radius: 7px;
-    padding: 3px;
     flex: none;
   }
   /* settings gear — top-right of the header, dashboard view only */
@@ -1056,6 +1098,59 @@
   .drow .gauge .tk i.crit {
     background-color: var(--coral);
     box-shadow: 0 0 8px -1px var(--coral);
+  }
+
+  /* working/waiting state filters — mirrors the panel's toolbar segment */
+  .filt-bar {
+    display: flex;
+    margin: 2px 0 14px;
+  }
+  .seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+  }
+  .seg button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 4px 9px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
+  }
+  .seg button:hover {
+    color: var(--ink-dim);
+  }
+  /* neutral "on" highlight — the colored LED carries the meaning */
+  .seg.filt button.on {
+    background: var(--bg-raised);
+    color: var(--ink);
+  }
+  .fdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    background: var(--ink-faint);
+    transition: background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  }
+  .seg.filt button.on .fdot.wait {
+    background: var(--sage);
+    box-shadow: 0 0 6px var(--sage);
+  }
+  .seg.filt button.on .fdot.work {
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
   }
 
   .dash-empty {

@@ -92,6 +92,8 @@ pub struct Snapshot {
     /// Early-cancel grace window (minutes), echoed so the Settings input shows
     /// the live floored value.
     pub cancel_grace_mins: u64,
+    /// Waiting-session clear window (minutes), echoed for the Settings input.
+    pub clear_waiting_mins: u64,
 }
 
 impl Default for Snapshot {
@@ -108,6 +110,7 @@ impl Default for Snapshot {
             pending: Vec::new(),
             warn_pct: 60.0,
             cancel_grace_mins: 3,
+            clear_waiting_mins: 10,
         }
     }
 }
@@ -740,6 +743,7 @@ pub fn scan(
     let active_ms = cfg.active_window_secs as i64 * 1000;
     // Enforce the 1-minute floor the UI also guards.
     let cancel_grace_ms = cfg.cancel_grace_mins.max(1) as i64 * 60_000;
+    let clear_waiting_ms = cfg.clear_waiting_mins.max(1) as i64 * 60_000;
     let mut sessions: Vec<SessionView> = Vec::new();
     let mut seen: Vec<PathBuf> = Vec::new();
 
@@ -800,6 +804,15 @@ pub fn scan(
                 st.activity_kind = "waiting".into();
                 st.activity = "cancelled".into();
                 st.awaiting_first = false;
+            }
+
+            // Dedicated waiting-clear: a finished (waiting-on-you) session the user
+            // hasn't returned to leaves the panel sooner than the general active
+            // window above. It stays in `seen` (tail state retained), so it
+            // reappears the instant they submit again — mtime bumps back under the
+            // threshold. Working/thinking sessions are untouched by this.
+            if st.activity_kind == "waiting" && now - mtime > clear_waiting_ms {
+                continue;
             }
 
             let slug = pdir.file_name().and_then(|s| s.to_str()).unwrap_or("");
@@ -896,6 +909,7 @@ pub fn scan(
         pending: Vec::new(),
         warn_pct: cfg.warn_pct,
         cancel_grace_mins: cfg.cancel_grace_mins.max(1),
+        clear_waiting_mins: cfg.clear_waiting_mins.max(1),
     }
 }
 

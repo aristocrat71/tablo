@@ -28,6 +28,12 @@ pub struct Config {
     /// indistinguishable on disk (it also writes nothing until it responds).
     /// Minimum 1 minute (enforced at use).
     pub cancel_grace_mins: u64,
+    /// How long a *finished* (waiting-on-you) session lingers in the panel before
+    /// it clears, in minutes. Independent of (and shorter than) `active_window_secs`
+    /// so finished sessions declutter quickly while a genuinely long-thinking one
+    /// still gets the full active window and never vanishes mid-think. The session
+    /// isn't lost — it reappears the instant the user submits again. Min 1 minute.
+    pub clear_waiting_mins: u64,
 
     // ---- context window sizing (Open Question #4) ----
     /// Denominator used when a session's window can't be determined and its
@@ -87,6 +93,7 @@ impl Default for Config {
             avatar_y: None,
             active_window_secs: 900,
             cancel_grace_mins: 3,
+            clear_waiting_mins: 10,
             default_context_limit: 200_000,
             standard_context_limit: 200_000,
             extended_context_limit: 1_000_000,
