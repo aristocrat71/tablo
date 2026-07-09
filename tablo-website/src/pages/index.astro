@@ -134,38 +134,37 @@ const marqueeItems = [
       />
     </div>
 
-    <div class="chips" data-chips>
-      <div class="chip" data-chip="sage">
-        <span class="chip-dot ok"></span>
-        <div class="chip-body">
-          <b>idle</b>
-          <span>nothing running.</span>
-          <div class="led"><i class="ok" style="width:22%"></i></div>
-        </div>
-      </div>
-      <div class="chip" data-chip="amber">
-        <span class="chip-dot warn"></span>
-        <div class="chip-body">
-          <b>working</b>
-          <span>agents on the move.</span>
-          <div class="led"><i class="warn" style="width:64%"></i></div>
-        </div>
-      </div>
-      <div class="chip" data-chip="coral">
-        <span class="chip-dot crit"></span>
-        <div class="chip-body">
-          <b>alarmed</b>
-          <span>context past x%.</span>
-          <div class="led"><i class="crit" style="width:88%"></i></div>
-        </div>
-      </div>
-    </div>
+    <p class="watch-lede mono">
+      a tiny cat that sits in the corner of your screen — one place watching
+      every <span class="src">claude code</span> and <span class="src">codex</span>
+      agent you've got running.
+    </p>
 
-    <!-- coda: one cat, two agents -->
-    <div class="coda">
-      <span class="coda-tags">
-        <span class="src">claude</span><span class="src">codex</span>
-      </span>
+    <div class="feats mono">
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>one place for all</b><span class="feat-desc"> — every claude &amp; codex session, side by side in your corner.</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>context window</b><span class="feat-desc"> — a live meter per session, turns coral before you hit the wall.</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>notifications</b><span class="feat-desc"> — a ping the moment an agent needs input or an approval.</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>jump to session</b><span class="feat-desc"> — tap a session and land right in its terminal, focused.</span>
+        </span>
+      </p>
     </div>
   </section>
 
@@ -637,131 +636,71 @@ const marqueeItems = [
        without clipping the cat */
     margin: -34px 0 4px;
   }
-  .chips {
-    display: flex;
-    gap: 16px;
-    justify-content: center;
-    /* fill the row (this sits in a centered flex column, so without an explicit
-       width it shrink-to-fits its content and the boxes collapse) */
-    width: 100%;
-    /* match the (nowrap) title width so the row's left/right edges line up
-       with the title text */
-    max-width: 760px;
-    margin-top: 8px;
+  /* one-line thesis: what tablo actually is */
+  .watch-lede {
+    max-width: 560px;
+    margin: 14px auto 0;
+    font-size: var(--fs-mono);
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    color: var(--ink-dim);
   }
-  .chip {
-    /* boxes wide enough that every description fits on ONE line — keeps the
-       three context bars on the same baseline; min-width:0 keeps them one row */
-    flex: 1 1 240px;
-    min-width: 0;
-    max-width: 260px;
-    display: flex;
-    gap: 12px;
+  .watch-lede .src {
+    color: var(--blue);
+    text-shadow: var(--glow-blue);
+  }
+
+  /* feature readout — a retro phosphor terminal listing, no cards.
+     echoes the boot-log / install-terminal "> ..." language. */
+  .feats {
+    width: 100%;
+    max-width: 600px;
+    margin-top: 26px;
     text-align: left;
-    padding: 16px;
-    border-radius: var(--r-md);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-soft);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    /* a thin phosphor gutter, like a terminal left margin (not a box) */
+    padding-left: 20px;
+    border-left: 1px solid color-mix(in srgb, var(--blue) 28%, var(--border));
+  }
+  .feat {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0 10px;
+    align-items: baseline;
+    font-size: var(--fs-mono);
+    line-height: 1.55;
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateX(-10px);
     transition:
       opacity 0.5s var(--ease),
-      transform 0.5s var(--ease-back),
-      border-color 0.4s var(--ease);
+      transform 0.5s var(--ease-back);
   }
-  .chip.in {
+  .feat.in {
     opacity: 1;
     transform: none;
   }
-  .chip.hot[data-chip="sage"] {
-    border-color: color-mix(in srgb, var(--sage) 55%, var(--border));
+  .feat-mark {
+    color: var(--blue);
+    text-shadow: var(--glow-blue);
   }
-  .chip.hot[data-chip="amber"] {
-    border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  .feat-line b {
+    color: var(--blue);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-shadow: var(--glow-blue);
   }
-  .chip.hot[data-chip="coral"] {
-    border-color: color-mix(in srgb, var(--coral) 55%, var(--border));
-  }
-  .chip-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 999px;
-    margin-top: 5px;
-    flex-shrink: 0;
-  }
-  .chip-dot.ok {
-    background: var(--sage);
-    box-shadow: 0 0 8px var(--sage);
-  }
-  .chip-dot.warn {
-    background: var(--blue);
-    box-shadow: 0 0 8px var(--blue);
-  }
-  .chip-dot.crit {
-    background: var(--coral);
-    box-shadow: 0 0 8px var(--coral);
-  }
-  /* the working card shows the app's real amber "working" colour, not the
-     brand blue — so the demo reads as sage / amber / coral like the app */
-  .chip[data-chip="amber"] .chip-dot {
-    background: var(--amber);
-    box-shadow: 0 0 8px var(--amber);
-  }
-  .chip[data-chip="amber"] .led > i {
-    background-color: var(--amber);
-    box-shadow: 0 0 9px -1px var(--amber);
-  }
-  .chip-body {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    width: 100%;
-  }
-  .chip-body b {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--ink);
-  }
-  .chip-body span {
-    font-size: 12.5px;
+  .feat-desc {
     color: var(--ink-dim);
-    line-height: 1.4;
   }
-  .chip-body .led {
-    margin-top: 4px;
-  }
-  /* keep the three cards on one row on desktop; stack only on true mobile */
-  @media (max-width: 600px) {
-    .chips {
-      flex-wrap: wrap;
+  @media (max-width: 520px) {
+    .feats {
+      padding-left: 16px;
     }
-  }
-
-  .coda {
-    margin-top: 40px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-  }
-  .coda-tags {
-    display: flex;
-    gap: 10px;
-  }
-  .coda-tags .src {
-    padding: 5px 12px;
-    border-radius: var(--r-sm);
-    background: var(--bg-raised);
-    border: 1px solid var(--border-soft);
-    color: var(--ink-dim);
-    text-transform: uppercase;
-    font-size: 11px;
-  }
-  .coda-line {
-    font-size: var(--fs-mono);
-    color: var(--ink-faint);
+    .feat-desc {
+      font-size: var(--fs-mono-xs);
+    }
   }
 
   /* ===== live ===== */
@@ -1010,11 +949,11 @@ const marqueeItems = [
   function playWatchSequence() {
     if (watchPlayed) return;
     watchPlayed = true;
-    // reveal the state chips once (one-time entrance, not a loop); the cat
-    // stays on its running loop — no cycling through idle/working/alert.
-    const chips = Array.from(document.querySelectorAll<HTMLElement>(".chip"));
-    chips.forEach((c, i) =>
-      setTimeout(() => c.classList.add("in", "hot"), reduce ? 0 : 140 * i),
+    // reveal the feature cards once (staggered one-time entrance); the cat
+    // stays on its running loop.
+    const feats = Array.from(document.querySelectorAll<HTMLElement>(".feat"));
+    feats.forEach((c, i) =>
+      setTimeout(() => c.classList.add("in"), reduce ? 0 : 120 * i),
     );
     setCat(".cat-watch", "working");
   }
