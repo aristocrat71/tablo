@@ -28,6 +28,7 @@
   --blue: #6dc7e9; /* working / active / brand — the eye glow */
   --sage: #8faa7e; /* idle / calm / healthy */
   --coral: #e08267; /* alarmed / danger / needs-you */
+  --amber: #e0a458; /* the app's real "working" desk-lamp — used in the state demo */
   --blue-soft: #16303d;
   --sage-soft: #29301f;
   --coral-soft: #3a231c;
@@ -85,6 +86,7 @@
   --sage-soft: #e4ecda;
   --coral: #c85a3c;
   --coral-soft: #f6ddd2;
+  --amber: #c67f2c;
   --shadow-panel: 0 20px 44px -14px rgba(90, 70, 45, 0.32),
     0 6px 16px -8px rgba(90, 70, 45, 0.24);
   --scanline-opacity: 0.025;

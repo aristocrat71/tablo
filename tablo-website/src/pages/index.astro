@@ -93,7 +93,7 @@ const marqueeItems = [
     </div>
 
     <p class="tagline mono">
-      a tiny cat that watches your coding agents<span class="caret">▮</span>
+      the menace monitoring your coding agents<span class="caret">▮</span>
     </p>
     <p class="subtag mono">
       <span class="src">claude code</span> + <span class="src">codex</span> · one
@@ -123,7 +123,7 @@ const marqueeItems = [
   <!-- ===== Act 2 — IT WATCHES ===== -->
   <section class="act watch" id="watch" data-act data-lamp="blue">
     <span class="act-num">01 · what it does</span>
-    <h2 class="act-title" data-typeon>it watches, so you don't have to</h2>
+    <h2 class="act-title watch-title" data-typeon>keeps an eye, so you don't have to</h2>
 
     <div class="watch-cat">
       <Cat
@@ -143,11 +143,11 @@ const marqueeItems = [
           <div class="led"><i class="ok" style="width:22%"></i></div>
         </div>
       </div>
-      <div class="chip" data-chip="blue">
+      <div class="chip" data-chip="amber">
         <span class="chip-dot warn"></span>
         <div class="chip-body">
           <b>working</b>
-          <span>agents on the move. it counts them.</span>
+          <span>agents on the move. counting them.</span>
           <div class="led"><i class="warn" style="width:64%"></i></div>
         </div>
       </div>
@@ -155,7 +155,7 @@ const marqueeItems = [
         <span class="chip-dot crit"></span>
         <div class="chip-body">
           <b>alarmed</b>
-          <span>context past 60%, or something needs you.</span>
+          <span>context past x%, or some permissions?</span>
           <div class="led"><i class="crit" style="width:88%"></i></div>
         </div>
       </div>
@@ -628,6 +628,13 @@ const marqueeItems = [
   }
 
   /* ===== watch ===== */
+  /* keep the title on a single line; scale with the viewport so it never wraps
+     or overflows (the base .act-title caps at 18ch which forced two lines) */
+  .watch-title {
+    max-width: none;
+    white-space: nowrap;
+    font-size: min(3rem, 4.2vw);
+  }
   .watch-cat {
     margin: 24px 0 8px;
   }
@@ -663,8 +670,8 @@ const marqueeItems = [
   .chip.hot[data-chip="sage"] {
     border-color: color-mix(in srgb, var(--sage) 55%, var(--border));
   }
-  .chip.hot[data-chip="blue"] {
-    border-color: color-mix(in srgb, var(--blue) 55%, var(--border));
+  .chip.hot[data-chip="amber"] {
+    border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
   }
   .chip.hot[data-chip="coral"] {
     border-color: color-mix(in srgb, var(--coral) 55%, var(--border));
@@ -687,6 +694,16 @@ const marqueeItems = [
   .chip-dot.crit {
     background: var(--coral);
     box-shadow: 0 0 8px var(--coral);
+  }
+  /* the working card shows the app's real amber "working" colour, not the
+     brand blue — so the demo reads as sage / amber / coral like the app */
+  .chip[data-chip="amber"] .chip-dot {
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+  }
+  .chip[data-chip="amber"] .led > i {
+    background-color: var(--amber);
+    box-shadow: 0 0 9px -1px var(--amber);
   }
   .chip-body {
     display: flex;
@@ -958,36 +975,13 @@ const marqueeItems = [
   function playWatchSequence() {
     if (watchPlayed) return;
     watchPlayed = true;
+    // reveal the state chips once (one-time entrance, not a loop); the cat
+    // stays on its running loop — no cycling through idle/working/alert.
     const chips = Array.from(document.querySelectorAll<HTMLElement>(".chip"));
-    chips.forEach((c, i) => setTimeout(() => c.classList.add("in"), 140 * i));
-    if (reduce) {
-      chips.forEach((c) => c.classList.add("in", "hot"));
-      setCat(".cat-watch", "working");
-      return;
-    }
-    const steps: [string, string, number][] = [
-      ["sage", "idle", 0],
-      ["blue", "working", 1],
-      ["coral", "alert", 2],
-    ];
-    steps.forEach(([col, st, idx], i) => {
-      setTimeout(
-        () => {
-          lamp(col);
-          setCat(".cat-watch", st);
-          chips.forEach((c, j) => c.classList.toggle("hot", j === idx));
-        },
-        700 + i * 950,
-      );
-    });
-    setTimeout(
-      () => {
-        lamp("blue");
-        setCat(".cat-watch", "working");
-        chips.forEach((c) => c.classList.add("hot"));
-      },
-      700 + 3 * 950,
+    chips.forEach((c, i) =>
+      setTimeout(() => c.classList.add("in", "hot"), reduce ? 0 : 140 * i),
     );
+    setCat(".cat-watch", "working");
   }
 
   function initActs() {
