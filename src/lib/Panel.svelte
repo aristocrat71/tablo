@@ -139,7 +139,7 @@
     <div class="panel-body">
       {#if cards.length === 0}
         <div class="empty">
-          <div class="empty-glyph">I</div>
+          <div class="empty-glyph">~_~</div>
           <p>{snap.hasProjectsDir ? "Nothing running right now." : "No Claude Code sessions found yet."}</p>
           <span>Tablo wakes up when an agent starts working.</span>
         </div>
@@ -766,17 +766,12 @@
     color: var(--ink-faint);
   }
   .empty-glyph {
-    width: 46px;
-    height: 51px;
-    display: grid;
-    place-items: center;
     font-family: var(--font-mono);
     font-weight: 700;
-    font-size: 18px;
+    font-size: 22px;
+    letter-spacing: 0.06em;
     color: var(--sage);
-    background: color-mix(in srgb, var(--sage) 20%, var(--bg-raised));
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
   .empty p {
     font-size: 13.5px;
