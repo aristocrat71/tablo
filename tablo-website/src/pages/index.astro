@@ -173,6 +173,9 @@ const marqueeItems = [
   <section class="act live" data-act data-lamp="blue">
     <span class="act-num">02 · the whole thing, live</span>
     <h2 class="act-title live-title" data-typeon>go on, play around with it</h2>
+    <p class="live-hint mono">
+      click the widget <span class="hint-arr">&rarr;</span> open the panel
+    </p>
     <div class="live-stage">
       <LiveWidget />
     </div>
@@ -181,7 +184,7 @@ const marqueeItems = [
   <!-- ===== Act 4 — GET IT ===== -->
   <section class="act install" id="get" data-act data-lamp="blue">
     <span class="act-num">03 · put it on your desk</span>
-    <h2 class="act-title" data-typeon>one line. no gatekeeper dance.</h2>
+    <h2 class="act-title" data-typeon>one line. clean install.</h2>
     <div class="install-stage">
       <InstallDeck />
     </div>
@@ -197,10 +200,8 @@ const marqueeItems = [
         class="cat-signoff"
       />
     </div>
-    <p class="signoff-line">made in a dark room.</p>
+    <p class="signoff-line">made with love and late nights.</p>
     <nav class="signoff-nav mono">
-      <span class="wm">tablo</span>
-      <span class="sep">·</span>
       <a
         class="bkt"
         href="https://github.com/aristocrat71/tablo"
@@ -208,10 +209,11 @@ const marqueeItems = [
         rel="noopener">github</a
       >
       <span class="sep">·</span>
-      <span>MIT</span>
-      <span class="sep">·</span>
-      <a class="bkt" href="#" data-reboot>^ reboot</a>
+      <span>MIT Licensed</span>
     </nav>
+    <p class="made-by mono">
+      Dreamy <span class="sep">·</span> Projekt Dreamscape
+    </p>
   </section>
 </Screen>
 
@@ -763,8 +765,18 @@ const marqueeItems = [
   }
 
   /* ===== live ===== */
+  .live-hint {
+    margin-top: 14px;
+    font-size: var(--fs-mono-xs);
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+  }
+  .live-hint .hint-arr {
+    color: var(--blue);
+    margin: 0 5px;
+  }
   .live-stage {
-    margin-top: 36px;
+    margin-top: 26px;
     display: flex;
     justify-content: center;
   }
@@ -804,6 +816,19 @@ const marqueeItems = [
   }
   .signoff-nav .sep {
     opacity: 0.4;
+  }
+  /* very-bottom maker credit */
+  .made-by {
+    margin-top: 22px;
+    font-size: var(--fs-mono-xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    opacity: 0.75;
+  }
+  .made-by .sep {
+    opacity: 0.5;
+    margin: 0 3px;
   }
 
   /* ===== boot overlay ===== */
