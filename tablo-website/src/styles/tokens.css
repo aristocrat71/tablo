@@ -32,6 +32,7 @@
   --blue-soft: #16303d;
   --sage-soft: #29301f;
   --coral-soft: #3a231c;
+  --amber-soft: #3a2c1a; /* app panel: jump button / active toolbar seg */
 
   /* glow / phosphor (website-only) */
   --glow-blue: 0 0 12px color-mix(in srgb, var(--blue) 60%, transparent);
@@ -87,6 +88,7 @@
   --coral: #c85a3c;
   --coral-soft: #f6ddd2;
   --amber: #c67f2c;
+  --amber-soft: #f5e6cf;
   --shadow-panel: 0 20px 44px -14px rgba(90, 70, 45, 0.32),
     0 6px 16px -8px rgba(90, 70, 45, 0.24);
   --scanline-opacity: 0.025;

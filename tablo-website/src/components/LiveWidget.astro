@@ -1,218 +1,281 @@
 ---
 /**
- * LiveWidget — a pixel-faithful recreation of the real tablo panel,
- * running on a loop. Panel CSS is lifted from tablo-mockups-v3.html and
- * upgraded to the current README row anatomy: source tag (claude/codex),
- * live activity line + status dot, permission-mode badge, jump button,
- * and the real groups (Context warning / Permission / Waiting / Working).
+ * LiveWidget — an EXACT static copy of the real app panel (src/lib/Panel.svelte).
+ * Markup + styles mirror the Svelte component 1:1; the only differences are the
+ * panel sizes to its content here (instead of filling a window) and the data is
+ * a fixed sample set. No animation — this is the base we'll wire interactivity
+ * onto next.
  */
+
+// token counts: 46000 -> "46k", 1000000 -> "1M" (mirrors format.ts::tokens)
+function tokens(n: number): string {
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    return `${m >= 10 || Number.isInteger(m) ? Math.round(m) : m.toFixed(1)}M`;
+  }
+  if (n >= 1_000) return `${Math.round(n / 1000)}k`;
+  return `${n}`;
+}
+const pct = (n: number) => `${Math.round(n)}%`;
+
+type Card = {
+  key: string;
+  project: string;
+  path: string;
+  branch: string | null;
+  source: "claude" | "codex";
+  pct: number;
+  used: number;
+  limit: number;
+  level: "ok" | "warn" | "crit";
+  mode: "normal" | "auto" | "plan" | "bypass";
+  title: string | null;
+  activity: string;
+  activityKind: "working" | "waiting" | "thinking" | "";
+  canJump: boolean;
+  recent: number; // recency rank (higher = more recent) — drives the "recent" sort
+  request?: { tool: string; detail: string };
+};
+
+// sample sessions — Permission / Waiting / Working groups on display; two in
+// Working so the sort toggle visibly reorders.
+const sessions: Card[] = [
+  {
+    key: "s-tablo",
+    project: "tablo",
+    path: "~/dev/tablo/src-tauri",
+    branch: "feat/polish",
+    source: "claude",
+    pct: 38,
+    used: 76000,
+    limit: 200000,
+    level: "ok",
+    mode: "normal",
+    title: "wiring the permission hook",
+    activity: "wants to run a command",
+    activityKind: "working",
+    canJump: true,
+    recent: 4,
+    request: { tool: "Bash", detail: "rm -rf ./dist" },
+  },
+  {
+    key: "s-docs",
+    project: "docs",
+    path: "~/dev/site",
+    branch: null,
+    source: "codex",
+    pct: 24,
+    used: 62000,
+    limit: 258000,
+    level: "ok",
+    mode: "normal",
+    title: null,
+    activity: "waiting for you",
+    activityKind: "waiting",
+    canJump: false,
+    recent: 2,
+  },
+  {
+    key: "s-api",
+    project: "api",
+    path: "~/dev/api",
+    branch: "main",
+    source: "codex",
+    pct: 58,
+    used: 150000,
+    limit: 258000,
+    level: "ok",
+    mode: "auto",
+    title: "add rate-limit middleware",
+    activity: "editing scanner.rs",
+    activityKind: "working",
+    canJump: false,
+    recent: 1,
+  },
+  {
+    key: "s-web",
+    project: "web",
+    path: "~/dev/web",
+    branch: "main",
+    source: "claude",
+    pct: 41,
+    used: 82000,
+    limit: 200000,
+    level: "ok",
+    mode: "plan",
+    title: "polishing the settings pane",
+    activity: "running vitest",
+    activityKind: "working",
+    canJump: true,
+    recent: 3,
+  },
+];
+
+const warnPct = 60;
+
+// grouping mirrors Panel.svelte: Critical -> Permission Request -> Waiting -> Working
+const isCrit = (c: Card) => c.level !== "ok";
+const critCards = sessions.filter(isCrit);
+const needsCards = sessions.filter((c) => !isCrit(c) && !!c.request);
+const waitingCards = sessions.filter(
+  (c) => !isCrit(c) && !c.request && c.activityKind === "waiting",
+);
+const workCards = sessions.filter(
+  (c) => !isCrit(c) && !c.request && c.activityKind !== "waiting",
+);
+
+const groups = [
+  { id: "crit", dot: "attn", name: `Context window warning ! >${warnPct}%`, head: "crit-head", cards: critCards },
+  { id: "perm", dot: "attn", name: "Permission Request", head: "", cards: needsCards },
+  { id: "wait", dot: "wait", name: "Waiting", head: "", cards: waitingCards },
+  { id: "work", dot: "work", name: "Working", head: "", cards: workCards },
+].filter((g) => g.cards.length);
+
+const nSessions = sessions.length;
+const nWaiting = waitingCards.length;
+const sub =
+  nSessions > 1 && nWaiting > 0
+    ? `${nSessions} sessions · ${nWaiting} waiting on you`
+    : `${nSessions} session${nSessions > 1 ? "s" : ""}`;
 ---
 
-<div class="widget" data-widget>
-  <!-- a faux desktop mini-avatar in the corner -->
-  <div class="mini" aria-hidden="true">
-    <div class="mini-hex" data-mini-state="working"><span>a</span></div>
-    <span class="mini-pip" data-pip hidden>1</span>
-  </div>
-
+<div class="panel-shell" data-panel>
   <div class="panel">
     <div class="panel-top">
-      <div class="panel-glyph">a</div>
+      <img class="panel-glyph" src="/tablo-logo-v4.png" alt="" />
       <div class="panel-titles">
         <div class="name">tablo</div>
-        <div class="sub" data-sub>3 sessions · claude + codex</div>
+        <div class="sub">{sub}</div>
       </div>
-      <button class="mini-btn" title="Settings" aria-label="Settings">⋯</button>
+      <div class="panel-actions">
+        <button class="dash-link" title="Open dashboard" type="button" data-dash>
+          dashboard <span class="arr">↗</span>
+        </button>
+      </div>
     </div>
+
+    {
+      nSessions > 1 && (
+        <div class="panel-toolbar">
+          <div class="seg" role="group" aria-label="Sort sessions">
+            <button class="on" type="button" data-sort="context">context</button>
+            <button type="button" data-sort="recent">recent</button>
+          </div>
+          <div class="seg filt" role="group" aria-label="Filter by state">
+            <button class="on" type="button" data-filter="waiting">
+              <span class="fdot wait" />waiting
+            </button>
+            <button class="on" type="button" data-filter="working">
+              <span class="fdot work" />working
+            </button>
+          </div>
+        </div>
+      )
+    }
 
     <div class="panel-body">
-      <!-- Context window warning (pinned top) -->
-      <section class="group" id="g-crit" hidden>
-        <div class="group-head">
-          <span class="group-dot crit"></span>
-          <span class="group-name">Context window · &gt; 60%</span>
-          <span class="group-count" data-count="crit">0</span>
-        </div>
-      </section>
+      {
+        groups.map((g) => (
+          <div class="group" data-group={g.id}>
+            <div class:list={["group-head", g.head]}>
+              <span class:list={["group-dot", g.dot]} />
+              <span class="group-name">{g.name}</span>
+              <span class="group-count">{g.cards.length}</span>
+            </div>
+            {g.cards.map((c) => (
+              <div
+                class:list={["ucard", c.request && "needs", c.level !== "ok" && "crit"]}
+                data-card
+                data-key={c.key}
+                data-pct={c.pct}
+                data-recent={c.recent}
+                data-kind={c.activityKind}
+              >
+                <div class="session-line1">
+                  <span class="session-proj">{c.project}</span>
+                  {c.title && (
+                    <Fragment>
+                      <span class="session-sep">·</span>
+                      <span class="session-title">{c.title}</span>
+                    </Fragment>
+                  )}
+                  <span
+                    class:list={[
+                      "session-pct",
+                      c.level === "warn" && "warn",
+                      c.level === "crit" && "crit",
+                    ]}
+                  >
+                    {pct(c.pct)}
+                  </span>
+                </div>
+                <div class="session-path">
+                  {c.path}
+                  {c.branch ? ` · ${c.branch}` : ""}
+                </div>
 
-      <!-- Permission Request -->
-      <section class="group" id="g-perm" hidden>
-        <div class="group-head">
-          <span class="group-dot crit"></span>
-          <span class="group-name">Permission Request</span>
-          <span class="group-count" data-count="perm">0</span>
-        </div>
-      </section>
+                {c.activity && (
+                  <div class:list={["session-activity", c.activityKind]}>
+                    <span class="act-dot" />
+                    <span class="act-text">{c.activity}</span>
+                  </div>
+                )}
 
-      <!-- Waiting -->
-      <section class="group" id="g-wait" hidden>
-        <div class="group-head">
-          <span class="group-dot sage"></span>
-          <span class="group-name">Waiting</span>
-          <span class="group-count" data-count="wait">0</span>
-        </div>
-      </section>
+                <div class="ctx">
+                  <div class="ctx-track">
+                    <div class:list={["ctx-fill", c.level]} style={`width:${c.pct}%`} />
+                  </div>
+                  <span class="ctx-cap">
+                    {tokens(c.used)} / {tokens(c.limit)}
+                  </span>
+                </div>
 
-      <!-- Working -->
-      <section class="group" id="g-work">
-        <div class="group-head">
-          <span class="group-dot work"></span>
-          <span class="group-name">Working</span>
-          <span class="group-count" data-count="work">3</span>
-        </div>
-      </section>
+                <div class="card-foot">
+                  {c.canJump && (
+                    <button class="jump" title="Focus this session's window" type="button" data-jump>
+                      jump →
+                    </button>
+                  )}
+                  <span class="src-tag">{c.source}</span>
+                  <span class="mode-badge">
+                    mode : <span class:list={["mode-val", c.mode]}>{c.mode}</span>
+                  </span>
+                </div>
 
-      <!-- session rows (JS reparents them between groups) -->
-      <div class="pool" hidden>
-        <!-- S1 optilife (claude) — escalates -->
-        <article class="session" id="s1" data-group="g-work">
-          <div class="line1">
-            <span class="proj">optilife</span>
-            <span class="src">claude</span>
-            <span class="badge run" data-badge>RUN</span>
-            <span class="pct" data-pct>45%</span>
+                {c.request && (
+                  <div class="req">
+                    <div class="req-top">
+                      <span class="session-badge ask">{c.request.tool}</span>
+                      <div class="approval-actions">
+                        <button class="abtn deny" type="button" data-deny={c.key}>Deny</button>
+                        <button class="abtn allow" type="button" data-approve={c.key}>Approve</button>
+                      </div>
+                    </div>
+                    {c.request.detail && <div class="approval-detail">{c.request.detail}</div>}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-          <div class="line2">
-            <span class="dot ok" data-dot></span>
-            <span class="activity" data-activity>running cargo check</span>
-            <span class="mode">mode: plan</span>
-          </div>
-          <div class="ctx">
-            <div class="led"><i class="ok" data-fill style="width:45%"></i></div>
-            <span class="ctx-cap" data-cap>90k / 200k</span>
-            <button class="bkt jump">jump</button>
-          </div>
-          <div class="ask-row" data-ask hidden>
-            <span class="q">Allow <code>rm -rf ./build</code> ?</span>
-            <span class="ask-btns">
-              <button class="bkt approve" data-approve>Approve</button>
-              <button class="bkt deny">Deny</button>
-            </span>
-          </div>
-        </article>
-
-        <!-- S2 api (codex) — steady -->
-        <article class="session" id="s2" data-group="g-work">
-          <div class="line1">
-            <span class="proj">api</span>
-            <span class="src codex">codex</span>
-            <span class="badge run" data-badge>RUN</span>
-            <span class="pct" data-pct>58%</span>
-          </div>
-          <div class="line2">
-            <span class="dot ok" data-dot></span>
-            <span class="activity" data-activity>editing scanner.rs</span>
-            <span class="mode">mode: auto</span>
-          </div>
-          <div class="ctx">
-            <div class="led"><i class="ok" data-fill style="width:58%"></i></div>
-            <span class="ctx-cap" data-cap>150k / 258k</span>
-            <button class="bkt jump">jump</button>
-          </div>
-        </article>
-
-        <!-- S3 tablo (claude) — requests permission -->
-        <article class="session" id="s3" data-group="g-work">
-          <div class="line1">
-            <span class="proj">tablo</span>
-            <span class="src">claude</span>
-            <span class="badge run" data-badge>RUN</span>
-            <span class="pct" data-pct>22%</span>
-          </div>
-          <div class="line2">
-            <span class="dot ok" data-dot></span>
-            <span class="activity" data-activity>editing lib.rs</span>
-            <span class="mode">mode: default</span>
-          </div>
-          <div class="ctx">
-            <div class="led"><i class="ok" data-fill style="width:22%"></i></div>
-            <span class="ctx-cap" data-cap>44k / 200k</span>
-            <button class="bkt jump">jump</button>
-          </div>
-          <div class="ask-row" data-ask hidden>
-            <span class="q">Allow <code>rm -rf ./dist</code> ?</span>
-            <span class="ask-btns">
-              <button class="bkt approve" data-approve>Approve</button>
-              <button class="bkt deny">Deny</button>
-            </span>
-          </div>
-        </article>
+        ))
+      }
+      <div class="filtered-empty" hidden>
+        <div class="huh">Huh ~_~ ?</div>
+        <span>Everything's filtered out.</span>
       </div>
     </div>
-
-    <div class="panel-foot">
-      <button class="dash-btn">
-        Open dashboard <span class="host">localhost:4317</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- toast flies out when a session finishes -->
-  <div class="toast" data-toast hidden>
-    <span class="tdot"></span>
-    <div class="tbody">
-      <b>optilife</b><span>refactor scanner passes</span>
-    </div>
-    <button class="bkt jump">jump</button>
   </div>
 </div>
 
 <style>
-  .widget {
-    position: relative;
-    width: min(360px, 92vw);
-    filter: drop-shadow(0 30px 60px rgba(0, 0, 0, 0.55));
+  /* ---- panel container: sizes to content here (the app fills a window) ---- */
+  .panel-shell {
+    width: min(384px, 94vw);
   }
-
-  .mini {
-    position: absolute;
-    top: -30px;
-    left: -30px;
-    z-index: 4;
-  }
-  .mini-hex {
-    width: 46px;
-    height: 52px;
-    display: grid;
-    place-items: center;
-    font-family: var(--font-mono);
-    font-weight: 700;
-    font-size: 18px;
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    transition:
-      color 0.3s var(--ease),
-      background 0.3s var(--ease),
-      filter 0.3s var(--ease);
-  }
-  .mini-hex[data-mini-state="working"] {
-    color: var(--blue);
-    background: color-mix(in srgb, var(--blue) 55%, var(--border));
-    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--blue) 60%, transparent));
-  }
-  .mini-hex[data-mini-state="alarmed"] {
-    color: var(--coral);
-    background: color-mix(in srgb, var(--coral) 60%, var(--border));
-    filter: drop-shadow(0 0 14px color-mix(in srgb, var(--coral) 75%, transparent));
-  }
-  .mini-pip {
-    position: absolute;
-    top: -6px;
-    right: -8px;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 4px;
-    border-radius: 999px;
-    background: var(--coral);
-    color: #fff;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 700;
-    display: grid;
-    place-items: center;
-    border: 2px solid var(--bg-room);
-  }
-
   .panel {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
@@ -220,24 +283,22 @@
     overflow: hidden;
     text-align: left;
   }
+  /* critical group header — the context-window warning line, red */
+  .crit-head .group-name {
+    color: var(--coral);
+  }
   .panel-top {
     display: flex;
     align-items: center;
     gap: 11px;
-    padding: 15px 16px 13px;
+    padding: 16px 18px 14px;
     border-bottom: 1px solid var(--border-soft);
   }
   .panel-glyph {
-    width: 32px;
     height: 36px;
-    display: grid;
-    place-items: center;
-    font-family: var(--font-mono);
-    font-weight: 700;
-    font-size: 14px;
-    color: var(--blue);
-    background: var(--blue-soft);
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    width: auto; /* keep the logo's own (built-in-background) aspect — no crop */
+    border-radius: 7px;
+    flex: none;
   }
   .panel-titles {
     flex: 1;
@@ -254,171 +315,435 @@
     color: var(--ink-faint);
     margin-top: 1px;
   }
-  .mini-btn {
-    width: 28px;
+  .panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dash-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     height: 28px;
+    padding: 0 11px;
     border-radius: 8px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--ink-dim);
+    border: none;
+    background: var(--ink);
+    color: var(--bg-surface);
     cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    transition: transform 0.15s var(--ease), opacity 0.2s var(--ease);
+  }
+  .dash-link:hover {
+    transform: translateY(-1px);
+    opacity: 0.92;
+  }
+  .dash-link .arr {
+    font-size: 12.5px;
+    line-height: 1;
+  }
+
+  .panel-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 18px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-inset);
+  }
+  .seg {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+  }
+  .seg button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 4px 9px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
+  }
+  .seg button:hover {
+    color: var(--ink-dim);
+  }
+  .seg button.on {
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
+  /* state filters: neutral "on" highlight (the colored LED carries the meaning) */
+  .seg.filt button.on {
+    background: var(--bg-raised);
+    color: var(--ink);
+  }
+  .fdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    background: var(--ink-faint);
+    transition: background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  }
+  .seg.filt button.on .fdot.wait {
+    background: var(--sage);
+    box-shadow: 0 0 6px var(--sage);
+  }
+  .seg.filt button.on .fdot.work {
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
   }
 
   .panel-body {
-    padding: 4px 12px 12px;
+    padding: 6px 12px 12px;
   }
+
   .group-head {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 13px 6px 7px;
+    padding: 14px 6px 8px;
   }
   .group-dot {
     width: 7px;
     height: 7px;
     border-radius: 999px;
   }
-  .group-dot.crit {
+  .group-dot.attn {
     background: var(--coral);
     box-shadow: 0 0 8px var(--coral);
   }
   .group-dot.work {
-    background: var(--blue);
-    box-shadow: 0 0 8px var(--blue);
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
   }
-  .group-dot.sage {
+  .group-dot.wait {
     background: var(--sage);
     box-shadow: 0 0 8px var(--sage);
   }
   .group-name {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-dim);
   }
   .group-count {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: 11px;
     color: var(--ink-faint);
     margin-left: auto;
   }
 
-  .session {
+  .ucard {
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    padding: 11px;
+    gap: 11px;
+    padding: 15px 14px;
     border-radius: var(--r-md);
     background: var(--bg-raised);
     border: 1px solid var(--border-soft);
-    margin-bottom: 7px;
+    margin-bottom: 10px;
+    transition: border-color 0.2s var(--ease);
   }
-  .session.needs {
-    border-color: color-mix(in srgb, var(--coral) 40%, var(--border-soft));
+  .ucard:hover {
+    border-color: var(--border);
   }
-  .line1 {
+  /* a session with pending approvals, or past the context warn line — coral card */
+  .ucard.needs,
+  .ucard.crit {
+    background: color-mix(in srgb, var(--coral) 8%, var(--bg-raised));
+    border-color: color-mix(in srgb, var(--coral) 42%, var(--border-soft));
+  }
+  /* one pending request inside a session card, divided from what's above */
+  .req {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-top: 9px;
+    border-top: 1px solid color-mix(in srgb, var(--coral) 18%, var(--border-soft));
+  }
+  .req-top {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
   }
-  .proj {
-    font-size: 13.5px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
-  .src {
+  .approval-detail {
     font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    padding: 2px 6px;
-    border-radius: 5px;
+    font-size: 11px;
     color: var(--ink-dim);
     background: var(--bg-inset);
     border: 1px solid var(--border-soft);
+    border-radius: var(--r-sm);
+    padding: 7px 9px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 84px;
+    overflow-y: auto;
   }
-  .badge {
+  .approval-actions {
+    display: flex;
+    gap: 7px;
+    margin-left: auto;
+  }
+  /* .abtn (not .act) — .act is a GLOBAL section class on this site (min-height:
+     100dvh), which would balloon these buttons; renamed to avoid the collision */
+  .abtn {
+    padding: 6px 14px;
+    border-radius: var(--r-sm);
+    font-family: var(--font-round);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: transform 0.12s var(--ease), opacity 0.2s var(--ease);
+  }
+  .abtn:hover {
+    transform: translateY(-1px);
+  }
+  .abtn.deny {
+    background: transparent;
+    border-color: color-mix(in srgb, var(--coral) 45%, var(--border));
+    color: var(--coral);
+  }
+  .abtn.allow {
+    background: var(--sage);
+    color: var(--bg-surface);
+  }
+
+  .session-line1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .session-proj {
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-sep {
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+  /* agent source tag (e.g. codex) — neutral so it never reads as a state color */
+  .src-tag {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--bg-inset);
+    color: var(--ink-faint);
+    border: 1px solid var(--border-soft);
+  }
+  /* aiTitle — grows to fill, ellipsizes, so RUN + % stay pinned right */
+  .session-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-badge {
     font-family: var(--font-mono);
     font-size: 9.5px;
     font-weight: 600;
     padding: 2px 6px;
     border-radius: 5px;
     letter-spacing: 0.03em;
+    white-space: nowrap;
   }
-  .badge.run {
-    background: var(--sage-soft);
-    color: var(--sage);
-  }
-  .badge.ask {
+  .session-badge.ask {
     background: var(--coral-soft);
     color: var(--coral);
   }
-  .badge.wait {
-    background: var(--sage-soft);
-    color: var(--sage);
-  }
-  .pct {
+  .session-pct {
     margin-left: auto;
     font-family: var(--font-mono);
     font-size: 12px;
     font-weight: 600;
     color: var(--ink-dim);
   }
-  .pct.warn {
-    color: var(--blue);
-    text-shadow: var(--glow-blue);
+  .session-pct.warn {
+    color: var(--amber);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--amber) 55%, transparent);
   }
-  .pct.crit {
+  .session-pct.crit {
     color: var(--coral);
-    text-shadow: var(--glow-coral);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--coral) 55%, transparent);
   }
-
-  .line2 {
+  /* card footer: jump pinned left, read-only mode badge pinned right */
+  .card-foot {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
+  }
+  /* source tag + mode badge sit together, pinned to the right end (even when the
+     jump button is absent) — the tag leads, the mode display follows */
+  .card-foot .src-tag {
+    margin-left: auto;
+  }
+  .mode-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .mode-val {
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .mode-val.auto {
+    color: var(--amber);
+  }
+  .mode-val.plan {
+    color: var(--sage);
+  }
+  .mode-val.bypass {
+    color: var(--coral);
+  }
+  .jump {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--amber);
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in srgb, var(--amber) 32%, transparent);
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color 0.15s var(--ease),
+      transform 0.12s var(--ease);
+  }
+  .jump:hover {
+    transform: translateY(-1px);
+    background: color-mix(in srgb, var(--amber) 24%, var(--amber-soft));
+  }
+
+  .session-path {
     font-family: var(--font-mono);
     font-size: 10.5px;
     color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: -2px;
   }
-  .dot {
+
+  /* live activity preview (window-render) */
+  .session-activity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 3px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  /* LED status dot, colored per kind (no glyph/emoji) */
+  .session-activity .act-dot {
+    flex-shrink: 0;
     width: 6px;
     height: 6px;
     border-radius: 999px;
-    flex-shrink: 0;
-  }
-  .dot.ok {
-    background: var(--sage);
-    box-shadow: 0 0 6px var(--sage);
-  }
-  .dot.warn {
-    background: var(--blue);
-    box-shadow: 0 0 6px var(--blue);
-  }
-  .dot.wait {
     background: var(--ink-faint);
   }
-  .activity {
+  .session-activity .act-text {
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
   }
-  .mode {
-    margin-left: auto;
-    opacity: 0.7;
+  /* working: amber dot, gently pulsing so it reads as live */
+  .session-activity.working {
+    color: var(--ink);
+  }
+  .session-activity.working .act-dot {
+    background: var(--amber);
+    box-shadow: 0 0 7px var(--amber);
+    animation: act-pulse 1.6s var(--ease) infinite;
+  }
+  /* waiting for you: calm sage dot */
+  .session-activity.waiting .act-dot {
+    background: var(--sage);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--sage) 70%, transparent);
+  }
+  .session-activity.thinking .act-dot {
+    background: var(--ink-faint);
+  }
+  @keyframes act-pulse {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+    50% {
+      opacity: 1;
+    }
   }
 
   .ctx {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
   }
-  .ctx .led {
+  .ctx-track {
     flex: 1;
     height: 8px;
+    border-radius: 3px;
+    background: var(--bg-inset);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background-image: repeating-linear-gradient(
+      90deg,
+      transparent 0 5px,
+      color-mix(in srgb, var(--bg-surface) 75%, black) 5px 6px
+    );
+  }
+  .ctx-fill {
+    height: 100%;
+    transition: width 0.5s var(--ease), background-color 0.4s var(--ease);
+    background-image: repeating-linear-gradient(90deg, transparent 0 5px, rgba(0, 0, 0, 0.25) 5px 6px);
+  }
+  .ctx-fill.ok {
+    background-color: var(--sage);
+    box-shadow: 0 0 8px -1px var(--sage);
+  }
+  .ctx-fill.warn {
+    background-color: var(--amber);
+    box-shadow: 0 0 9px -1px var(--amber);
+  }
+  .ctx-fill.crit {
+    background-color: var(--coral);
+    box-shadow: 0 0 9px -1px var(--coral);
   }
   .ctx-cap {
     font-family: var(--font-mono);
@@ -426,305 +751,172 @@
     color: var(--ink-faint);
     white-space: nowrap;
   }
-  .jump {
-    padding: 3px 7px;
-    font-size: 9.5px;
-  }
 
-  .ask-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 9px;
-    background: var(--coral-soft);
-    border-radius: var(--r-sm);
-    flex-wrap: wrap;
-  }
-  .ask-row .q {
-    font-size: 11px;
-    color: var(--ink-dim);
-    flex: 1;
-  }
-  .ask-row .q code {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--coral);
-    font-weight: 600;
-  }
-  .ask-btns {
-    display: flex;
-    gap: 4px;
-  }
-  .approve {
-    color: var(--sage);
-  }
-  .approve.flash {
-    background: color-mix(in srgb, var(--sage) 25%, transparent);
-    color: var(--sage);
-  }
-  .deny {
-    color: var(--coral);
-  }
-
-  .panel-foot {
-    padding: 11px 12px;
-    border-top: 1px solid var(--border-soft);
-    background: var(--bg-inset);
-  }
-  .dash-btn {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 9px;
-    padding: 10px;
-    border-radius: var(--r-md);
-    background: var(--ink);
-    color: var(--bg-surface);
-    border: none;
-    cursor: pointer;
-    font-family: var(--font-round);
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .dash-btn .host {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    opacity: 0.6;
-  }
-
-  .toast {
-    position: absolute;
-    right: -14px;
-    bottom: 40px;
-    z-index: 6;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--bg-raised);
-    border: 1px solid var(--border);
-    border-left: 2px solid var(--sage);
-    border-radius: var(--r-md);
-    box-shadow: var(--shadow-panel);
-    animation: toast-in 0.4s var(--ease-back);
-  }
-  .toast .tdot {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background: var(--sage);
-    box-shadow: 0 0 8px var(--sage);
-  }
-  .toast .tbody {
+  /* shown when both state filters are off (mirrors the app placeholder) */
+  .filtered-empty {
     display: flex;
     flex-direction: column;
-    line-height: 1.3;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+    padding: 44px 20px;
   }
-  .toast .tbody b {
-    font-size: 12.5px;
-  }
-  .toast .tbody span {
+  .filtered-empty .huh {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--ink-dim);
+  }
+  .filtered-empty span {
+    font-family: var(--font-mono);
+    font-size: 11px;
     color: var(--ink-faint);
   }
-  @keyframes toast-in {
-    from {
-      opacity: 0;
-      transform: translateX(24px) scale(0.9);
-    }
-    to {
-      opacity: 1;
-      transform: none;
+
+  /* pressed feedback for jump / dashboard (no OS window to open on the web) */
+  .jump:active,
+  .dash-link:active {
+    transform: translateY(0) scale(0.96);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .session-activity.working .act-dot {
+      animation: none;
     }
   }
 </style>
 
 <script>
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  function initWidget(root: HTMLElement) {
+  // Progressive enhancement: the panel renders statically (SSR), and this
+  // controller makes every button live — sort reorders, filters hide/show the
+  // Waiting/Working groups, Approve/Deny resolves a request and re-groups its
+  // card. Operates on the SSR DOM so it degrades to a static panel without JS.
+  function initPanel(root: HTMLElement) {
     if (root.dataset.ready) return;
     root.dataset.ready = "1";
-    const $ = <T extends Element = HTMLElement>(s: string, r: Element = root) =>
-      r.querySelector(s) as unknown as T;
-    const groups = {
-      crit: $("#g-crit"),
-      perm: $("#g-perm"),
-      wait: $("#g-wait"),
-      work: $("#g-work"),
-    } as Record<string, HTMLElement>;
-    const rows = {
-      s1: $("#s1"),
-      s2: $("#s2"),
-      s3: $("#s3"),
-    } as Record<string, HTMLElement>;
-    const mini = $(".mini-hex") as HTMLElement;
-    const pip = $("[data-pip]") as HTMLElement;
-    const toast = $("[data-toast]") as HTMLElement;
-    const glass = document.querySelector(".glass") as HTMLElement | null;
 
-    function setLamp(c: string) {
-      if (glass) glass.style.setProperty("--lamp", `var(--${c})`);
-    }
-    function place(rowId: string, groupId: string) {
-      groups[groupId].appendChild(rows[rowId]);
-    }
-    function bar(rowId: string, pct: number, cls: string) {
-      const row = rows[rowId];
-      (row.querySelector("[data-fill]") as HTMLElement).style.width = pct + "%";
-      (row.querySelector("[data-fill]") as HTMLElement).className = cls;
-      const pctEl = row.querySelector("[data-pct]") as HTMLElement;
-      pctEl.textContent = pct + "%";
-      pctEl.className = "pct" + (cls === "crit" ? " crit" : cls === "warn" ? " warn" : "");
-    }
-    function activity(rowId: string, text: string, dotCls: string) {
-      (rows[rowId].querySelector("[data-activity]") as HTMLElement).textContent = text;
-      (rows[rowId].querySelector("[data-dot]") as HTMLElement).className = "dot " + dotCls;
-    }
-    function badge(rowId: string, text: string, cls: string) {
-      const b = rows[rowId].querySelector("[data-badge]") as HTMLElement;
-      b.textContent = text;
-      b.className = "badge " + cls;
-    }
-    function refreshGroups() {
-      for (const g of Object.values(groups)) {
-        const has = g.querySelector(".session");
-        g.hidden = !has;
-        const cnt = g.querySelector("[data-count]") as HTMLElement | null;
-        if (cnt) cnt.textContent = String(g.querySelectorAll(".session").length);
-      }
-    }
+    const GROUPS = ["crit", "perm", "wait", "work"] as const;
+    const groupEls: Record<string, HTMLElement> = {};
+    const countEls: Record<string, HTMLElement> = {};
+    root.querySelectorAll<HTMLElement>("[data-group]").forEach((g) => {
+      const id = g.dataset.group!;
+      groupEls[id] = g;
+      countEls[id] = g.querySelector(".group-count") as HTMLElement;
+    });
 
-    let timers: number[] = [];
-    const at = (ms: number, fn: () => void) =>
-      timers.push(window.setTimeout(fn, ms));
-
-    function reset() {
-      timers.forEach(clearTimeout);
-      timers = [];
-      place("s1", "work");
-      place("s2", "work");
-      place("s3", "work");
-      bar("s1", 45, "ok");
-      bar("s2", 58, "ok");
-      bar("s3", 22, "ok");
-      badge("s1", "RUN", "run");
-      badge("s2", "RUN", "run");
-      badge("s3", "RUN", "run");
-      activity("s1", "running cargo check", "ok");
-      activity("s2", "editing scanner.rs", "ok");
-      activity("s3", "editing lib.rs", "ok");
-      rows.s1.classList.remove("needs");
-      rows.s3.classList.remove("needs");
-      ($("[data-ask]", rows.s3) as HTMLElement).hidden = true;
-      mini.dataset.miniState = "working";
-      pip.hidden = true;
-      toast.hidden = true;
-      setLamp("blue");
-      refreshGroups();
-    }
-
-    function run() {
-      reset();
-      // climb
-      at(1400, () => {
-        bar("s1", 55, "ok");
-        bar("s2", 66, "warn");
-        bar("s3", 30, "ok");
-        activity("s2", "running cargo test", "warn");
-      });
-      // permission request from s3
-      at(3200, () => {
-        badge("s3", "ASK", "ask");
-        rows.s3.classList.add("needs");
-        activity("s3", "wants to run a command", "warn");
-        ($("[data-ask]", rows.s3) as HTMLElement).hidden = false;
-        place("s3", "perm");
-        mini.dataset.miniState = "alarmed";
-        pip.hidden = false;
-        setLamp("coral");
-        refreshGroups();
-      });
-      // approve
-      at(5600, () => {
-        ($(".approve", rows.s3) as HTMLElement).classList.add("flash");
-      });
-      at(6100, () => {
-        ($("[data-ask]", rows.s3) as HTMLElement).hidden = true;
-        ($(".approve", rows.s3) as HTMLElement).classList.remove("flash");
-        badge("s3", "RUN", "run");
-        rows.s3.classList.remove("needs");
-        activity("s3", "editing lib.rs", "ok");
-        place("s3", "work");
-        mini.dataset.miniState = "working";
-        pip.hidden = true;
-        setLamp("blue");
-        refreshGroups();
-      });
-      // s1 crosses the warning line -> critical
-      at(7600, () => {
-        bar("s1", 64, "crit");
-        activity("s1", "compacting context", "warn");
-        place("s1", "crit");
-        mini.dataset.miniState = "alarmed";
-        setLamp("coral");
-        refreshGroups();
-      });
-      // s1 finishes -> waiting + toast
-      at(10200, () => {
-        bar("s1", 61, "crit");
-        badge("s1", "WAIT", "wait");
-        activity("s1", "waiting for you", "wait");
-        place("s1", "wait");
-        mini.dataset.miniState = "working";
-        toast.hidden = false;
-        setLamp("blue");
-        refreshGroups();
-      });
-      // loop
-      at(14000, run);
-    }
-
-    if (reduce) {
-      // static representative frame: permission visible, one warning
-      reset();
-      bar("s1", 64, "crit");
-      badge("s3", "ASK", "ask");
-      rows.s3.classList.add("needs");
-      ($("[data-ask]", rows.s3) as HTMLElement).hidden = false;
-      place("s1", "crit");
-      place("s3", "perm");
-      mini.dataset.miniState = "alarmed";
-      pip.hidden = false;
-      setLamp("coral");
-      refreshGroups();
-      return;
-    }
-
-    // populate immediately so the panel never flashes empty
-    reset();
-
-    // start the loop when scrolled into view
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) {
-            run();
-            io.disconnect();
-          }
-        }
-      },
-      { threshold: 0.35 },
+    type C = { el: HTMLElement; pct: number; recent: number; group: string };
+    const cards: C[] = Array.from(root.querySelectorAll<HTMLElement>("[data-card]")).map(
+      (el) => ({
+        el,
+        pct: Number(el.dataset.pct),
+        recent: Number(el.dataset.recent),
+        group: (el.closest("[data-group]") as HTMLElement).dataset.group!,
+      }),
     );
-    io.observe(root);
+
+    let sort: "context" | "recent" = "context";
+    let showWaiting = true;
+    let showWorking = true;
+
+    const sortBtns = Array.from(root.querySelectorAll<HTMLElement>("[data-sort]"));
+    const filterBtns = Array.from(root.querySelectorAll<HTMLElement>("[data-filter]"));
+    const filteredEmpty = root.querySelector<HTMLElement>(".filtered-empty");
+
+    function apply() {
+      const cmp =
+        sort === "context"
+          ? (a: C, b: C) => b.pct - a.pct
+          : (a: C, b: C) => b.recent - a.recent;
+
+      let visible = 0;
+      for (const gid of GROUPS) {
+        const gEl = groupEls[gid];
+        if (!gEl) continue;
+        const gcards = cards.filter((c) => c.group === gid).sort(cmp);
+        // appendChild moves the node — reorders within, and relocates on approve
+        gcards.forEach((c) => gEl.appendChild(c.el));
+        if (countEls[gid]) countEls[gid].textContent = String(gcards.length);
+        let hidden = gcards.length === 0;
+        if (gid === "wait" && !showWaiting) hidden = true;
+        if (gid === "work" && !showWorking) hidden = true;
+        gEl.hidden = hidden;
+        if (!hidden) visible += gcards.length;
+      }
+
+      sortBtns.forEach((b) => b.classList.toggle("on", b.dataset.sort === sort));
+      filterBtns.forEach((b) =>
+        b.classList.toggle(
+          "on",
+          b.dataset.filter === "waiting" ? showWaiting : showWorking,
+        ),
+      );
+      if (filteredEmpty) filteredEmpty.hidden = visible > 0;
+    }
+
+    sortBtns.forEach((b) =>
+      b.addEventListener("click", () => {
+        sort = b.dataset.sort as "context" | "recent";
+        apply();
+      }),
+    );
+    filterBtns.forEach((b) =>
+      b.addEventListener("click", () => {
+        if (b.dataset.filter === "waiting") showWaiting = !showWaiting;
+        else showWorking = !showWorking;
+        apply();
+      }),
+    );
+
+    // Approve / Deny: drop the request, un-tint the card, move it to Working.
+    function resolve(key: string, decision: "allow" | "deny") {
+      const c = cards.find((x) => x.el.dataset.key === key);
+      if (!c) return;
+      c.el.querySelector(".req")?.remove();
+      c.el.classList.remove("needs", "crit");
+      const act = c.el.querySelector<HTMLElement>(".session-activity");
+      if (act) {
+        act.className = "session-activity working";
+        const t = act.querySelector<HTMLElement>(".act-text");
+        if (t) t.textContent = decision === "allow" ? "running the command" : "command denied";
+      }
+      c.group = "work";
+      c.el.dataset.kind = "working";
+      apply();
+    }
+    root.querySelectorAll<HTMLElement>("[data-approve]").forEach((b) =>
+      b.addEventListener("click", () => resolve(b.dataset.approve!, "allow")),
+    );
+    root.querySelectorAll<HTMLElement>("[data-deny]").forEach((b) =>
+      b.addEventListener("click", () => resolve(b.dataset.deny!, "deny")),
+    );
+
+    // jump / dashboard have no OS target on the web — swap the leading text node
+    // briefly so the click still gets an honest, visible acknowledgement.
+    function pressLead(btn: HTMLElement, label: string) {
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = "1";
+      const node = btn.firstChild as Text; // leading text, keeps any child span
+      const orig = node.textContent ?? "";
+      node.textContent = `${label} `;
+      (btn as HTMLButtonElement).disabled = true;
+      setTimeout(() => {
+        node.textContent = orig;
+        (btn as HTMLButtonElement).disabled = false;
+        delete btn.dataset.busy;
+      }, 850);
+    }
+    root
+      .querySelectorAll<HTMLElement>("[data-jump]")
+      .forEach((b) => b.addEventListener("click", () => pressLead(b, "focusing…")));
+    const dash = root.querySelector<HTMLElement>("[data-dash]");
+    if (dash) dash.addEventListener("click", () => pressLead(dash, "opening…"));
+
+    apply();
   }
 
   function boot() {
-    document
-      .querySelectorAll<HTMLElement>("[data-widget]")
-      .forEach(initWidget);
+    document.querySelectorAll<HTMLElement>("[data-panel]").forEach(initPanel);
   }
   boot();
   document.addEventListener("astro:page-load", boot);
