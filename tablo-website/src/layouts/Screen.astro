@@ -1,0 +1,91 @@
+---
+import "../styles/tokens.css";
+import "../styles/global.css";
+import "../styles/crt.css";
+import { ClientRouter } from "astro:transitions";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const {
+  title = "tablo — a tiny cat that watches your coding agents",
+  description = "tablo is a tiny floating cat that watches your Claude Code and OpenAI Codex agents from a corner of your screen. Live context meters, permission approvals, one cat.",
+} = Astro.props;
+const site = Astro.site?.href ?? "https://tablo.dev/";
+---
+
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#14110e" />
+
+    <!-- open graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={`${site}tablo-logo-v4.png`} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={`${site}tablo-logo-v4.png`} />
+
+    <ClientRouter />
+  </head>
+  <body>
+    <div class="bezel">
+      <div class="glass">
+        <slot />
+      </div>
+    </div>
+
+    <!-- CRT layer (fixed, above content, pointer-events:none) -->
+    <div class="crt-overlay" aria-hidden="true"></div>
+    <div class="crt-beam" aria-hidden="true"></div>
+    <div class="crt-grain" aria-hidden="true"></div>
+    <div class="crt-power" aria-hidden="true"><i></i>pwr</div>
+
+    <!-- block cursor (populated by script on hover-capable devices) -->
+    <div id="cursor" class="cursor" aria-hidden="true" hidden></div>
+    <div id="cursor-trail" class="cursor-trail" aria-hidden="true" hidden></div>
+
+    <script>
+      // ---- custom block cursor + phosphor trail (desktop only) ----
+      const fine = window.matchMedia("(hover: hover) and (pointer: fine)");
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+      if (fine.matches && !reduce.matches) {
+        const cur = document.getElementById("cursor")!;
+        const trail = document.getElementById("cursor-trail")!;
+        cur.hidden = false;
+        trail.hidden = false;
+        document.body.classList.add("has-cursor");
+        let x = innerWidth / 2,
+          y = innerHeight / 2,
+          tx = x,
+          ty = y;
+        addEventListener("pointermove", (e) => {
+          x = e.clientX;
+          y = e.clientY;
+          cur.style.transform = `translate(${x - 5}px, ${y - 8}px)`;
+        });
+        addEventListener("pointerdown", () => cur.classList.add("tap"));
+        addEventListener("pointerup", () => cur.classList.remove("tap"));
+        const raf = () => {
+          tx += (x - tx) * 0.18;
+          ty += (y - ty) * 0.18;
+          trail.style.transform = `translate(${tx - 5}px, ${ty - 8}px)`;
+          requestAnimationFrame(raf);
+        };
+        raf();
+      }
+    </script>
+  </body>
+</html>

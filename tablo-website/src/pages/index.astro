@@ -1,0 +1,755 @@
+---
+import Screen from "../layouts/Screen.astro";
+import Cat from "../components/Cat.astro";
+import LiveWidget from "../components/LiveWidget.astro";
+import InstallDeck from "../components/InstallDeck.astro";
+
+const marqueeItems = [
+  "claude·optilife 64%",
+  "codex·api 71%",
+  "claude·tablo 23%",
+  "3 sessions · 1 waiting · 1 approval",
+];
+---
+
+<Screen>
+  <!-- ===== marquee ticker (fixed top) ===== -->
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee-track" data-marquee>
+      {
+        [0, 1].map(() => (
+          <span class="marquee-run">
+            {marqueeItems.map((m) => (
+              <span class="mq">
+                {m}
+                <b>▮</b>
+              </span>
+            ))}
+          </span>
+        ))
+      }
+    </div>
+  </div>
+
+  <!-- ===== the LED scrollbar ===== -->
+  <div class="scroll-led" aria-hidden="true"><i data-scroll-fill></i></div>
+
+  <!-- ===== Act 0 — COLD BOOT ===== -->
+  <div id="boot" data-boot>
+    <pre class="boot-log mono" data-boot-log></pre>
+    <button class="bkt boot-skip" data-boot-skip>skip</button>
+    <div class="boot-flash" data-boot-flash></div>
+  </div>
+
+  <!-- ===== Act 1 — THE FAMILIAR ===== -->
+  <section class="act hero" data-act data-lamp="sage">
+    <span class="act-num">tablo · familiar daemon</span>
+    <h1 class="wordmark phosphor">tablo</h1>
+    <div class="hero-cat">
+      <Cat reactive size={190} label="pixel cat, asleep" class="cat-hero" />
+    </div>
+    <p class="tagline mono">
+      a tiny cat that watches your coding agents<span class="caret">▮</span>
+    </p>
+    <p class="subtag mono">
+      <span class="src">claude code</span> + <span class="src">codex</span> · one
+      cat · your corner
+    </p>
+    <a class="scroll-hint mono bkt" href="#watch">scroll ↓</a>
+  </section>
+
+  <!-- ===== Act 2 — IT WATCHES ===== -->
+  <section class="act watch" id="watch" data-act data-lamp="amber">
+    <span class="act-num">01 · what it does</span>
+    <h2 class="act-title" data-typeon>it watches, so you don't have to</h2>
+
+    <div class="watch-cat">
+      <Cat
+        state="working"
+        size={130}
+        label="pixel cat, trotting"
+        class="cat-watch"
+      />
+    </div>
+
+    <div class="chips" data-chips>
+      <div class="chip" data-chip="sage">
+        <span class="chip-dot ok"></span>
+        <div class="chip-body">
+          <b>idle</b>
+          <span>curled up. nothing running.</span>
+          <div class="led"><i class="ok" style="width:22%"></i></div>
+        </div>
+      </div>
+      <div class="chip" data-chip="amber">
+        <span class="chip-dot warn"></span>
+        <div class="chip-body">
+          <b>working</b>
+          <span>agents on the move. it counts them.</span>
+          <div class="led"><i class="warn" style="width:64%"></i></div>
+        </div>
+      </div>
+      <div class="chip" data-chip="coral">
+        <span class="chip-dot crit"></span>
+        <div class="chip-body">
+          <b>alarmed</b>
+          <span>context past 60%, or something needs you.</span>
+          <div class="led"><i class="crit" style="width:88%"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- coda: one cat, two agents -->
+    <div class="coda">
+      <span class="coda-tags">
+        <span class="src">claude</span><span class="src">codex</span>
+      </span>
+      <span class="coda-line mono">one cat. both agents. same corner.</span>
+    </div>
+  </section>
+
+  <!-- ===== Act 3 — LIVE WIDGET ===== -->
+  <section class="act live" data-act data-lamp="amber">
+    <span class="act-num">02 · the whole thing, live</span>
+    <h2 class="act-title" data-typeon>every session, in real time</h2>
+    <p class="act-sub">
+      tap the cat — context, live activity, and approvals; claude and codex side
+      by side. gate a tool call behind a tap: approve, or deny.
+    </p>
+    <div class="live-stage">
+      <LiveWidget />
+    </div>
+  </section>
+
+  <!-- ===== Act 4 — GET IT ===== -->
+  <section class="act install" data-act data-lamp="amber">
+    <span class="act-num">03 · put it on your desk</span>
+    <h2 class="act-title" data-typeon>one line. no gatekeeper dance.</h2>
+    <div class="install-stage">
+      <InstallDeck />
+    </div>
+  </section>
+
+  <!-- ===== Act 5 — SIGN-OFF ===== -->
+  <section class="act signoff" data-act data-lamp="sage">
+    <div class="signoff-cat">
+      <Cat
+        state="idle"
+        size={150}
+        label="pixel cat, asleep"
+        class="cat-signoff"
+      />
+    </div>
+    <p class="signoff-line">made in a dark room.</p>
+    <nav class="signoff-nav mono">
+      <span class="wm">tablo</span>
+      <span class="sep">·</span>
+      <a
+        class="bkt"
+        href="https://github.com/aristocrat71/tablo"
+        target="_blank"
+        rel="noopener">github</a
+      >
+      <span class="sep">·</span>
+      <span>MIT</span>
+      <span class="sep">·</span>
+      <button class="bkt" data-crt-toggle>crt: on</button>
+      <span class="sep">·</span>
+      <a class="bkt" href="#" data-reboot>^ reboot</a>
+    </nav>
+  </section>
+</Screen>
+
+<style>
+  /* ===== marquee ===== */
+  .marquee {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: var(--z-marquee);
+    overflow: hidden;
+    background: color-mix(in srgb, var(--bg-inset) 88%, transparent);
+    border-bottom: 1px solid var(--border-soft);
+    backdrop-filter: blur(4px);
+  }
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee 34s linear infinite;
+  }
+  .marquee-run {
+    display: flex;
+    flex-shrink: 0;
+  }
+  .mq {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-xs);
+    color: var(--ink-dim);
+    padding: 7px 18px;
+    white-space: nowrap;
+    letter-spacing: 0.04em;
+  }
+  .mq b {
+    color: var(--amber);
+    margin-left: 18px;
+    opacity: 0.7;
+  }
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* ===== hero ===== */
+  .hero {
+    gap: 2px;
+  }
+  .wordmark {
+    font-family: var(--font-round);
+    font-weight: 700;
+    font-size: var(--fs-display);
+    letter-spacing: -0.04em;
+    color: var(--amber);
+    line-height: 0.9;
+    position: relative;
+    z-index: 1;
+  }
+  .wordmark::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      transparent 45%,
+      rgba(243, 232, 220, 0.35) 50%,
+      transparent 55%
+    );
+    background-size: 100% 300%;
+    mix-blend-mode: overlay;
+    animation: sweep 1.4s var(--ease) 0.2s 1;
+    pointer-events: none;
+  }
+  @keyframes sweep {
+    from {
+      background-position: 0 -100%;
+    }
+    to {
+      background-position: 0 200%;
+    }
+  }
+  .hero-cat {
+    margin-top: -18px;
+    z-index: var(--z-cat);
+  }
+  .tagline {
+    font-size: var(--fs-lead);
+    color: var(--ink);
+    margin-top: 6px;
+  }
+  .caret {
+    color: var(--amber);
+    animation: blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  .subtag {
+    font-size: var(--fs-mono-xs);
+    color: var(--ink-faint);
+    margin-top: 12px;
+    letter-spacing: 0.05em;
+  }
+  .subtag .src {
+    color: var(--ink-dim);
+  }
+  .scroll-hint {
+    margin-top: 34px;
+    font-size: var(--fs-mono-xs);
+    opacity: 0.7;
+  }
+
+  /* shared source-tag pill */
+  .src {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  /* ===== watch ===== */
+  .watch-cat {
+    margin: 24px 0 8px;
+  }
+  .chips {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 900px;
+    margin-top: 8px;
+  }
+  .chip {
+    flex: 1 1 240px;
+    max-width: 280px;
+    display: flex;
+    gap: 12px;
+    text-align: left;
+    padding: 16px;
+    border-radius: var(--r-md);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+      opacity 0.5s var(--ease),
+      transform 0.5s var(--ease-back),
+      border-color 0.4s var(--ease);
+  }
+  .chip.in {
+    opacity: 1;
+    transform: none;
+  }
+  .chip.hot[data-chip="sage"] {
+    border-color: color-mix(in srgb, var(--sage) 55%, var(--border));
+  }
+  .chip.hot[data-chip="amber"] {
+    border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  }
+  .chip.hot[data-chip="coral"] {
+    border-color: color-mix(in srgb, var(--coral) 55%, var(--border));
+  }
+  .chip-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    margin-top: 5px;
+    flex-shrink: 0;
+  }
+  .chip-dot.ok {
+    background: var(--sage);
+    box-shadow: 0 0 8px var(--sage);
+  }
+  .chip-dot.warn {
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+  }
+  .chip-dot.crit {
+    background: var(--coral);
+    box-shadow: 0 0 8px var(--coral);
+  }
+  .chip-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+  }
+  .chip-body b {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+  }
+  .chip-body span {
+    font-size: 12.5px;
+    color: var(--ink-dim);
+    line-height: 1.4;
+  }
+  .chip-body .led {
+    margin-top: 4px;
+  }
+
+  .coda {
+    margin-top: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .coda-tags {
+    display: flex;
+    gap: 10px;
+  }
+  .coda-tags .src {
+    padding: 5px 12px;
+    border-radius: var(--r-sm);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-soft);
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+  .coda-line {
+    font-size: var(--fs-mono);
+    color: var(--ink-faint);
+  }
+
+  /* ===== live ===== */
+  .live-stage {
+    margin-top: 36px;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* ===== install ===== */
+  .install-stage {
+    margin-top: 32px;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+
+  /* ===== signoff ===== */
+  .signoff {
+    gap: 8px;
+  }
+  .signoff-line {
+    font-family: var(--font-round);
+    font-size: var(--fs-lead);
+    color: var(--ink-dim);
+    margin-top: 8px;
+  }
+  .signoff-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 12px;
+    font-size: var(--fs-mono);
+    color: var(--ink-faint);
+  }
+  .signoff-nav .wm {
+    color: var(--amber);
+    font-weight: 700;
+    font-family: var(--font-round);
+  }
+  .signoff-nav .sep {
+    opacity: 0.4;
+  }
+
+  /* ===== boot overlay ===== */
+  #boot {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-boot);
+    background: #0a0806;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.5s var(--ease);
+  }
+  #boot.done {
+    opacity: 0;
+    pointer-events: none;
+  }
+  #boot.hidden {
+    display: none;
+  }
+  /* no-JS safety: never trap visitors behind the boot overlay */
+  @media (scripting: none) {
+    #boot {
+      display: none;
+    }
+  }
+  .boot-log {
+    font-family: var(--font-mono);
+    font-size: clamp(11px, 2.6vw, 14px);
+    color: var(--amber);
+    text-shadow: var(--glow-amber);
+    line-height: 1.7;
+    white-space: pre;
+    max-width: 90vw;
+  }
+  .boot-skip {
+    position: fixed;
+    right: 20px;
+    bottom: 18px;
+    font-size: var(--fs-mono-xs);
+  }
+  .boot-flash {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 2px;
+    background: #fff;
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  .boot-flash.go {
+    animation: poweron 0.5s var(--ease) forwards;
+  }
+  @keyframes poweron {
+    0% {
+      transform: scaleY(0.5) scaleX(1);
+      opacity: 1;
+      box-shadow: 0 0 40px 8px #fff;
+    }
+    40% {
+      transform: scaleY(0.5) scaleX(1);
+      opacity: 1;
+    }
+    100% {
+      transform: scaleY(220) scaleX(1);
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .watch-cat {
+      margin: 12px 0;
+    }
+    .hero-cat {
+      margin-top: -8px;
+    }
+  }
+</style>
+
+<script>
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const glass = document.querySelector(".glass") as HTMLElement;
+
+  function lamp(color: string) {
+    glass?.style.setProperty("--lamp", `var(--${color})`);
+  }
+
+  /* ---------- Act 0: cold boot ---------- */
+  function runBoot() {
+    const boot = document.querySelector("[data-boot]") as HTMLElement;
+    if (!boot) return;
+    const logEl = boot.querySelector("[data-boot-log]") as HTMLElement;
+    const flash = boot.querySelector("[data-boot-flash]") as HTMLElement;
+    const skip = boot.querySelector("[data-boot-skip]") as HTMLElement;
+
+    const seen = sessionStorage.getItem("tablo-booted");
+    const finish = () => {
+      boot.classList.add("done");
+      setTimeout(() => boot.classList.add("hidden"), 600);
+      sessionStorage.setItem("tablo-booted", "1");
+    };
+
+    if (reduce || seen) {
+      boot.classList.add("hidden");
+      return;
+    }
+
+    const lines = [
+      "tablo v0.1.0  ·  familiar daemon",
+      "> mounting ~/.claude/projects  (claude code) ... ok",
+      "> mounting ~/.codex/sessions   (codex) ....... ok",
+      "> tailing transcripts ....................... ok",
+      "> familiar: ONLINE",
+    ];
+    let li = 0,
+      ci = 0;
+    let cancelled = false;
+
+    const powerOn = () => {
+      flash.classList.add("go");
+      setTimeout(finish, 380);
+    };
+    const type = () => {
+      if (cancelled) return;
+      if (li >= lines.length) {
+        setTimeout(powerOn, 260);
+        return;
+      }
+      const line = lines[li];
+      logEl.textContent =
+        lines.slice(0, li).join("\n") + (li ? "\n" : "") + line.slice(0, ci);
+      ci++;
+      if (ci > line.length) {
+        li++;
+        ci = 0;
+        setTimeout(type, 90);
+      } else {
+        setTimeout(type, 12);
+      }
+    };
+    skip.addEventListener("click", () => {
+      cancelled = true;
+      finish();
+    });
+    type();
+  }
+
+  /* ---------- scroll progress (LED bar) ---------- */
+  function initScroll() {
+    const fill = document.querySelector(
+      "[data-scroll-fill]",
+    ) as HTMLElement | null;
+    if (!fill) return;
+    const onScroll = () => {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const p = max > 0 ? Math.min(1, scrollY / max) : 0;
+      fill.style.height = (p * 100).toFixed(1) + "%";
+    };
+    addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+  }
+
+  /* ---------- act-driven lamp + cat states ---------- */
+  function setCat(sel: string, state: string) {
+    const c = document.querySelector(`${sel} .cat`) as HTMLElement | null;
+    if (c) c.dataset.state = state;
+  }
+
+  let watchPlayed = false;
+  function playWatchSequence() {
+    if (watchPlayed) return;
+    watchPlayed = true;
+    const chips = Array.from(document.querySelectorAll<HTMLElement>(".chip"));
+    chips.forEach((c, i) => setTimeout(() => c.classList.add("in"), 140 * i));
+    if (reduce) {
+      chips.forEach((c) => c.classList.add("in", "hot"));
+      setCat(".cat-watch", "working");
+      return;
+    }
+    const steps: [string, string, number][] = [
+      ["sage", "idle", 0],
+      ["amber", "working", 1],
+      ["coral", "alert", 2],
+    ];
+    steps.forEach(([col, st, idx], i) => {
+      setTimeout(
+        () => {
+          lamp(col);
+          setCat(".cat-watch", st);
+          chips.forEach((c, j) => c.classList.toggle("hot", j === idx));
+        },
+        700 + i * 950,
+      );
+    });
+    setTimeout(
+      () => {
+        lamp("amber");
+        setCat(".cat-watch", "working");
+        chips.forEach((c) => c.classList.add("hot"));
+      },
+      700 + 3 * 950,
+    );
+  }
+
+  function initActs() {
+    const acts = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-act]"),
+    );
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const el = e.target as HTMLElement;
+          lamp(el.dataset.lamp || "amber");
+          if (el.classList.contains("watch")) playWatchSequence();
+          if (el.classList.contains("signoff") && !reduce) {
+            setCat(".cat-signoff", "settling");
+            setTimeout(() => setCat(".cat-signoff", "idle"), 700);
+          }
+        }
+      },
+      { threshold: 0.5 },
+    );
+    acts.forEach((a) => io.observe(a));
+  }
+
+  /* ---------- type-on titles ---------- */
+  function initTypeOn() {
+    if (reduce) return;
+    const io = new IntersectionObserver(
+      (entries, obs) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const el = e.target as HTMLElement;
+          const full = el.dataset.full!;
+          let i = 0;
+          const tick = () => {
+            el.textContent = full.slice(0, i);
+            if (i++ <= full.length) setTimeout(tick, 26);
+          };
+          tick();
+          obs.unobserve(el);
+        }
+      },
+      { threshold: 0.6 },
+    );
+    document.querySelectorAll<HTMLElement>("[data-typeon]").forEach((el) => {
+      el.dataset.full = el.textContent || "";
+      el.textContent = "";
+      io.observe(el);
+    });
+  }
+
+  /* ---------- konami egg + crt toggle + reboot ---------- */
+  function initExtras() {
+    const stored = localStorage.getItem("tablo-crt");
+    if (stored === "off") document.documentElement.dataset.crt = "off";
+    document
+      .querySelectorAll<HTMLElement>("[data-crt-toggle]")
+      .forEach((btn) => {
+        const sync = () => {
+          const off = document.documentElement.dataset.crt === "off";
+          btn.textContent = "crt: " + (off ? "off" : "on");
+        };
+        sync();
+        btn.addEventListener("click", () => {
+          const off = document.documentElement.dataset.crt === "off";
+          if (off) {
+            delete document.documentElement.dataset.crt;
+            localStorage.setItem("tablo-crt", "on");
+          } else {
+            document.documentElement.dataset.crt = "off";
+            localStorage.setItem("tablo-crt", "off");
+          }
+          sync();
+        });
+      });
+
+    document.querySelector("[data-reboot]")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      sessionStorage.removeItem("tablo-booted");
+      const boot = document.querySelector("[data-boot]") as HTMLElement;
+      boot.classList.remove("done", "hidden");
+      const flash = boot.querySelector("[data-boot-flash]") as HTMLElement;
+      flash.classList.remove("go");
+      scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+      runBoot();
+    });
+
+    const seq = [
+      "arrowup","arrowup","arrowdown","arrowdown",
+      "arrowleft","arrowright","arrowleft","arrowright","b","a",
+    ];
+    let pos = 0;
+    addEventListener("keydown", (e) => {
+      pos = e.key.toLowerCase() === seq[pos] ? pos + 1 : 0;
+      if (pos === seq.length) {
+        pos = 0;
+        setCat(".cat-hero", "play");
+        setTimeout(() => setCat(".cat-hero", "idle"), 2000);
+        document
+          .querySelector("[data-marquee]")
+          ?.insertAdjacentHTML(
+            "afterbegin",
+            '<span class="marquee-run"><span class="mq">&gt; meow<b>▮</b></span></span>',
+          );
+      }
+    });
+  }
+
+  let started = false;
+  function boot() {
+    if (started) return;
+    started = true;
+    runBoot();
+    initScroll();
+    initActs();
+    initTypeOn();
+    initExtras();
+  }
+  boot();
+  document.addEventListener("astro:page-load", boot);
+</script>

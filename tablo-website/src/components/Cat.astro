@@ -1,0 +1,213 @@
+---
+/**
+ * Cat — the pixel-cat sprite state machine.
+ * One element, driven by data-state. Same decoupling the app uses:
+ * one state -> one render (sheet + frame vars). Sprites reused as-is.
+ *
+ * Frame math (measured from the sheets):
+ *   sleeping  1024x196  4 frames  ar 1.306
+ *   running   2400x477  4 frames  ar 1.258
+ *   shocked   1908x544  5 frames  ar 0.701
+ *   r2s       1030x180  5 frames  ar 1.144   (running-to-sleeping)
+ *   playing   1090x260  4 frames  ar 1.048
+ */
+interface Props {
+  state?: "idle" | "alert" | "working" | "settling" | "play";
+  size?: number; // base cat height in px
+  reactive?: boolean; // respond to cursor + idle time
+  label?: string;
+  class?: string;
+}
+const {
+  state = "idle",
+  size = 200,
+  reactive = false,
+  label = "pixel cat",
+  class: klass = "",
+} = Astro.props;
+---
+
+<div
+  class:list={["cat-stage", klass]}
+  style={`--cat:${size}px`}
+  data-reactive={reactive ? "" : undefined}
+>
+  <div
+    class="cat"
+    data-state={state}
+    role="img"
+    aria-label={label}
+    aria-hidden="true"
+  >
+  </div>
+</div>
+
+<style>
+  .cat-stage {
+    --cat: 200px;
+    position: relative;
+    width: calc(var(--cat) * 1.7);
+    height: calc(var(--cat) * 1.4);
+    display: grid;
+    place-items: end center;
+    pointer-events: none;
+  }
+  .cat {
+    /* defaults (idle / sleeping) */
+    --sheet: url("/sprites/sleeping-sprite-sheet.png");
+    --ar: 1.306;
+    --frames: 4;
+    --dur: 2.4s;
+    --h: calc(var(--cat) * 0.82);
+    --px: 0px;
+    --py: 0px;
+
+    height: var(--h);
+    width: calc(var(--h) * var(--ar));
+    background-image: var(--sheet);
+    background-repeat: no-repeat;
+    background-size: calc(var(--h) * var(--ar) * var(--frames)) var(--h);
+    image-rendering: pixelated;
+    transform: translate(var(--px), var(--py));
+    transition: transform 0.14s var(--ease);
+    animation: sprite var(--dur) steps(var(--frames)) infinite;
+  }
+
+  @keyframes sprite {
+    from {
+      background-position-x: 0;
+    }
+    to {
+      background-position-x: calc(-1 * var(--h) * var(--ar) * var(--frames));
+    }
+  }
+
+  /* ---- states ---- */
+  .cat[data-state="idle"] {
+    --sheet: url("/sprites/sleeping-sprite-sheet.png");
+    --ar: 1.306;
+    --frames: 4;
+    --dur: 2.4s;
+    --h: calc(var(--cat) * 0.82);
+  }
+  .cat[data-state="alert"] {
+    --sheet: url("/sprites/shocked-sprite-sheet.png");
+    --ar: 0.701;
+    --frames: 5;
+    --dur: 0.85s;
+    --h: calc(var(--cat) * 1.16);
+  }
+  .cat[data-state="working"] {
+    --sheet: url("/sprites/running-sprite-sheet.png");
+    --ar: 1.258;
+    --frames: 4;
+    --dur: 0.6s;
+    --h: calc(var(--cat) * 1);
+  }
+  .cat[data-state="settling"] {
+    --sheet: url("/sprites/running-to-sleeping-sprite-sheet.png");
+    --ar: 1.144;
+    --frames: 5;
+    --dur: 0.7s;
+    --h: calc(var(--cat) * 0.9);
+    animation-iteration-count: 1;
+    animation-fill-mode: forwards;
+  }
+  .cat[data-state="play"] {
+    --sheet: url("/sprites/playing-sprite-sheet.png");
+    --ar: 1.048;
+    --frames: 4;
+    --dur: 0.6s;
+    --h: calc(var(--cat) * 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cat {
+      animation: none !important;
+      /* show a representative single frame */
+      background-position-x: 0 !important;
+    }
+  }
+</style>
+
+<script>
+  // Reactivity for cats marked data-reactive: cursor speed -> alert,
+  // long idle -> stays asleep, eyes follow the pointer.
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function initCat(stage: HTMLElement) {
+    if (stage.dataset.ready) return;
+    stage.dataset.ready = "1";
+    const cat = stage.querySelector<HTMLElement>(".cat")!;
+    if (reduce) return;
+
+    let alertTimer = 0;
+    let restTimer = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let lastT = 0;
+
+    const toIdle = () => {
+      if (cat.dataset.state !== "working") cat.dataset.state = "idle";
+    };
+
+    function startle() {
+      cat.dataset.state = "alert";
+      clearTimeout(alertTimer);
+      alertTimer = window.setTimeout(toIdle, 1300);
+    }
+
+    addEventListener("pointermove", (e) => {
+      const now = performance.now();
+      const dt = now - lastT || 16;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      const speed = Math.hypot(dx, dy) / dt; // px per ms
+      lastX = e.clientX;
+      lastY = e.clientY;
+      lastT = now;
+
+      // eyes-follow-cursor parallax, relative to cat centre
+      const r = stage.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const px = Math.max(-5, Math.min(5, (e.clientX - cx) / 60));
+      const py = Math.max(-4, Math.min(4, (e.clientY - cy) / 80));
+      cat.style.setProperty("--px", px.toFixed(1) + "px");
+      cat.style.setProperty("--py", py.toFixed(1) + "px");
+
+      // fast move -> startle
+      if (speed > 1.6) startle();
+
+      // reset the "goes back to sleep" timer
+      clearTimeout(restTimer);
+      restTimer = window.setTimeout(toIdle, 4000);
+    });
+
+    // hover the cat's box -> curious
+    stage.addEventListener("pointerenter", startle, { passive: true });
+
+    // triple-click egg -> play once
+    let clicks = 0;
+    let clickTimer = 0;
+    stage.style.pointerEvents = "auto";
+    stage.addEventListener("click", () => {
+      clicks++;
+      clearTimeout(clickTimer);
+      clickTimer = window.setTimeout(() => (clicks = 0), 500);
+      if (clicks >= 3) {
+        clicks = 0;
+        cat.dataset.state = "play";
+        setTimeout(toIdle, 1800);
+      }
+    });
+  }
+
+  function boot() {
+    document
+      .querySelectorAll<HTMLElement>(".cat-stage[data-reactive]")
+      .forEach(initCat);
+  }
+  boot();
+  document.addEventListener("astro:page-load", boot);
+</script>

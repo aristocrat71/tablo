@@ -1,0 +1,731 @@
+---
+/**
+ * LiveWidget — a pixel-faithful recreation of the real tablo panel,
+ * running on a loop. Panel CSS is lifted from tablo-mockups-v3.html and
+ * upgraded to the current README row anatomy: source tag (claude/codex),
+ * live activity line + status dot, permission-mode badge, jump button,
+ * and the real groups (Context warning / Permission / Waiting / Working).
+ */
+---
+
+<div class="widget" data-widget>
+  <!-- a faux desktop mini-avatar in the corner -->
+  <div class="mini" aria-hidden="true">
+    <div class="mini-hex" data-mini-state="working"><span>a</span></div>
+    <span class="mini-pip" data-pip hidden>1</span>
+  </div>
+
+  <div class="panel">
+    <div class="panel-top">
+      <div class="panel-glyph">a</div>
+      <div class="panel-titles">
+        <div class="name">tablo</div>
+        <div class="sub" data-sub>3 sessions · claude + codex</div>
+      </div>
+      <button class="mini-btn" title="Settings" aria-label="Settings">⋯</button>
+    </div>
+
+    <div class="panel-body">
+      <!-- Context window warning (pinned top) -->
+      <section class="group" id="g-crit" hidden>
+        <div class="group-head">
+          <span class="group-dot crit"></span>
+          <span class="group-name">Context window · &gt; 60%</span>
+          <span class="group-count" data-count="crit">0</span>
+        </div>
+      </section>
+
+      <!-- Permission Request -->
+      <section class="group" id="g-perm" hidden>
+        <div class="group-head">
+          <span class="group-dot crit"></span>
+          <span class="group-name">Permission Request</span>
+          <span class="group-count" data-count="perm">0</span>
+        </div>
+      </section>
+
+      <!-- Waiting -->
+      <section class="group" id="g-wait" hidden>
+        <div class="group-head">
+          <span class="group-dot sage"></span>
+          <span class="group-name">Waiting</span>
+          <span class="group-count" data-count="wait">0</span>
+        </div>
+      </section>
+
+      <!-- Working -->
+      <section class="group" id="g-work">
+        <div class="group-head">
+          <span class="group-dot work"></span>
+          <span class="group-name">Working</span>
+          <span class="group-count" data-count="work">3</span>
+        </div>
+      </section>
+
+      <!-- session rows (JS reparents them between groups) -->
+      <div class="pool" hidden>
+        <!-- S1 optilife (claude) — escalates -->
+        <article class="session" id="s1" data-group="g-work">
+          <div class="line1">
+            <span class="proj">optilife</span>
+            <span class="src">claude</span>
+            <span class="badge run" data-badge>RUN</span>
+            <span class="pct" data-pct>45%</span>
+          </div>
+          <div class="line2">
+            <span class="dot ok" data-dot></span>
+            <span class="activity" data-activity>running cargo check</span>
+            <span class="mode">mode: plan</span>
+          </div>
+          <div class="ctx">
+            <div class="led"><i class="ok" data-fill style="width:45%"></i></div>
+            <span class="ctx-cap" data-cap>90k / 200k</span>
+            <button class="bkt jump">jump</button>
+          </div>
+          <div class="ask-row" data-ask hidden>
+            <span class="q">Allow <code>rm -rf ./build</code> ?</span>
+            <span class="ask-btns">
+              <button class="bkt approve" data-approve>Approve</button>
+              <button class="bkt deny">Deny</button>
+            </span>
+          </div>
+        </article>
+
+        <!-- S2 api (codex) — steady -->
+        <article class="session" id="s2" data-group="g-work">
+          <div class="line1">
+            <span class="proj">api</span>
+            <span class="src codex">codex</span>
+            <span class="badge run" data-badge>RUN</span>
+            <span class="pct" data-pct>58%</span>
+          </div>
+          <div class="line2">
+            <span class="dot ok" data-dot></span>
+            <span class="activity" data-activity>editing scanner.rs</span>
+            <span class="mode">mode: auto</span>
+          </div>
+          <div class="ctx">
+            <div class="led"><i class="ok" data-fill style="width:58%"></i></div>
+            <span class="ctx-cap" data-cap>150k / 258k</span>
+            <button class="bkt jump">jump</button>
+          </div>
+        </article>
+
+        <!-- S3 tablo (claude) — requests permission -->
+        <article class="session" id="s3" data-group="g-work">
+          <div class="line1">
+            <span class="proj">tablo</span>
+            <span class="src">claude</span>
+            <span class="badge run" data-badge>RUN</span>
+            <span class="pct" data-pct>22%</span>
+          </div>
+          <div class="line2">
+            <span class="dot ok" data-dot></span>
+            <span class="activity" data-activity>editing lib.rs</span>
+            <span class="mode">mode: default</span>
+          </div>
+          <div class="ctx">
+            <div class="led"><i class="ok" data-fill style="width:22%"></i></div>
+            <span class="ctx-cap" data-cap>44k / 200k</span>
+            <button class="bkt jump">jump</button>
+          </div>
+          <div class="ask-row" data-ask hidden>
+            <span class="q">Allow <code>rm -rf ./dist</code> ?</span>
+            <span class="ask-btns">
+              <button class="bkt approve" data-approve>Approve</button>
+              <button class="bkt deny">Deny</button>
+            </span>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="panel-foot">
+      <button class="dash-btn">
+        Open dashboard <span class="host">localhost:4317</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- toast flies out when a session finishes -->
+  <div class="toast" data-toast hidden>
+    <span class="tdot"></span>
+    <div class="tbody">
+      <b>optilife</b><span>refactor scanner passes</span>
+    </div>
+    <button class="bkt jump">jump</button>
+  </div>
+</div>
+
+<style>
+  .widget {
+    position: relative;
+    width: min(360px, 92vw);
+    filter: drop-shadow(0 30px 60px rgba(0, 0, 0, 0.55));
+  }
+
+  .mini {
+    position: absolute;
+    top: -30px;
+    left: -30px;
+    z-index: 4;
+  }
+  .mini-hex {
+    width: 46px;
+    height: 52px;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 18px;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    transition:
+      color 0.3s var(--ease),
+      background 0.3s var(--ease),
+      filter 0.3s var(--ease);
+  }
+  .mini-hex[data-mini-state="working"] {
+    color: var(--amber);
+    background: color-mix(in srgb, var(--amber) 55%, var(--border));
+    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--amber) 60%, transparent));
+  }
+  .mini-hex[data-mini-state="alarmed"] {
+    color: var(--coral);
+    background: color-mix(in srgb, var(--coral) 60%, var(--border));
+    filter: drop-shadow(0 0 14px color-mix(in srgb, var(--coral) 75%, transparent));
+  }
+  .mini-pip {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--coral);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--bg-room);
+  }
+
+  .panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-panel);
+    overflow: hidden;
+    text-align: left;
+  }
+  .panel-top {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 15px 16px 13px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .panel-glyph {
+    width: 32px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--amber);
+    background: var(--amber-soft);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+  .panel-titles {
+    flex: 1;
+    line-height: 1.25;
+  }
+  .panel-titles .name {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .panel-titles .sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    margin-top: 1px;
+  }
+  .mini-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+
+  .panel-body {
+    padding: 4px 12px 12px;
+  }
+  .group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 6px 7px;
+  }
+  .group-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+  }
+  .group-dot.crit {
+    background: var(--coral);
+    box-shadow: 0 0 8px var(--coral);
+  }
+  .group-dot.work {
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+  }
+  .group-dot.sage {
+    background: var(--sage);
+    box-shadow: 0 0 8px var(--sage);
+  }
+  .group-name {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  .group-count {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    margin-left: auto;
+  }
+
+  .session {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 11px;
+    border-radius: var(--r-md);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-soft);
+    margin-bottom: 7px;
+  }
+  .session.needs {
+    border-color: color-mix(in srgb, var(--coral) 40%, var(--border-soft));
+  }
+  .line1 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .proj {
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .src {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 5px;
+    color: var(--ink-dim);
+    background: var(--bg-inset);
+    border: 1px solid var(--border-soft);
+  }
+  .badge {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 5px;
+    letter-spacing: 0.03em;
+  }
+  .badge.run {
+    background: var(--sage-soft);
+    color: var(--sage);
+  }
+  .badge.ask {
+    background: var(--coral-soft);
+    color: var(--coral);
+  }
+  .badge.wait {
+    background: var(--sage-soft);
+    color: var(--sage);
+  }
+  .pct {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .pct.warn {
+    color: var(--amber);
+    text-shadow: var(--glow-amber);
+  }
+  .pct.crit {
+    color: var(--coral);
+    text-shadow: var(--glow-coral);
+  }
+
+  .line2 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+  }
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .dot.ok {
+    background: var(--sage);
+    box-shadow: 0 0 6px var(--sage);
+  }
+  .dot.warn {
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
+  }
+  .dot.wait {
+    background: var(--ink-faint);
+  }
+  .activity {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mode {
+    margin-left: auto;
+    opacity: 0.7;
+  }
+
+  .ctx {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ctx .led {
+    flex: 1;
+    height: 8px;
+  }
+  .ctx-cap {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .jump {
+    padding: 3px 7px;
+    font-size: 9.5px;
+  }
+
+  .ask-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 9px;
+    background: var(--coral-soft);
+    border-radius: var(--r-sm);
+    flex-wrap: wrap;
+  }
+  .ask-row .q {
+    font-size: 11px;
+    color: var(--ink-dim);
+    flex: 1;
+  }
+  .ask-row .q code {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--coral);
+    font-weight: 600;
+  }
+  .ask-btns {
+    display: flex;
+    gap: 4px;
+  }
+  .approve {
+    color: var(--sage);
+  }
+  .approve.flash {
+    background: color-mix(in srgb, var(--sage) 25%, transparent);
+    color: var(--sage);
+  }
+  .deny {
+    color: var(--coral);
+  }
+
+  .panel-foot {
+    padding: 11px 12px;
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-inset);
+  }
+  .dash-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 10px;
+    border-radius: var(--r-md);
+    background: var(--ink);
+    color: var(--bg-surface);
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-round);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .dash-btn .host {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    opacity: 0.6;
+  }
+
+  .toast {
+    position: absolute;
+    right: -14px;
+    bottom: 40px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--sage);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-panel);
+    animation: toast-in 0.4s var(--ease-back);
+  }
+  .toast .tdot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--sage);
+    box-shadow: 0 0 8px var(--sage);
+  }
+  .toast .tbody {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+  }
+  .toast .tbody b {
+    font-size: 12.5px;
+  }
+  .toast .tbody span {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateX(24px) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+</style>
+
+<script>
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function initWidget(root: HTMLElement) {
+    if (root.dataset.ready) return;
+    root.dataset.ready = "1";
+    const $ = <T extends Element = HTMLElement>(s: string, r: Element = root) =>
+      r.querySelector(s) as unknown as T;
+    const groups = {
+      crit: $("#g-crit"),
+      perm: $("#g-perm"),
+      wait: $("#g-wait"),
+      work: $("#g-work"),
+    } as Record<string, HTMLElement>;
+    const rows = {
+      s1: $("#s1"),
+      s2: $("#s2"),
+      s3: $("#s3"),
+    } as Record<string, HTMLElement>;
+    const mini = $(".mini-hex") as HTMLElement;
+    const pip = $("[data-pip]") as HTMLElement;
+    const toast = $("[data-toast]") as HTMLElement;
+    const glass = document.querySelector(".glass") as HTMLElement | null;
+
+    function setLamp(c: string) {
+      if (glass) glass.style.setProperty("--lamp", `var(--${c})`);
+    }
+    function place(rowId: string, groupId: string) {
+      groups[groupId].appendChild(rows[rowId]);
+    }
+    function bar(rowId: string, pct: number, cls: string) {
+      const row = rows[rowId];
+      (row.querySelector("[data-fill]") as HTMLElement).style.width = pct + "%";
+      (row.querySelector("[data-fill]") as HTMLElement).className = cls;
+      const pctEl = row.querySelector("[data-pct]") as HTMLElement;
+      pctEl.textContent = pct + "%";
+      pctEl.className = "pct" + (cls === "crit" ? " crit" : cls === "warn" ? " warn" : "");
+    }
+    function activity(rowId: string, text: string, dotCls: string) {
+      (rows[rowId].querySelector("[data-activity]") as HTMLElement).textContent = text;
+      (rows[rowId].querySelector("[data-dot]") as HTMLElement).className = "dot " + dotCls;
+    }
+    function badge(rowId: string, text: string, cls: string) {
+      const b = rows[rowId].querySelector("[data-badge]") as HTMLElement;
+      b.textContent = text;
+      b.className = "badge " + cls;
+    }
+    function refreshGroups() {
+      for (const g of Object.values(groups)) {
+        const has = g.querySelector(".session");
+        g.hidden = !has;
+        const cnt = g.querySelector("[data-count]") as HTMLElement | null;
+        if (cnt) cnt.textContent = String(g.querySelectorAll(".session").length);
+      }
+    }
+
+    let timers: number[] = [];
+    const at = (ms: number, fn: () => void) =>
+      timers.push(window.setTimeout(fn, ms));
+
+    function reset() {
+      timers.forEach(clearTimeout);
+      timers = [];
+      place("s1", "work");
+      place("s2", "work");
+      place("s3", "work");
+      bar("s1", 45, "ok");
+      bar("s2", 58, "ok");
+      bar("s3", 22, "ok");
+      badge("s1", "RUN", "run");
+      badge("s2", "RUN", "run");
+      badge("s3", "RUN", "run");
+      activity("s1", "running cargo check", "ok");
+      activity("s2", "editing scanner.rs", "ok");
+      activity("s3", "editing lib.rs", "ok");
+      rows.s1.classList.remove("needs");
+      rows.s3.classList.remove("needs");
+      ($("[data-ask]", rows.s3) as HTMLElement).hidden = true;
+      mini.dataset.miniState = "working";
+      pip.hidden = true;
+      toast.hidden = true;
+      setLamp("amber");
+      refreshGroups();
+    }
+
+    function run() {
+      reset();
+      // climb
+      at(1400, () => {
+        bar("s1", 55, "ok");
+        bar("s2", 66, "warn");
+        bar("s3", 30, "ok");
+        activity("s2", "running cargo test", "warn");
+      });
+      // permission request from s3
+      at(3200, () => {
+        badge("s3", "ASK", "ask");
+        rows.s3.classList.add("needs");
+        activity("s3", "wants to run a command", "warn");
+        ($("[data-ask]", rows.s3) as HTMLElement).hidden = false;
+        place("s3", "perm");
+        mini.dataset.miniState = "alarmed";
+        pip.hidden = false;
+        setLamp("coral");
+        refreshGroups();
+      });
+      // approve
+      at(5600, () => {
+        ($(".approve", rows.s3) as HTMLElement).classList.add("flash");
+      });
+      at(6100, () => {
+        ($("[data-ask]", rows.s3) as HTMLElement).hidden = true;
+        ($(".approve", rows.s3) as HTMLElement).classList.remove("flash");
+        badge("s3", "RUN", "run");
+        rows.s3.classList.remove("needs");
+        activity("s3", "editing lib.rs", "ok");
+        place("s3", "work");
+        mini.dataset.miniState = "working";
+        pip.hidden = true;
+        setLamp("amber");
+        refreshGroups();
+      });
+      // s1 crosses the warning line -> critical
+      at(7600, () => {
+        bar("s1", 64, "crit");
+        activity("s1", "compacting context", "warn");
+        place("s1", "crit");
+        mini.dataset.miniState = "alarmed";
+        setLamp("coral");
+        refreshGroups();
+      });
+      // s1 finishes -> waiting + toast
+      at(10200, () => {
+        bar("s1", 61, "crit");
+        badge("s1", "WAIT", "wait");
+        activity("s1", "waiting for you", "wait");
+        place("s1", "wait");
+        mini.dataset.miniState = "working";
+        toast.hidden = false;
+        setLamp("amber");
+        refreshGroups();
+      });
+      // loop
+      at(14000, run);
+    }
+
+    if (reduce) {
+      // static representative frame: permission visible, one warning
+      reset();
+      bar("s1", 64, "crit");
+      badge("s3", "ASK", "ask");
+      rows.s3.classList.add("needs");
+      ($("[data-ask]", rows.s3) as HTMLElement).hidden = false;
+      place("s1", "crit");
+      place("s3", "perm");
+      mini.dataset.miniState = "alarmed";
+      pip.hidden = false;
+      setLamp("coral");
+      refreshGroups();
+      return;
+    }
+
+    // populate immediately so the panel never flashes empty
+    reset();
+
+    // start the loop when scrolled into view
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            run();
+            io.disconnect();
+          }
+        }
+      },
+      { threshold: 0.35 },
+    );
+    io.observe(root);
+  }
+
+  function boot() {
+    document
+      .querySelectorAll<HTMLElement>("[data-widget]")
+      .forEach(initWidget);
+  }
+  boot();
+  document.addEventListener("astro:page-load", boot);
+</script>

@@ -1,0 +1,235 @@
+/* ============================================================
+   tablo — CRT / phosphor effect layer
+   ONE fixed overlay at z-crt, pointer-events:none. Single source
+   of truth so it can be killed in one place (reduced-motion / crt:off).
+   ============================================================ */
+
+/* ---- the monitor bezel (desktop) ---- */
+.bezel {
+  position: relative;
+  min-height: 100dvh;
+  background: var(--bg-room);
+}
+
+@media (min-width: 1024px) {
+  .bezel {
+    margin: 18px;
+    border-radius: 26px;
+    padding: 14px;
+    background: linear-gradient(160deg, #2c2620, #17130f);
+    box-shadow:
+      0 0 0 1px #0a0806,
+      0 40px 80px -20px rgba(0, 0, 0, 0.8),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  .bezel::before,
+  .bezel::after {
+    /* corner screws */
+    content: "";
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4a4038, #14100c);
+    box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.8);
+  }
+  .bezel::before {
+    top: 16px;
+    left: 16px;
+  }
+  .bezel::after {
+    bottom: 16px;
+    right: 16px;
+  }
+  .glass {
+    border-radius: 16px;
+    overflow: hidden;
+  }
+}
+
+/* the glass — where content scrolls. curvature = vignette + rounded corners */
+.glass {
+  position: relative;
+  min-height: calc(100dvh - 64px);
+  background: var(--bg-room);
+}
+
+/* ambient room glow (the desk lamp bleeding up) */
+.glass::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-room);
+  background: radial-gradient(
+    70% 50% at 50% 100%,
+    color-mix(in srgb, var(--lamp, var(--amber)) 14%, transparent),
+    transparent 72%
+  );
+  opacity: 0.85;
+  transition: background 0.8s var(--ease);
+}
+
+/* ---- the fixed CRT overlay: scanlines + vignette ---- */
+.crt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-crt);
+  pointer-events: none;
+}
+.crt-overlay::before {
+  /* scanlines */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(var(--scanline-gap) - 1px),
+    rgba(0, 0, 0, var(--scanline-opacity)) var(--scanline-gap)
+  );
+  mix-blend-mode: multiply;
+  animation: crt-flicker 6s steps(24) infinite;
+}
+.crt-overlay::after {
+  /* vignette / tube curvature + the drifting refresh beam */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(243, 232, 220, 0.05),
+      transparent 12%,
+      transparent 88%,
+      rgba(0, 0, 0, 0.12)
+    ),
+    radial-gradient(
+      120% 120% at 50% 50%,
+      transparent 60%,
+      rgba(0, 0, 0, calc(0.55 * var(--curve))) 100%
+    );
+}
+
+/* the beam sweep — its own element so it can animate independently */
+.crt-beam {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 26%;
+  z-index: var(--z-crt);
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(224, 164, 88, 0.03),
+    transparent
+  );
+  animation: crt-sweep 8s linear infinite;
+}
+
+/* grain */
+.crt-grain {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-crt);
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+/* the little amber power LED, bottom-right of the glass */
+.crt-power {
+  position: fixed;
+  right: 22px;
+  bottom: 16px;
+  z-index: var(--z-crt);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-xs);
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  pointer-events: none;
+  text-transform: uppercase;
+}
+.crt-power i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+  animation: crt-pwr 3.5s var(--ease) infinite;
+}
+
+@keyframes crt-flicker {
+  0%,
+  100% {
+    opacity: calc(1 - var(--flicker-depth));
+  }
+  50% {
+    opacity: 1;
+  }
+  53% {
+    opacity: calc(1 - var(--flicker-depth) * 1.6);
+  }
+}
+@keyframes crt-sweep {
+  from {
+    transform: translateY(-30%);
+  }
+  to {
+    transform: translateY(430%);
+  }
+}
+@keyframes crt-pwr {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---- phosphor text treatments ---- */
+.phosphor {
+  text-shadow:
+    0 0 18px currentColor,
+    0 0 40px color-mix(in srgb, currentColor 45%, transparent);
+}
+.aberrate {
+  text-shadow:
+    -1px 0 rgba(224, 130, 103, 0.5),
+    1px 0 rgba(143, 170, 126, 0.5);
+}
+
+/* ============================================================
+   KILL SWITCH — reduced-motion or manual crt:off
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --scanline-opacity: 0;
+    --flicker-depth: 0;
+    --grain-opacity: 0.02;
+    --curve: 0.4;
+  }
+  .crt-overlay::before,
+  .crt-beam,
+  .crt-power i {
+    animation: none !important;
+  }
+}
+
+[data-crt="off"] {
+  --scanline-opacity: 0;
+  --flicker-depth: 0;
+  --grain-opacity: 0;
+  --curve: 0;
+}
+[data-crt="off"] .crt-beam,
+[data-crt="off"] .crt-grain {
+  display: none;
+}
