@@ -138,6 +138,18 @@ fn set_cancel_grace_mins(app: AppHandle, state: State<'_, AppState>, mins: u64) 
     recompute_and_emit(&app);
 }
 
+/// Set how long a finished (waiting) session lingers before it clears from the
+/// panel (minutes). Floored at 1. Persists and re-scans so it applies at once.
+#[tauri::command]
+fn set_clear_waiting_mins(app: AppHandle, state: State<'_, AppState>, mins: u64) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.clear_waiting_mins = mins.max(1);
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
 /// Toggle the panel open/closed, anchored near the avatar.
 #[tauri::command]
 fn toggle_panel(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
@@ -693,6 +705,7 @@ pub fn run() {
             set_theme,
             set_warn_pct,
             set_cancel_grace_mins,
+            set_clear_waiting_mins,
             toggle_panel,
             open_dashboard,
             hide_dashboard,

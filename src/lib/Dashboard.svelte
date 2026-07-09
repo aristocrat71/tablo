@@ -22,6 +22,7 @@
     hideDashboard,
     setWarnPct,
     setCancelGraceMins,
+    setClearWaitingMins,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -83,6 +84,7 @@
   );
   let warnPct = $derived(Math.round(snap.warnPct));
   let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
+  let clearWaitingMins = $derived(Math.round(snap.clearWaitingMins));
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -267,6 +269,23 @@
             step="1"
             value={cancelGraceMins}
             onchange={(e) => setCancelGraceMins(Math.max(1, Math.round(+e.currentTarget.value) || 3))}
+          />
+          <span class="unit">min</span>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-main">
+          <div class="setting-title">Clear waiting sessions</div>
+          <div class="setting-sub">How long a finished session waiting on you stays in the panel before it clears. It reappears the moment you send it a new prompt.</div>
+        </div>
+        <div class="num">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={clearWaitingMins}
+            onchange={(e) => setClearWaitingMins(Math.max(1, Math.round(+e.currentTarget.value) || 10))}
           />
           <span class="unit">min</span>
         </div>

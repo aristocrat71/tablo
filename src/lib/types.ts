@@ -62,6 +62,7 @@ export interface Snapshot {
   pending: PendingRequest[];
   warnPct: number; // context warn threshold (%), echoed for the Critical group
   cancelGraceMins: number; // early-cancel grace window (min), echoed for Settings
+  clearWaitingMins: number; // waiting-session clear window (min), echoed for Settings
 }
 
 // Mirrors Rust `permission::HookStatus`.
@@ -125,4 +126,5 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   pending: [],
   warnPct: 60,
   cancelGraceMins: 3,
+  clearWaitingMins: 10,
 };
