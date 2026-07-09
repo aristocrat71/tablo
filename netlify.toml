@@ -1,0 +1,15 @@
+# Netlify build config for the marketing site in tablo-website/.
+#
+# Why the stub step: the repo root is a SvelteKit/Tauri app whose tsconfig.json
+# extends the generated .svelte-kit/tsconfig.json — a gitignored file that is
+# absent on a fresh CI clone (it's only created by `svelte-kit sync` locally).
+# Astro's rolldown bundler walks up from tablo-website/ and reads that root
+# tsconfig, then aborts on the missing `extends` target. So before building we
+# drop a minimal stub — but ONLY if one isn't already present, so running
+# `netlify build` locally can never clobber the real generated file.
+[build]
+  base = "tablo-website"
+  command = '[ -f ../.svelte-kit/tsconfig.json ] || { mkdir -p ../.svelte-kit && echo "{}" > ../.svelte-kit/tsconfig.json; }; bun run build'
+  # NOTE: in netlify.toml, publish is relative to `base` — so this resolves to
+  # tablo-website/dist (do NOT prefix with tablo-website/ or it doubles).
+  publish = "dist"
