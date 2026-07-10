@@ -25,7 +25,7 @@ interface Prefs {
   showCodex: boolean;
   // Toast when a session finishes working and starts waiting on you. Default on.
   notifyOnWaiting: boolean;
-  // How long that toast stays on screen, in seconds. Default 2.
+  // How long that toast stays on screen, in seconds. Default 4.
   waitingToastSecs: number;
 }
 
@@ -35,7 +35,7 @@ export const TOAST_SECS_MAX = 30;
 
 function clampSecs(n: unknown): number {
   const v = Math.round(Number(n));
-  if (!Number.isFinite(v)) return 2;
+  if (!Number.isFinite(v)) return 4;
   return Math.min(TOAST_SECS_MAX, Math.max(TOAST_SECS_MIN, v));
 }
 
@@ -46,7 +46,7 @@ const DEFAULTS: Prefs = {
   showClaude: true,
   showCodex: true,
   notifyOnWaiting: true,
-  waitingToastSecs: 2,
+  waitingToastSecs: 4,
 };
 
 function coerce(raw: unknown): Prefs {
@@ -58,7 +58,7 @@ function coerce(raw: unknown): Prefs {
     showClaude: p.showClaude !== false,
     showCodex: p.showCodex !== false,
     notifyOnWaiting: p.notifyOnWaiting !== false,
-    waitingToastSecs: p.waitingToastSecs == null ? 2 : clampSecs(p.waitingToastSecs),
+    waitingToastSecs: p.waitingToastSecs == null ? 4 : clampSecs(p.waitingToastSecs),
   };
 }
 
