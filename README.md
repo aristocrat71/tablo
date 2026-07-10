@@ -11,6 +11,27 @@ session; from there, open a fuller **dashboard** with settings.
 Built with **Tauri 2** (Rust) + **SvelteKit / Svelte 5**. macOS is the primary
 platform today.
 
+## Install
+
+Prebuilt installers for macOS, Windows, and Linux live on the
+[Releases](https://github.com/aristocrat71/tablo/releases) page. These one-liners
+grab the latest build and install it quietly — no Gatekeeper / SmartScreen prompt:
+
+**macOS / Linux**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aristocrat71/tablo/main/install.sh | bash
+```
+
+**Windows** (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/aristocrat71/tablo/main/install.ps1 | iex
+```
+
+Once installed, tablo keeps itself up to date — it checks for new releases and
+updates in the background.
+
 ## The four surfaces
 
 - **Avatar** — a tiny (126×134) transparent, always-on-top window that is
@@ -105,18 +126,23 @@ terminal a session is running in. Sessions self-report their location through a
 passive hook; jump then switches tmux to the exact pane (if any) and brings the
 host terminal to the front.
 
-Pinpointing the *exact tab* needs a terminal that exposes a per-tab tty to
-AppleScript. Support on macOS:
+Pinpointing the *exact tab* needs a terminal that's scriptable — either a
+per-tab tty (Terminal.app / iTerm2) or a surface API (Ghostty). Support on macOS:
 
 | Terminal | No tmux | Inside tmux |
 |----------|---------|-------------|
 | Terminal.app | Exact window/tab | Exact pane |
 | iTerm2 | Exact tab \* | Exact pane |
-| Ghostty, WezTerm, kitty, Alacritty, Warp, Hyper, Tabby | App only \*\* | Exact pane |
+| Ghostty | Exact tab \*\* | Exact pane |
+| WezTerm, kitty, Alacritty, Warp, Hyper, Tabby | App only \*\*\* | Exact pane |
 
 \* The iTerm2 path exists but is currently unverified.
 
-\*\* Brings the app to the front. With a single tab that's the right one; with
+\*\* Ghostty exposes no per-tab tty, so Tablo matches the exact surface by its
+working directory + tab title (Claude/Codex title the tab with the session name)
+through Ghostty's AppleScript dictionary.
+
+\*\*\* Brings the app to the front. With a single tab that's the right one; with
 multiple tabs and no tmux it lands on the current tab — these terminals expose no
 scriptable per-tab tty. **Inside tmux, jump is always exact**: tmux selects the
 pane and Tablo just foregrounds the app.

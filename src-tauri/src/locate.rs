@@ -108,7 +108,45 @@ pub fn jump_to_session(state: State<'_, AppState>, session_id: String) -> Result
         .get(&session_id)
         .cloned()
         .ok_or_else(|| "no known location for this session yet".to_string())?;
-    focus(&loc)
+    // Match hints from the live snapshot: this session's cwd + aiTitle, plus the
+    // *other* sessions' titles so Ghostty can skip a surface a different session
+    // owns (Codex doesn't title its tab, so its cwd can collide with a Claude one).
+    let hint = {
+        let snap = state.snapshot.lock().unwrap();
+        let mut h = GhosttyHint::default();
+        for s in &snap.sessions {
+            if s.id == session_id {
+                h.cwd = expand_home(&s.path);
+                h.title = s.title.clone().unwrap_or_default();
+            } else if let Some(t) = s.title.as_ref().filter(|t| !t.is_empty()) {
+                h.others.push(t.clone());
+            }
+        }
+        h
+    };
+    focus(&loc, &hint)
+}
+
+/// What we know about a session for matching it to its Ghostty surface.
+#[derive(Default)]
+struct GhosttyHint {
+    cwd: String,
+    title: String,
+    /// The other active sessions' titles — used to skip a surface another session
+    /// owns when this session's own title doesn't identify its tab (e.g. Codex).
+    others: Vec<String>,
+}
+
+/// Expand a leading `~` (written by `abbreviate_home`) back to the absolute home
+/// path, so a session cwd compares against Ghostty's absolute `working directory`.
+fn expand_home(p: &str) -> String {
+    match p.strip_prefix('~') {
+        Some(rest) => match dirs::home_dir() {
+            Some(home) => format!("{}{}", home.to_string_lossy(), rest),
+            None => p.to_string(),
+        },
+        None => p.to_string(),
+    }
 }
 
 /// A dash stands in for an empty locator field, so the trace reads cleanly.
@@ -125,7 +163,7 @@ fn dash(s: &str) -> &str {
 /// with no permissions, then a **platform-gated GUI raise** (macOS today) that
 /// brings the outer terminal window forward. Ok(trace) if anything landed,
 /// Err(trace) otherwise; both carry the full trace.
-fn focus(loc: &SessionLocation) -> Result<String, String> {
+fn focus(loc: &SessionLocation, hint: &GhosttyHint) -> Result<String, String> {
     let mut trace: Vec<String> = Vec::new();
     trace.push(format!(
         "loc tty={} term={} pane={} zed={}",
@@ -166,7 +204,7 @@ fn focus(loc: &SessionLocation) -> Result<String, String> {
     // Layer 2 — platform best-effort: raise the outer GUI window. macOS is
     // implemented; Linux (wmctrl/xdotool on X11) and Windows (SetForegroundWindow)
     // slot in later; Wayland / Windows-Terminal tabs stay honest no-ops.
-    match raise_window(&socket, loc, client.as_ref()) {
+    match raise_window(&socket, loc, client.as_ref(), hint) {
         Raise::Focused(what) => {
             trace.push(format!("raise: {what}"));
             acted = true;
@@ -265,7 +303,12 @@ enum Raise {
 /// pty. Try an exact-tab focus (Terminal.app / iTerm2) first; otherwise resolve
 /// the host app from the client's process tree and activate it.
 #[cfg(target_os = "macos")]
-fn raise_window(_socket: &Option<String>, loc: &SessionLocation, client: Option<&(String, i32)>) -> Raise {
+fn raise_window(
+    _socket: &Option<String>,
+    loc: &SessionLocation,
+    client: Option<&(String, i32)>,
+    hint: &GhosttyHint,
+) -> Raise {
     // Resolve the TRUE host app from the client's process tree first — env-var
     // proof, and it's authoritative (both mirrored clients of a Zed-hosted tmux
     // session resolve to Zed). We trust this over tty-tab matching, which can
@@ -287,6 +330,15 @@ fn raise_window(_socket: &Option<String>, loc: &SessionLocation, client: Option<
                     return Raise::Focused(format!("tab {} {tty}", kind.app()));
                 }
             }
+        }
+    }
+
+    // Ghostty isn't tty-tab-scriptable, but AppleScript exposes each surface's
+    // cwd + title — match the exact surface and focus it. Non-tmux only (tmux
+    // already did its precise pane-switch above; here it just app-activates).
+    if loc.tmux_pane.is_empty() && host.as_deref() == Some("Ghostty") {
+        if let Some(what) = ghostty_focus(hint) {
+            return Raise::Focused(what);
         }
     }
 
@@ -325,6 +377,7 @@ fn raise_window(
     _socket: &Option<String>,
     _loc: &SessionLocation,
     _client: Option<&(String, i32)>,
+    _hint: &GhosttyHint,
 ) -> Raise {
     Raise::Unsupported
 }
@@ -530,6 +583,105 @@ end tell"#
     Ok(String::from_utf8_lossy(&out.stdout).contains("found"))
 }
 
+/// Focus the exact Ghostty surface for a (non-tmux) session by matching its cwd
+/// and/or title; `focus` raises the surface's window and selects its tab. None ⇒
+/// no confident match (caller activates the app).
+#[cfg(target_os = "macos")]
+fn ghostty_focus(hint: &GhosttyHint) -> Option<String> {
+    let surfaces = ghostty_list_surfaces();
+    let id = pick_ghostty_surface(&surfaces, hint)?;
+    ghostty_focus_id(&id).then(|| format!("ghostty surface {id}"))
+}
+
+/// Enumerate Ghostty surfaces as `(id, working_directory, title)` via AppleScript.
+/// The tab delimiter is bound to `d` *outside* the tell block: inside it, `tab`
+/// resolves to Ghostty's `tab` class, not the tab character.
+#[cfg(target_os = "macos")]
+fn ghostty_list_surfaces() -> Vec<(String, String, String)> {
+    let script = r#"set d to tab
+tell application "Ghostty"
+    set out to ""
+    repeat with t in terminals
+        set wd to ""
+        try
+            set wd to working directory of t
+        end try
+        set nm to ""
+        try
+            set nm to name of t
+        end try
+        set out to out & (id of t) & d & wd & d & nm & linefeed
+    end repeat
+    return out
+end tell"#;
+    let out = match Command::new("osascript").arg("-e").arg(script).output() {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return Vec::new(),
+    };
+    String::from_utf8_lossy(&out)
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.splitn(3, '\t');
+            let id = it.next()?.trim().to_string();
+            let wd = it.next().unwrap_or("").trim().to_string();
+            let nm = it.next().unwrap_or("").trim().to_string();
+            (!id.is_empty()).then_some((id, wd, nm))
+        })
+        .collect()
+}
+
+/// Best-matching Ghostty surface id for a session. Priority: cwd+title, then
+/// title alone (the agent may have `cd`'d away), then a *unique* cwd match after
+/// skipping any surface another session owns (its title matches another session —
+/// e.g. a Claude tab sharing a Codex tab's folder). Pure.
+#[cfg(target_os = "macos")]
+fn pick_ghostty_surface(surfaces: &[(String, String, String)], hint: &GhosttyHint) -> Option<String> {
+    let cwd = hint.cwd.trim_end_matches('/');
+    let title = hint.title.trim();
+    let wd_match = |wd: &str| !cwd.is_empty() && wd.trim_end_matches('/') == cwd;
+    let title_match = |nm: &str| !title.is_empty() && nm.contains(title);
+    let owned_by_other = |nm: &str| {
+        hint.others.iter().any(|o| {
+            let o = o.trim();
+            !o.is_empty() && nm.contains(o)
+        })
+    };
+
+    if let Some((id, ..)) = surfaces.iter().find(|(_, wd, nm)| wd_match(wd) && title_match(nm)) {
+        return Some(id.clone());
+    }
+    if let Some((id, ..)) = surfaces.iter().find(|(_, _, nm)| title_match(nm)) {
+        return Some(id.clone());
+    }
+    let mut cwd_hits = surfaces.iter().filter(|(_, wd, nm)| wd_match(wd) && !owned_by_other(nm));
+    match (cwd_hits.next(), cwd_hits.next()) {
+        (Some((id, ..)), None) => Some(id.clone()),
+        _ => None,
+    }
+}
+
+/// Focus a Ghostty surface by its (UUID) id. The id is sanitized to `[A-Za-z0-9-]`
+/// before it's interpolated into the script.
+#[cfg(target_os = "macos")]
+fn ghostty_focus_id(id: &str) -> bool {
+    let safe: String = id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+    if safe.is_empty() {
+        return false;
+    }
+    let script = format!(
+        r#"tell application "Ghostty"
+    activate
+    focus (first terminal whose id is "{safe}")
+end tell"#
+    );
+    Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// The `$TMUX` socket path is the segment before the first comma.
 fn tmux_socket(tmux: &str) -> Option<String> {
     tmux.split(',').next().filter(|s| !s.is_empty()).map(str::to_string)
@@ -724,4 +876,81 @@ pub fn set_locate_enabled(state: State<'_, AppState>, enabled: bool) -> Result<L
         uninstall()?;
     }
     Ok(status())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::{pick_ghostty_surface, GhosttyHint};
+
+    fn s(id: &str, wd: &str, nm: &str) -> (String, String, String) {
+        (id.into(), wd.into(), nm.into())
+    }
+
+    fn hint(cwd: &str, title: &str, others: &[&str]) -> GhosttyHint {
+        GhosttyHint {
+            cwd: cwd.into(),
+            title: title.into(),
+            others: others.iter().map(|o| (*o).to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn title_disambiguates_same_cwd() {
+        // Two surfaces in the same project; the Claude tab is titled with the
+        // aiTitle, the plain shell isn't → pick the Claude surface.
+        let surfaces = vec![
+            s("A", "/Users/m/Projects/x", "✳ Fix the parser"),
+            s("B", "/Users/m/Projects/x", "~/Projects/x"),
+        ];
+        let h = hint("/Users/m/Projects/x", "Fix the parser", &[]);
+        assert_eq!(pick_ghostty_surface(&surfaces, &h).as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn title_wins_even_when_cwd_drifted() {
+        // Agent cd'd into a subdir, so cwd no longer matches — the title still does.
+        let surfaces = vec![s("A", "/Users/m/Projects/x/sub", "✳ Ship it")];
+        let h = hint("/Users/m/Projects/x", "Ship it", &[]);
+        assert_eq!(pick_ghostty_surface(&surfaces, &h).as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn unique_cwd_when_no_title() {
+        let surfaces = vec![
+            s("A", "/Users/m/Projects/x", "~/Projects/x"),
+            s("B", "/Users/m/Projects/y", "~/Projects/y"),
+        ];
+        let h = hint("/Users/m/Projects/x", "", &[]);
+        assert_eq!(pick_ghostty_surface(&surfaces, &h).as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn ambiguous_cwd_no_title_gives_up() {
+        let surfaces = vec![
+            s("A", "/Users/m/Projects/x", "~/Projects/x"),
+            s("B", "/Users/m/Projects/x", "vim"),
+        ];
+        let h = hint("/Users/m/Projects/x", "", &[]);
+        assert_eq!(pick_ghostty_surface(&surfaces, &h), None);
+    }
+
+    #[test]
+    fn codex_surface_wins_when_claude_tab_shares_cwd() {
+        // The Codex tab has a plain dir-name title and shares a folder with a
+        // Claude tab. The Claude surface is owned by another session (its title)
+        // → skip it → the Codex surface is the unique remainder.
+        let surfaces = vec![
+            s("CLAUDE", "/Users/m/Projects/x", "✳ Introduce Claude Code assistant"),
+            s("CODEX", "/Users/m/Projects/x", "x"),
+        ];
+        let h = hint("/Users/m/Projects/x", "", &["Introduce Claude Code assistant"]);
+        assert_eq!(pick_ghostty_surface(&surfaces, &h).as_deref(), Some("CODEX"));
+    }
+
+    #[test]
+    fn trailing_slash_normalized() {
+        let surfaces = vec![s("A", "/Users/m/Projects/x/", "~/Projects/x")];
+        let h = hint("/Users/m/Projects/x", "", &[]);
+        assert_eq!(pick_ghostty_surface(&surfaces, &h).as_deref(), Some("A"));
+    }
 }
