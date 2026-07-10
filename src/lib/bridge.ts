@@ -27,6 +27,8 @@ export const setWatchCodex = (enabled: boolean) => invoke("set_watch_codex", { e
 export const setPanelShortcutEnabled = (enabled: boolean) =>
   invoke("set_panel_shortcut_enabled", { enabled });
 export const togglePanel = () => invoke("toggle_panel");
+// Close the panel AND hand focus back to the app that had it before the panel opened.
+export const hidePanel = () => invoke("hide_panel");
 export const openDashboard = () => invoke("open_dashboard");
 // Hide whichever window this webview lives in (Esc dismiss). The panel's blur
 // handler then records the dismiss so a follow-up avatar tap doesn't re-open it.
