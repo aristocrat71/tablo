@@ -3,34 +3,9 @@ import Screen from "../layouts/Screen.astro";
 import Cat from "../components/Cat.astro";
 import LiveWidget from "../components/LiveWidget.astro";
 import InstallDeck from "../components/InstallDeck.astro";
-
-const marqueeItems = [
-  "claude·optilife 64%",
-  "codex·api 71%",
-  "claude·tablo 23%",
-  "3 sessions · 1 waiting · 1 approval",
-];
 ---
 
 <Screen>
-  <!-- ===== marquee ticker (fixed top) ===== -->
-  <div class="marquee" aria-hidden="true">
-    <div class="marquee-track" data-marquee>
-      {
-        [0, 1].map(() => (
-          <span class="marquee-run">
-            {marqueeItems.map((m) => (
-              <span class="mq">
-                {m}
-                <b>▮</b>
-              </span>
-            ))}
-          </span>
-        ))
-      }
-    </div>
-  </div>
-
   <!-- ===== the LED scrollbar ===== -->
   <div class="scroll-led" aria-hidden="true"><i data-scroll-fill></i></div>
 
@@ -150,7 +125,13 @@ const marqueeItems = [
       <p class="feat">
         <span class="feat-mark" aria-hidden="true">&gt;</span>
         <span class="feat-line">
-          <b>context window</b><span class="feat-desc"> — a live meter per session, turns coral before you hit the wall.</span>
+          <b>context window</b><span class="feat-desc"> — a live meter per session that auto-sizes to the 200k or 1M window and warns before you hit the wall.</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>approve / deny</b><span class="feat-desc"> — gate a tool call behind a tap; nothing runs until you say so.</span>
         </span>
       </p>
       <p class="feat">
@@ -162,7 +143,19 @@ const marqueeItems = [
       <p class="feat">
         <span class="feat-mark" aria-hidden="true">&gt;</span>
         <span class="feat-line">
-          <b>jump to session</b><span class="feat-desc"> — tap a session and land right in its terminal, focused.</span>
+          <b>jump to session</b><span class="feat-desc"> — tap one and land right in its terminal, focused <i>(experimental)</i>.</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>full dashboard</b><span class="feat-desc"> — per-session gauges, a live activity preview, and every setting in one window.</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>quiet by default</b><span class="feat-desc"> — sits in your menu bar, dark or light, and follows you across spaces.</span>
         </span>
       </p>
     </div>
@@ -217,46 +210,6 @@ const marqueeItems = [
 </Screen>
 
 <style>
-  /* ===== marquee ===== */
-  .marquee {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: var(--z-marquee);
-    overflow: hidden;
-    background: color-mix(in srgb, var(--bg-inset) 88%, transparent);
-    border-bottom: 1px solid var(--border-soft);
-    backdrop-filter: blur(4px);
-  }
-  .marquee-track {
-    display: flex;
-    width: max-content;
-    animation: marquee 34s linear infinite;
-  }
-  .marquee-run {
-    display: flex;
-    flex-shrink: 0;
-  }
-  .mq {
-    font-family: var(--font-mono);
-    font-size: var(--fs-mono-xs);
-    color: var(--ink-dim);
-    padding: 7px 18px;
-    white-space: nowrap;
-    letter-spacing: 0.04em;
-  }
-  .mq b {
-    color: var(--blue);
-    margin-left: 18px;
-    opacity: 0.7;
-  }
-  @keyframes marquee {
-    to {
-      transform: translateX(-50%);
-    }
-  }
-
   /* ===== top-right controls (reboot + light-mode troll, stacked) ===== */
   .top-controls {
     position: fixed;
@@ -885,7 +838,7 @@ const marqueeItems = [
     }
 
     const lines = [
-      "tablo v0.1.0  ·  familiar daemon",
+      "tablo v1.0.0  ·  familiar daemon",
       "> mounting ~/.claude/projects  (claude code) ... ok",
       "> mounting ~/.codex/sessions   (codex) ....... ok",
       "> tailing transcripts ....................... ok",
@@ -1062,12 +1015,6 @@ const marqueeItems = [
           ms.value = "3";
           ms.dispatchEvent(new Event("input"));
         }
-        document
-          .querySelector("[data-marquee]")
-          ?.insertAdjacentHTML(
-            "afterbegin",
-            '<span class="marquee-run"><span class="mq">&gt; meow<b>▮</b></span></span>',
-          );
       }
     });
   }
