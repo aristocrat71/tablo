@@ -45,6 +45,14 @@ pub struct Config {
     /// almost always arrives first, so this rarely applies.
     pub codex_context_limit: u64,
 
+    // ---- AeroSpace (macOS tiling WM) ----
+    /// Follow the focused AeroSpace workspace so the widget survives workspace
+    /// switches (AeroSpace emulates its own workspaces and ignores the native
+    /// "on all Spaces" pin). Default on; a no-op — and cost-free — when AeroSpace
+    /// isn't running, so it only ever does anything for AeroSpace users. The
+    /// Settings toggle appears only once AeroSpace is detected.
+    pub aerospace_follow: bool,
+
     // ---- context window sizing (Open Question #4) ----
     /// Denominator used when a session's window can't be determined and its
     /// usage is below `standard_context_limit`. Set to `extended_context_limit`
@@ -90,6 +98,12 @@ pub struct Config {
     pub notify_on_permission: bool,
     /// "dark" (hero) or "light".
     pub theme: String,
+    /// Global hotkey (Tauri accelerator syntax, e.g. "Control+Command+P") that
+    /// toggles the panel from anywhere. Empty string disables it.
+    pub panel_shortcut: String,
+    /// Whether the global panel hotkey is registered. On by default; the Settings
+    /// toggle flips it live (register / unregister) without losing the keystroke.
+    pub panel_shortcut_enabled: bool,
     /// One-time guard: whether "jump to session" has been auto-enabled once. Set
     /// true after the first launch wires it in, so a later user-disable sticks
     /// and we never silently re-enable it behind their back.
@@ -106,6 +120,7 @@ impl Default for Config {
             clear_waiting_mins: 10,
             watch_codex: true,
             codex_context_limit: 256_000,
+            aerospace_follow: true,
             default_context_limit: 200_000,
             standard_context_limit: 200_000,
             extended_context_limit: 1_000_000,
@@ -125,6 +140,8 @@ impl Default for Config {
             notify_on_warn: false,
             notify_on_permission: true,
             theme: "dark".into(),
+            panel_shortcut: "Control+Command+P".into(),
+            panel_shortcut_enabled: true,
             locate_default_applied: false,
         }
     }

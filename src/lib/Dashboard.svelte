@@ -6,12 +6,12 @@
   import {
     prefs,
     byMode,
-    toggleFilter,
     setNotifyOnWaiting,
     setWaitingToastSecs,
     TOAST_SECS_MIN,
     TOAST_SECS_MAX,
   } from "./prefs.svelte";
+  import FilterButton from "./FilterButton.svelte";
   import {
     hookStatus,
     setHookEnabled,
@@ -24,11 +24,18 @@
     setCancelGraceMins,
     setClearWaitingMins,
     setWatchCodex,
+    setAerospaceFollow,
+    setPanelShortcutEnabled,
     codexLocateStatus,
     setCodexLocateEnabled,
   } from "./bridge";
   import type { HookStatus, LocateStatus, PermDecision, PendingRequest, SessionView } from "./types";
   import ThemeToggle from "./ThemeToggle.svelte";
+  import { getVersion } from "@tauri-apps/api/app";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+
+  const REPO_URL = "https://github.com/aristocrat71/tablo";
+  const WEBSITE_URL = "https://tablo-cat.netlify.app/";
 
   type Card = {
     key: string;
@@ -43,6 +50,11 @@
 
   // Header tabs: the sessions dashboard vs. the settings pane.
   let view = $state<"dashboard" | "settings">("dashboard");
+
+  // About dialog — a modal popover, plus the app version (from tauri.conf.json)
+  // shown inside it.
+  let showAbout = $state(false);
+  let version = $state("");
 
   // One card per session, its context gauge unified with any pending requests
   // it owns. Needs-input sessions sort first, then the panel's chosen sort.
@@ -69,10 +81,16 @@
     });
   });
 
+  // Source filter — mirrors the Panel; only when sessions span >1 agent.
+  let sources = $derived(new Set(snap.sessions.map((s) => s.source)));
+  let sourceFilterActive = $derived(sources.size > 1);
+  const srcVisible = (c: Card) =>
+    !sourceFilterActive || ((c.session?.source ?? "claude") === "codex" ? prefs.showCodex : prefs.showClaude);
+
   // Sessions past the context warn threshold get their own Critical card, pinned
   // above the rest.
   const isCrit = (c: Card) => !!c.session && c.session.level !== "ok";
-  let critCards = $derived(cards.filter(isCrit));
+  let critCards = $derived(cards.filter((c) => isCrit(c) && srcVisible(c)));
   let restCards = $derived(cards.filter((c) => !isCrit(c)));
   // Working/waiting state filters, mirroring the Panel. Only apply with >1 session
   // so a lone session can't be filtered out with no way to bring it back; a pending
@@ -81,14 +99,18 @@
   let showWork = $derived(!filtersActive || prefs.showWorking);
   let showWait = $derived(!filtersActive || prefs.showWaiting);
   let visibleRest = $derived(
-    restCards.filter((c) =>
-      c.requests.length > 0 ? true : c.session?.activityKind === "waiting" ? showWait : showWork,
-    ),
+    restCards.filter((c) => {
+      if (!srcVisible(c)) return false;
+      return c.requests.length > 0 ? true : c.session?.activityKind === "waiting" ? showWait : showWork;
+    }),
   );
   let warnPct = $derived(Math.round(snap.warnPct));
   let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
   let clearWaitingMins = $derived(Math.round(snap.clearWaitingMins));
   let watchCodex = $derived(snap.watchCodex);
+  let panelShortcutEnabled = $derived(snap.panelShortcutEnabled);
+  let aerospaceFollow = $derived(snap.aerospaceFollow);
+  let aerospaceAvailable = $derived(snap.aerospaceAvailable);
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -104,10 +126,16 @@
     hookStatus().then((s) => (hook = s)).catch(() => {});
     locateStatus().then((s) => (loc = s)).catch(() => {});
     codexLocateStatus().then((s) => (codexLoc = s)).catch(() => {});
+    getVersion().then((v) => (version = v)).catch(() => {});
     // Esc closes the dashboard window (it hides, so it can reopen later) and
     // returns Tablo to a switcher-hidden widget.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") hideDashboard().catch(() => {});
+      if (e.key !== "Escape") return;
+      if (showAbout) {
+        showAbout = false;
+        return;
+      }
+      hideDashboard().catch(() => {});
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -177,12 +205,21 @@
       {/if}
     </div>
     {#if view === "dashboard"}
-      <button class="settings-btn" title="Settings" aria-label="Settings" onclick={() => (view = "settings")}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
+      <div class="head-actions">
+        <button class="settings-btn" title="About tablo" aria-label="About tablo" onclick={() => (showAbout = true)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        </button>
+        <button class="settings-btn" title="Settings" aria-label="Settings" onclick={() => (view = "settings")}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </div>
     {/if}
   </div>
 
@@ -216,14 +253,7 @@
         </h3>
         {#if filtersActive}
           <div class="filt-bar">
-            <div class="seg filt" role="group" aria-label="Filter by state">
-              <button class:on={prefs.showWaiting} onclick={() => toggleFilter("waiting")}>
-                <span class="fdot wait"></span>waiting
-              </button>
-              <button class:on={prefs.showWorking} onclick={() => toggleFilter("working")}>
-                <span class="fdot work"></span>working
-              </button>
-            </div>
+            <FilterButton showSource={sourceFilterActive} />
           </div>
         {/if}
         {#if cards.length === 0}
@@ -255,16 +285,22 @@
           {@render toggle("Tool approvals", hook.serverUp ? `Intercept ${hook.tools.join(", ")} so you can approve or deny before they run.` : "Approval server not running.", hook.installed, busy, toggleApprovals)}
         {/if}
         {#if loc}
-          {@render toggle("Jump to Claude session", "Focus the terminal window a session lives in (reads its tmux pane / terminal app).", loc.installed, locBusy, toggleLocate)}
+          {@render toggle("Jump to Claude session (experimental)", "Focus the terminal window a session lives in (reads its tmux pane / terminal app).", loc.installed, locBusy, toggleLocate)}
         {/if}
       </div>
 
       <div class="setting-grid">
         {@render toggle("Watch Codex", "Show OpenAI Codex CLI sessions (~/.codex) alongside Claude Code.", watchCodex, false, () => setWatchCodex(!watchCodex))}
         {#if codexLoc && watchCodex}
-          {@render toggle("Jump to Codex session", "Focus the terminal a Codex session lives in (installs a hook in ~/.codex/hooks.json — Codex asks you to trust it once).", codexLoc.installed, codexLocBusy, toggleCodexLocate)}
+          {@render toggle("Jump to Codex session (experimental)", "Focus the terminal a Codex session lives in (installs a hook in ~/.codex/hooks.json — Codex asks you to trust it once).", codexLoc.installed, codexLocBusy, toggleCodexLocate)}
         {/if}
       </div>
+
+      {@render toggle("Panel shortcut", "Summon the panel from anywhere with Ctrl+Cmd+P — no need to click the widget.", panelShortcutEnabled, false, () => setPanelShortcutEnabled(!panelShortcutEnabled))}
+
+      {#if aerospaceAvailable}
+        {@render toggle("Follow AeroSpace workspace", "AeroSpace hides windows on workspace switch — keep the widget with you by moving it to whichever workspace you focus.", aerospaceFollow, false, () => setAerospaceFollow(!aerospaceFollow))}
+      {/if}
 
       <div class="setting">
         <div class="setting-main">
@@ -351,6 +387,41 @@
   </div>
   {/if}
 </div>
+
+{#if showAbout}
+  <div class="about-overlay" transition:fade={{ duration: 120 }}>
+    <button class="about-backdrop" aria-label="Close about dialog" onclick={() => (showAbout = false)}></button>
+    <div class="about-dialog" role="dialog" aria-modal="true" aria-label="About tablo" tabindex="-1">
+      <button class="about-close" title="Close" aria-label="Close" onclick={() => (showAbout = false)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+      <div class="about-body">
+        <div class="about-cat" aria-hidden="true"></div>
+        <div class="about-text">
+          <div class="about-name">tablo</div>
+          <div class="about-ver">{version ? `v${version}` : "—"}</div>
+          <p class="about-tag">A tiny floating cat that watches your agents work</p>
+          <p class="about-web">
+            <button class="about-link" onclick={() => openUrl(WEBSITE_URL)}>https://tablo-cat.netlify.app/</button>
+          </p>
+          <dl class="about-meta">
+            <div>
+              <dt>Open Source</dt>
+              <dd>
+                <button class="about-link" onclick={() => openUrl(REPO_URL)}>github.com/aristocrat71/tablo</button>
+              </dd>
+            </div>
+            <div><dt>License</dt><dd>MIT</dd></div>
+          </dl>
+          <p class="about-foot">Updates install automatically in the background.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#snippet toggle(title: string, sub: string, on: boolean, busy: boolean, onToggle: () => void)}
   <div class="setting">
@@ -495,6 +566,167 @@
     width: 17px;
     height: 17px;
     display: block;
+  }
+  /* info (i) + gear grouped at the header's top-right */
+  .head-actions {
+    align-self: flex-start;
+    display: flex;
+    gap: 8px;
+  }
+
+  /* about — modal dialog popover */
+  .about-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+  .about-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: default;
+  }
+  .about-dialog {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 520px;
+    padding: 26px 24px 20px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--bg-surface);
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.5);
+    animation: about-pop 0.14s var(--ease) both;
+  }
+  @keyframes about-pop {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .about-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition: color 0.15s var(--ease), background 0.15s var(--ease);
+  }
+  .about-close:hover {
+    color: var(--ink);
+    background: var(--bg-raised);
+  }
+  .about-close svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+  }
+  .about-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 18px;
+  }
+  /* first frame (of 5) of the shocked cat sprite — the sheet is 1024×292, so
+     each frame is 204.8×292 (h/w = 365/256). Show frame 0 via background-position. */
+  .about-cat {
+    --w: 104px;
+    flex: none;
+    width: var(--w);
+    height: calc(var(--w) * 365 / 256);
+    margin-top: 2px;
+    background-image: url(/sprites/shocked-sprite-sheet.png);
+    background-repeat: no-repeat;
+    background-position: 0 0;
+    background-size: calc(var(--w) * 5) 100%;
+  }
+  .about-text {
+    min-width: 0;
+  }
+  .about-name {
+    font-family: var(--font-round);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1.1;
+  }
+  .about-ver {
+    margin-top: 3px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--amber, var(--ink-dim));
+  }
+  .about-tag {
+    margin: 12px 0 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+  }
+  .about-web {
+    margin: 6px 0 0;
+  }
+  .about-meta {
+    margin: 14px 0 0;
+    display: grid;
+    gap: 9px;
+  }
+  .about-meta > div {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .about-meta dt {
+    flex: none;
+    width: 104px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+  }
+  .about-meta dd {
+    margin: 0;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .about-link {
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--amber);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .about-link:hover {
+    text-decoration: underline;
+  }
+  .about-foot {
+    margin: 18px 0 0;
+    font-size: 11.5px;
+    color: var(--ink-faint);
   }
   /* back link, settings view */
   .back {
@@ -1144,57 +1376,10 @@
     box-shadow: 0 0 8px -1px var(--coral);
   }
 
-  /* working/waiting state filters — mirrors the panel's toolbar segment */
+  /* filter popover trigger — holds the state + source toggles */
   .filt-bar {
     display: flex;
     margin: 2px 0 14px;
-  }
-  .seg {
-    display: inline-flex;
-    padding: 2px;
-    border-radius: 8px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-soft);
-  }
-  .seg button {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    padding: 4px 9px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--ink-faint);
-    cursor: pointer;
-    transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
-  }
-  .seg button:hover {
-    color: var(--ink-dim);
-  }
-  /* neutral "on" highlight — the colored LED carries the meaning */
-  .seg.filt button.on {
-    background: var(--bg-raised);
-    color: var(--ink);
-  }
-  .fdot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    flex-shrink: 0;
-    background: var(--ink-faint);
-    transition: background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
-  }
-  .seg.filt button.on .fdot.wait {
-    background: var(--sage);
-    box-shadow: 0 0 6px var(--sage);
-  }
-  .seg.filt button.on .fdot.work {
-    background: var(--amber);
-    box-shadow: 0 0 6px var(--amber);
   }
 
   .dash-empty {

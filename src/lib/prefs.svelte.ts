@@ -9,6 +9,7 @@ import type { SessionView } from "./types";
 
 export type SortMode = "context" | "recent";
 export type StateFilter = "working" | "waiting";
+export type SourceFilter = "claude" | "codex";
 
 const KEY = "tablo.viewPrefs";
 
@@ -18,9 +19,13 @@ interface Prefs {
   // everything); the Permission Request group is never filtered.
   showWorking: boolean;
   showWaiting: boolean;
+  // Per-source (which agent) visibility toggles. Both on by default; only surface
+  // when sessions from more than one source are present.
+  showClaude: boolean;
+  showCodex: boolean;
   // Toast when a session finishes working and starts waiting on you. Default on.
   notifyOnWaiting: boolean;
-  // How long that toast stays on screen, in seconds. Default 2.
+  // How long that toast stays on screen, in seconds. Default 4.
   waitingToastSecs: number;
 }
 
@@ -30,7 +35,7 @@ export const TOAST_SECS_MAX = 30;
 
 function clampSecs(n: unknown): number {
   const v = Math.round(Number(n));
-  if (!Number.isFinite(v)) return 2;
+  if (!Number.isFinite(v)) return 4;
   return Math.min(TOAST_SECS_MAX, Math.max(TOAST_SECS_MIN, v));
 }
 
@@ -38,8 +43,10 @@ const DEFAULTS: Prefs = {
   sort: "context",
   showWorking: true,
   showWaiting: true,
+  showClaude: true,
+  showCodex: true,
   notifyOnWaiting: true,
-  waitingToastSecs: 2,
+  waitingToastSecs: 4,
 };
 
 function coerce(raw: unknown): Prefs {
@@ -48,8 +55,10 @@ function coerce(raw: unknown): Prefs {
     sort: p.sort === "recent" ? "recent" : "context",
     showWorking: p.showWorking !== false,
     showWaiting: p.showWaiting !== false,
+    showClaude: p.showClaude !== false,
+    showCodex: p.showCodex !== false,
     notifyOnWaiting: p.notifyOnWaiting !== false,
-    waitingToastSecs: p.waitingToastSecs == null ? 2 : clampSecs(p.waitingToastSecs),
+    waitingToastSecs: p.waitingToastSecs == null ? 4 : clampSecs(p.waitingToastSecs),
   };
 }
 
@@ -74,6 +83,8 @@ function persist() {
         sort: prefs.sort,
         showWorking: prefs.showWorking,
         showWaiting: prefs.showWaiting,
+        showClaude: prefs.showClaude,
+        showCodex: prefs.showCodex,
         notifyOnWaiting: prefs.notifyOnWaiting,
         waitingToastSecs: prefs.waitingToastSecs,
       })
@@ -91,6 +102,12 @@ export function setSort(mode: SortMode) {
 export function toggleFilter(kind: StateFilter) {
   if (kind === "working") prefs.showWorking = !prefs.showWorking;
   else prefs.showWaiting = !prefs.showWaiting;
+  persist();
+}
+
+export function toggleSource(kind: SourceFilter) {
+  if (kind === "claude") prefs.showClaude = !prefs.showClaude;
+  else prefs.showCodex = !prefs.showCodex;
   persist();
 }
 
@@ -115,6 +132,8 @@ if (browser) {
       prefs.sort = next.sort;
       prefs.showWorking = next.showWorking;
       prefs.showWaiting = next.showWaiting;
+      prefs.showClaude = next.showClaude;
+      prefs.showCodex = next.showCodex;
       prefs.notifyOnWaiting = next.notifyOnWaiting;
       prefs.waitingToastSecs = next.waitingToastSecs;
     } catch {

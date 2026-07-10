@@ -68,6 +68,9 @@ export interface Snapshot {
   cancelGraceMins: number; // early-cancel grace window (min), echoed for Settings
   clearWaitingMins: number; // waiting-session clear window (min), echoed for Settings
   watchCodex: boolean; // whether Codex sessions are watched, echoed for Settings
+  panelShortcutEnabled: boolean; // whether the global panel hotkey is on, echoed for Settings
+  aerospaceFollow: boolean; // whether Tablo follows the focused AeroSpace workspace, echoed for Settings
+  aerospaceAvailable: boolean; // whether AeroSpace was detected (gates the follow toggle)
 }
 
 // Mirrors Rust `permission::HookStatus`.
@@ -133,4 +136,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   cancelGraceMins: 3,
   clearWaitingMins: 10,
   watchCodex: true,
+  panelShortcutEnabled: true,
+  aerospaceFollow: true,
+  aerospaceAvailable: false,
 };
