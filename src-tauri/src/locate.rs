@@ -11,8 +11,9 @@
 //!
 //! Unlike approvals this never blocks a tool — it only reports location.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -342,17 +343,25 @@ fn raise_window(
         }
     }
 
-    // Otherwise activate the host app (Zed/Ghostty aren't tab-scriptable).
+    // Otherwise foreground the whole host app — it isn't tab-scriptable (Zed /
+    // VS Code / a tmux'd Ghostty), so no specific pane can be picked. `open -a`
+    // goes through LaunchServices and needs NO Automation grant, so it works from
+    // the installed (Accessory) app where `activate` silently no-ops for lack of a
+    // grant it can't prompt for. `activate` still runs after as a best-effort
+    // focus-steal for when Tablo is itself frontmost (panel open) and holds a grant.
     match host {
         Some(app) => {
-            if activate_app(&app) {
+            let opened = Command::new("open")
+                .arg("-a")
+                .arg(&app)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            let activated = activate_app(&app);
+            if opened || activated {
                 Raise::Focused(format!("app {app}"))
             } else {
-                match Command::new("open").arg("-a").arg(&app).output() {
-                    Ok(o) if o.status.success() => Raise::Focused(format!("app {app} (launched)")),
-                    Ok(o) => Raise::Missed(format!("open {app} — {}", String::from_utf8_lossy(&o.stderr).trim())),
-                    Err(e) => Raise::Missed(format!("open {app} — {e}")),
-                }
+                Raise::Missed(format!("could not foreground {app}"))
             }
         }
         None => Raise::Missed("no host app resolved".into()),
@@ -382,9 +391,40 @@ fn raise_window(
     Raise::Unsupported
 }
 
+/// Absolute path to `tmux`. The installed app is launched by LaunchServices with
+/// a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) that omits Homebrew / MacPorts /
+/// Nix — so a bare `Command::new("tmux")`, which works under `tauri dev` (shell
+/// PATH inherited), fails once bundled. Probe the common install dirs, then ask a
+/// login shell, then fall back to the bare name (a real PATH still resolves it).
+/// Resolved once and cached.
+fn tmux_bin() -> &'static str {
+    static BIN: OnceLock<String> = OnceLock::new();
+    BIN.get_or_init(|| {
+        for c in [
+            "/opt/homebrew/bin/tmux",
+            "/usr/local/bin/tmux",
+            "/opt/local/bin/tmux",
+            "/usr/bin/tmux",
+        ] {
+            if Path::new(c).is_file() {
+                return c.to_string();
+            }
+        }
+        if let Ok(sh) = std::env::var("SHELL") {
+            if let Ok(out) = Command::new(sh).args(["-lc", "command -v tmux"]).output() {
+                let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !p.is_empty() && Path::new(&p).is_file() {
+                    return p;
+                }
+            }
+        }
+        "tmux".to_string()
+    })
+}
+
 /// Run a tmux command on the session's socket; Ok(stdout) / Err(stderr|ioerr).
 fn run_tmux(socket: &Option<String>, args: &[&str]) -> Result<String, String> {
-    let mut cmd = Command::new("tmux");
+    let mut cmd = Command::new(tmux_bin());
     if let Some(s) = socket {
         cmd.arg("-S").arg(s);
     }
@@ -458,11 +498,11 @@ fn app_from_comm(comm: &str) -> Option<String> {
     Some(app.to_string())
 }
 
-/// Bring an app to the front by name via AppleScript `activate` — which, unlike
-/// `open -a` and `NSRunningApplication`, reliably takes focus even from the
-/// currently-active app (Tablo). Costs a one-time Automation grant per app, the
-/// same permission the exact-tab path already uses (and which foregrounds
-/// Terminal). Launches the app if it isn't running.
+/// Bring an app to the front by name via AppleScript `activate`. Takes focus even
+/// when Tablo is itself frontmost, but needs an Automation grant per app — which
+/// the installed (Accessory) app lacks and can't prompt for, so it silently
+/// no-ops there. Used only as a booster alongside `open -a` (which needs no
+/// grant). Returns whether osascript exited 0, not whether focus actually moved.
 #[cfg(target_os = "macos")]
 fn activate_app(name: &str) -> bool {
     let safe = name.replace('"', "");
