@@ -1,6 +1,6 @@
 [package]
 name = "tablo"
-version = "0.1.0"
+version = "0.5.0"
 description = "A tiny floating cat that watches your Claude Code agents"
 authors = ["you"]
 edition = "2021"
@@ -29,3 +29,4 @@ dirs = "5"
 # Tiny synchronous HTTP server for the PreToolUse approval hook (Phase 4).
 tiny_http = "0.12"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"

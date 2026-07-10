@@ -11,6 +11,27 @@ session; from there, open a fuller **dashboard** with settings.
 Built with **Tauri 2** (Rust) + **SvelteKit / Svelte 5**. macOS is the primary
 platform today.
 
+## Install
+
+Prebuilt installers for macOS, Windows, and Linux live on the
+[Releases](https://github.com/aristocrat71/tablo/releases) page. These one-liners
+grab the latest build and install it quietly — no Gatekeeper / SmartScreen prompt:
+
+**macOS / Linux**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aristocrat71/tablo/main/install.sh | bash
+```
+
+**Windows** (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/aristocrat71/tablo/main/install.ps1 | iex
+```
+
+Once installed, tablo keeps itself up to date — it checks for new releases and
+updates in the background.
+
 ## The four surfaces
 
 - **Avatar** — a tiny (126×134) transparent, always-on-top window that is

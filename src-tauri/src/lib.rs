@@ -714,6 +714,50 @@ fn toggle_widget(app: &AppHandle, item: &tauri::menu::MenuItem<tauri::Wry>) {
     }
 }
 
+// ============================ auto-update ============================
+
+/// How often to poll for a new release after the initial post-launch check.
+const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// Check GitHub for a newer release; if one exists, download, install, and
+/// relaunch. Silent + best-effort — offline, no release yet, or a signature
+/// mismatch all just no-op. Skipped while an approval is pending so an update
+/// never interrupts a decision in flight.
+async fn try_update(app: AppHandle) {
+    use tauri_plugin_updater::UpdaterExt;
+    if !app.state::<AppState>().pending.lock().unwrap().is_empty() {
+        return;
+    }
+    let update = match app.updater() {
+        Ok(u) => match u.check().await {
+            Ok(Some(update)) => update,
+            _ => return, // up to date, unreachable, or no release published yet
+        },
+        Err(_) => return,
+    };
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app
+        .notification()
+        .builder()
+        .title("tablo is updating")
+        .body(format!("Installing v{}…", update.version))
+        .show();
+    if update.download_and_install(|_, _| {}, || {}).await.is_ok() {
+        app.restart();
+    }
+}
+
+/// Poll for updates: once shortly after launch, then on a long interval.
+fn spawn_updater(app: AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(8));
+        loop {
+            tauri::async_runtime::block_on(try_update(app.clone()));
+            std::thread::sleep(UPDATE_INTERVAL);
+        }
+    });
+}
+
 // ============================ entrypoint ============================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -722,6 +766,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -812,6 +857,9 @@ pub fn run() {
             // Global hotkey to summon the panel from anywhere, without touching
             // the widget. Config-driven + toggleable in Settings.
             apply_panel_shortcut(&handle, panel_shortcut_enabled, &panel_shortcut);
+
+            // Poll GitHub Releases for updates and self-install them.
+            spawn_updater(handle.clone());
 
             spawn_watcher(handle.clone());
             spawn_hittest(handle);
