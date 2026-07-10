@@ -119,7 +119,7 @@ Tablo can gate Claude Code tool calls behind a tap:
 Approvals are off until you enable them in Settings, and only then is Claude
 Code's hook config touched.
 
-## Jump to session
+## Jump to session *(experimental)*
 
 Every session card — and every toast — has a **jump** button that focuses the
 terminal a session is running in. Sessions self-report their location through a
@@ -171,9 +171,14 @@ and the same live approvals. A compact headline shows *active · waiting ·
 projects*. A gear opens an in-window **Settings** pane:
 
 - **Tool approvals** — turn Claude Code approve/deny on or off.
-- **Jump to Claude session** — enable/disable the jump buttons for Claude sessions.
-- **Watch Codex** / **Jump to Codex session** — watch Codex CLI sessions (on by
-  default), and enable jump for them (opt-in; Codex asks you to trust the hook once).
+- **Jump to Claude session** *(experimental)* — enable/disable the jump buttons
+  for Claude sessions.
+- **Watch Codex** / **Jump to Codex session** *(experimental)* — watch Codex CLI
+  sessions (on by default), and enable jump for them (opt-in; Codex asks you to
+  trust the hook once).
+- **Panel shortcut** — summon the panel from anywhere with **Ctrl+Cmd+P**.
+- **Follow AeroSpace workspace** — keep the widget with you across AeroSpace
+  workspace switches (appears only when AeroSpace is detected — see below).
 - **Context window limit** — the warning threshold, `1`–`100`% (default `60`).
   Applies live everywhere.
 - **Cancelled-prompt grace** — how long Tablo waits before treating a Ctrl-C'd
@@ -190,10 +195,27 @@ syncs instantly across every window; your choice is remembered.
 
 ## Quiet by default
 
-Tablo runs as a macOS **Accessory** app — hidden from the Dock and Cmd+Tab. It
+Tablo runs as a macOS **Accessory** app — hidden from the Dock and Cmd+Tab, with
+a small **menu-bar icon** to show/hide the widget, open the dashboard, or quit. It
 surfaces in Cmd+Tab only while the dashboard is open, then drops back to the
 corner. No emoji anywhere; status is shown with the cat, colored glows, and
 LED-style dots.
+
+## AeroSpace
+
+Tablo stays put across native macOS **Spaces** (Mission Control desktops) — the
+avatar, panel, and toast are pinned to every Space.
+[AeroSpace](https://github.com/nikitabobko/AeroSpace), the i3-like tiling window
+manager, emulates its *own* workspaces and slides windows off-screen on a switch,
+so that native pin doesn't apply. Tablo handles it by **following**: when it
+detects AeroSpace running, it moves the cat onto whichever workspace you focus, so
+the widget is always with you. It's on by default and cost-free when AeroSpace
+isn't running — the **Follow AeroSpace workspace** toggle in Settings appears only
+once AeroSpace is detected.
+
+Big shoutout to [@nikitabobko](https://github.com/nikitabobko) for
+[AeroSpace](https://github.com/nikitabobko/AeroSpace) — a superb tiling window
+manager for macOS.
 
 ## Develop
 
