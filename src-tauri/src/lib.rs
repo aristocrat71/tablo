@@ -9,7 +9,17 @@
 //! `state-update` event to every window; a second thread polls the cursor to
 //! keep only the cat interactive.
 
+// AeroSpace is a macOS-only tiling WM, so the follow module only compiles there.
+// Elsewhere a tiny shim keeps `aerospace::available()` (called by the scanner)
+// resolvable — always false, so the Settings toggle never appears.
+#[cfg(target_os = "macos")]
 mod aerospace;
+#[cfg(not(target_os = "macos"))]
+mod aerospace {
+    pub fn available() -> bool {
+        false
+    }
+}
 mod codex;
 mod codex_locate;
 mod config;
