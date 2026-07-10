@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { store } from "./state.svelte";
-  import { openDashboard, resolvePermission, jumpToSession, hideCurrentWindow } from "./bridge";
+  import { openDashboard, resolvePermission, jumpToSession, hidePanel } from "./bridge";
   import { tokens, pct } from "./format";
 
   // Esc collapses the panel (matches tap-away). The webview persists across
   // show/hide, so binding once on mount covers every open.
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") hideCurrentWindow().catch(() => {});
+      if (e.key === "Escape") hidePanel().catch(() => {});
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

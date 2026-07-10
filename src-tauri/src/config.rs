@@ -45,6 +45,14 @@ pub struct Config {
     /// almost always arrives first, so this rarely applies.
     pub codex_context_limit: u64,
 
+    // ---- AeroSpace (macOS tiling WM) ----
+    /// Follow the focused AeroSpace workspace so the widget survives workspace
+    /// switches (AeroSpace emulates its own workspaces and ignores the native
+    /// "on all Spaces" pin). Default on; a no-op — and cost-free — when AeroSpace
+    /// isn't running, so it only ever does anything for AeroSpace users. The
+    /// Settings toggle appears only once AeroSpace is detected.
+    pub aerospace_follow: bool,
+
     // ---- context window sizing (Open Question #4) ----
     /// Denominator used when a session's window can't be determined and its
     /// usage is below `standard_context_limit`. Set to `extended_context_limit`
@@ -112,6 +120,7 @@ impl Default for Config {
             clear_waiting_mins: 10,
             watch_codex: true,
             codex_context_limit: 256_000,
+            aerospace_follow: true,
             default_context_limit: 200_000,
             standard_context_limit: 200_000,
             extended_context_limit: 1_000_000,

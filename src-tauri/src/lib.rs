@@ -9,6 +9,17 @@
 //! `state-update` event to every window; a second thread polls the cursor to
 //! keep only the cat interactive.
 
+// AeroSpace is a macOS-only tiling WM, so the follow module only compiles there.
+// Elsewhere a tiny shim keeps `aerospace::available()` (called by the scanner)
+// resolvable — always false, so the Settings toggle never appears.
+#[cfg(target_os = "macos")]
+mod aerospace;
+#[cfg(not(target_os = "macos"))]
+mod aerospace {
+    pub fn available() -> bool {
+        false
+    }
+}
 mod codex;
 mod codex_locate;
 mod config;
@@ -65,6 +76,9 @@ pub(crate) struct AppState {
     /// When the panel was last auto-hidden on blur, to debounce the tap that
     /// caused it against an immediate re-open.
     panel_last_hidden: Mutex<Option<Instant>>,
+    /// Bundle id of the app that had focus when the panel was opened, so an
+    /// Esc/shortcut close can hand focus back to it. None ⇒ nothing to restore.
+    prev_app: Mutex<Option<String>>,
     /// Phase 4 — tool calls awaiting approval, and the channels that unblock
     /// their held hook requests (keyed by pending id).
     pub(crate) pending: Mutex<Vec<PendingRequest>>,
@@ -164,12 +178,91 @@ fn set_watch_codex(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
     recompute_and_emit(&app);
 }
 
+/// Toggle whether Tablo follows the focused AeroSpace workspace (macOS tiling WM)
+/// so the widget survives workspace switches. The follow loop reads this live on
+/// its next tick — no restart needed.
+#[tauri::command]
+fn set_aerospace_follow(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.aerospace_follow = enabled;
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
+/// Bundle id of the frontmost app, via `lsappinfo` (in /usr/bin, no permission
+/// needed). None off-macOS or on failure. Lets the panel remember who to hand
+/// focus back to when it closes.
+#[cfg(target_os = "macos")]
+fn frontmost_bundle_id() -> Option<String> {
+    let asn = std::process::Command::new("lsappinfo").arg("front").output().ok()?;
+    let asn = String::from_utf8_lossy(&asn.stdout).trim().to_string();
+    if asn.is_empty() {
+        return None;
+    }
+    let out = std::process::Command::new("lsappinfo")
+        .args(["info", "-only", "bundleID", &asn])
+        .output()
+        .ok()?;
+    // Output is `"CFBundleIdentifier"="com.example.app"` → take the 4th "-field.
+    String::from_utf8_lossy(&out.stdout)
+        .split('"')
+        .nth(3)
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn frontmost_bundle_id() -> Option<String> {
+    None
+}
+
+/// Background: remember the most recent NON-Tablo frontmost app so closing the
+/// panel can hand focus back even when it was opened by tapping the cat (which
+/// makes Tablo frontmost before we can read who was there). Cheap poll; macOS-only
+/// (elsewhere `frontmost_bundle_id` is None, so this would no-op — skip it).
+#[cfg(target_os = "macos")]
+fn spawn_frontmost_tracker(app: AppHandle) {
+    std::thread::spawn(move || {
+        let ours = app.config().identifier.clone();
+        loop {
+            std::thread::sleep(Duration::from_secs(2));
+            if let Some(b) = frontmost_bundle_id() {
+                if b != ours {
+                    if let Some(st) = app.try_state::<AppState>() {
+                        *st.prev_app.lock().unwrap() = Some(b);
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Bring the app with `bundle_id` to the front (best-effort, no permission).
+fn activate_bundle(bundle_id: &str) {
+    let _ = std::process::Command::new("open").args(["-b", bundle_id]).output();
+}
+
+/// Hide the panel and hand focus back to whatever app had it when the panel
+/// opened. Used by the shortcut toggle and the Esc command — NOT by blur, where a
+/// click-away has already moved focus itself.
+fn hide_panel_restoring(app: &AppHandle) {
+    if let Ok(panel) = win(app, "panel") {
+        let _ = panel.hide();
+    }
+    let prev = app.state::<AppState>().prev_app.lock().unwrap().take();
+    if let Some(bundle) = prev {
+        activate_bundle(&bundle);
+    }
+}
+
 /// Toggle the panel open/closed, anchored near the avatar. Shared by the tap
 /// command and the global shortcut.
 fn toggle_panel_impl(app: &AppHandle) -> Result<(), String> {
     let panel = win(app, "panel")?;
     if panel.is_visible().unwrap_or(false) {
-        panel.hide().map_err(|e| e.to_string())?;
+        hide_panel_restoring(app);
         return Ok(());
     }
     // If a blur just hid the panel, this same tap is what closed it — don't
@@ -184,10 +277,25 @@ fn toggle_panel_impl(app: &AppHandle) -> Result<(), String> {
     if recently_hidden {
         return Ok(());
     }
+    // Capture who had focus so the next close can restore it. Only overwrite when
+    // we read a real (non-Tablo) app: opening by tapping the cat makes Tablo
+    // frontmost first, so there we keep the value the background tracker saved.
+    if let Some(b) = frontmost_bundle_id() {
+        if b != app.config().identifier {
+            *app.state::<AppState>().prev_app.lock().unwrap() = Some(b);
+        }
+    }
     place_panel(app);
     panel.show().map_err(|e| e.to_string())?;
     panel.set_focus().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Close the panel and return focus to the previously-active app. The Esc key in
+/// the panel calls this (so it matches the shortcut's close behavior).
+#[tauri::command]
+fn hide_panel(app: AppHandle) {
+    hide_panel_restoring(&app);
 }
 
 #[tauri::command]
@@ -278,7 +386,9 @@ fn open_dashboard(app: AppHandle) -> Result<(), String> {
         Some(w) => w,
         None => {
             let w = tauri::WebviewWindowBuilder::new(&app, "dashboard", tauri::WebviewUrl::default())
-                .title("tablo")
+                // Distinct from the widget windows so the AeroSpace follow loop
+                // can leave the dashboard under normal tiling (see `aerospace`).
+                .title("tablo dashboard")
                 .inner_size(980.0, 720.0)
                 .min_inner_size(640.0, 480.0)
                 .resizable(true)
@@ -838,6 +948,7 @@ pub fn run() {
                 prev_activity: Mutex::new(HashMap::new()),
                 dragging: AtomicBool::new(false),
                 panel_last_hidden: Mutex::new(None),
+                prev_app: Mutex::new(None),
                 pending: Mutex::new(Vec::new()),
                 responders: Mutex::new(HashMap::new()),
                 perm_seq: AtomicU64::new(0),
@@ -866,6 +977,16 @@ pub fn run() {
             // Poll GitHub Releases for updates and self-install them.
             spawn_updater(handle.clone());
 
+            // Track the frontmost app so closing the panel can restore focus to it.
+            #[cfg(target_os = "macos")]
+            spawn_frontmost_tracker(handle.clone());
+
+            // Follow the focused AeroSpace workspace so the widget survives
+            // workspace switches (AeroSpace ignores `visibleOnAllWorkspaces`).
+            // No-ops off AeroSpace; macOS-only (AeroSpace doesn't exist elsewhere).
+            #[cfg(target_os = "macos")]
+            aerospace::spawn(handle.clone());
+
             spawn_watcher(handle.clone());
             spawn_hittest(handle);
             Ok(())
@@ -878,8 +999,10 @@ pub fn run() {
             set_cancel_grace_mins,
             set_clear_waiting_mins,
             set_watch_codex,
+            set_aerospace_follow,
             set_panel_shortcut_enabled,
             toggle_panel,
+            hide_panel,
             open_dashboard,
             hide_dashboard,
             show_toast,
