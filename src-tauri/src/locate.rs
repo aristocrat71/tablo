@@ -177,13 +177,18 @@ fn focus(loc: &SessionLocation, hint: &GhosttyHint) -> Result<String, String> {
     let socket = tmux_socket(&loc.tmux);
     let mut acted = false;
 
-    // The terminal the user is in = the most-recently-active tmux client. We move
-    // *this* client onto the target and raise *this* client's app, so switch and
-    // focus stay coherent even when they were viewing a different session/host.
+    // Which client (terminal tab) do we focus? Prefer the one ALREADY attached to
+    // the target pane's session — re-resolved live here, so jump lands on the tab
+    // that actually hosts the session wherever it moved, not a stale/last-used one.
+    // Only when the session has no client of its own (detached) do we fall back to
+    // hijacking the most-recent client and switching it over.
     let client = if loc.tmux_pane.is_empty() {
         None
     } else {
-        most_recent_client(&socket)
+        let target_session = run_tmux(&socket, &["display-message", "-p", "-t", &loc.tmux_pane, "#{session_name}"])
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        client_for_session(&socket, &target_session).or_else(|| most_recent_client(&socket))
     };
 
     // Layer 1 — portable core: move the user's client onto the pane's session and
@@ -264,27 +269,51 @@ fn tmux_focus_pane(socket: &Option<String>, pane: &str, client: Option<&str>) ->
     }
 }
 
-/// The most-recently-active tmux client across all sessions — the terminal the
-/// user is currently (or was last) looking at. Returns its `(tty, pid)`: the tty
-/// targets `switch-client -c` and AppleScript tab-matching, the pid lets us walk
-/// the process tree to that client's real host app.
-fn most_recent_client(socket: &Option<String>) -> Option<(String, i32)> {
-    let mut rows: Vec<(i64, String, i32)> = run_tmux(
+/// Raw `list-clients` output: `activity\ttty\tpid\tsession` per line.
+fn list_clients_raw(socket: &Option<String>) -> String {
+    run_tmux(
         socket,
-        &["list-clients", "-F", "#{client_activity}\t#{client_tty}\t#{client_pid}"],
+        &["list-clients", "-F", "#{client_activity}\t#{client_tty}\t#{client_pid}\t#{client_session}"],
     )
     .unwrap_or_default()
-    .lines()
-    .filter_map(|l| {
-        let mut it = l.splitn(3, '\t');
-        let act = it.next()?.trim().parse::<i64>().unwrap_or(0);
-        let tty = it.next()?.trim().to_string();
-        let pid = it.next()?.trim().parse::<i32>().ok()?;
-        (!tty.is_empty()).then_some((act, tty, pid))
-    })
-    .collect();
+}
+
+/// Pick the most-recently-active `(tty, pid)` from `list-clients` output, keeping
+/// only clients attached to `want_session` when given (else all). Pure — the tty
+/// targets `switch-client -c` + AppleScript tab-matching, the pid walks the
+/// process tree to the client's host app.
+fn pick_client(output: &str, want_session: Option<&str>) -> Option<(String, i32)> {
+    let mut rows: Vec<(i64, String, i32)> = output
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.splitn(4, '\t');
+            let act = it.next()?.trim().parse::<i64>().unwrap_or(0);
+            let tty = it.next()?.trim().to_string();
+            let pid = it.next()?.trim().parse::<i32>().ok()?;
+            let sess = it.next().unwrap_or("").trim();
+            let keep = !tty.is_empty() && want_session.is_none_or(|w| sess == w);
+            keep.then_some((act, tty, pid))
+        })
+        .collect();
     rows.sort_by(|a, b| b.0.cmp(&a.0));
     rows.into_iter().next().map(|(_, tty, pid)| (tty, pid))
+}
+
+/// The most-recently-active tmux client across all sessions — the terminal the
+/// user is currently (or was last) looking at.
+fn most_recent_client(socket: &Option<String>) -> Option<(String, i32)> {
+    pick_client(&list_clients_raw(socket), None)
+}
+
+/// The client already attached to `session` (its own terminal tab), if any. Jump
+/// prefers this over `most_recent_client` so it lands on the tab that ACTUALLY
+/// hosts the target session — re-checked live on every click — instead of
+/// hijacking whatever tab happened to be used last.
+fn client_for_session(socket: &Option<String>, session: &str) -> Option<(String, i32)> {
+    if session.is_empty() {
+        return None;
+    }
+    pick_client(&list_clients_raw(socket), Some(session))
 }
 
 /// Outcome of a platform's best-effort attempt to raise a session's GUI window.
@@ -920,7 +949,23 @@ pub fn set_locate_enabled(state: State<'_, AppState>, enabled: bool) -> Result<L
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{pick_ghostty_surface, GhosttyHint};
+    use super::{pick_client, pick_ghostty_surface, GhosttyHint};
+
+    #[test]
+    fn client_prefers_session_then_recency() {
+        // activity  tty  pid  session
+        let out = "100\t/dev/ttys1\t10\tA\n\
+                   200\t/dev/ttys2\t20\tB\n\
+                   150\t/dev/ttys3\t30\tB\n";
+        // No filter → most recent overall (ttys2, act 200).
+        assert_eq!(pick_client(out, None), Some(("/dev/ttys2".into(), 20)));
+        // Session A → its only client.
+        assert_eq!(pick_client(out, Some("A")), Some(("/dev/ttys1".into(), 10)));
+        // Session B → most recent of B's two clients.
+        assert_eq!(pick_client(out, Some("B")), Some(("/dev/ttys2".into(), 20)));
+        // Detached session → nothing (caller falls back to most_recent_client).
+        assert_eq!(pick_client(out, Some("Z")), None);
+    }
 
     fn s(id: &str, wd: &str, nm: &str) -> (String, String, String) {
         (id.into(), wd.into(), nm.into())
