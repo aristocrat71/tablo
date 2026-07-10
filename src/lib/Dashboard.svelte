@@ -24,6 +24,7 @@
     setCancelGraceMins,
     setClearWaitingMins,
     setWatchCodex,
+    setAerospaceFollow,
     setPanelShortcutEnabled,
     codexLocateStatus,
     setCodexLocateEnabled,
@@ -108,6 +109,8 @@
   let clearWaitingMins = $derived(Math.round(snap.clearWaitingMins));
   let watchCodex = $derived(snap.watchCodex);
   let panelShortcutEnabled = $derived(snap.panelShortcutEnabled);
+  let aerospaceFollow = $derived(snap.aerospaceFollow);
+  let aerospaceAvailable = $derived(snap.aerospaceAvailable);
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -294,6 +297,10 @@
       </div>
 
       {@render toggle("Panel shortcut", "Summon the panel from anywhere with Ctrl+Cmd+P — no need to click the widget.", panelShortcutEnabled, false, () => setPanelShortcutEnabled(!panelShortcutEnabled))}
+
+      {#if aerospaceAvailable}
+        {@render toggle("Follow AeroSpace workspace", "AeroSpace hides windows on workspace switch — keep the widget with you by moving it to whichever workspace you focus.", aerospaceFollow, false, () => setAerospaceFollow(!aerospaceFollow))}
+      {/if}
 
       <div class="setting">
         <div class="setting-main">

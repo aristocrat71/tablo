@@ -9,6 +9,7 @@
 //! `state-update` event to every window; a second thread polls the cursor to
 //! keep only the cat interactive.
 
+mod aerospace;
 mod codex;
 mod codex_locate;
 mod config;
@@ -162,6 +163,19 @@ fn set_watch_codex(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
     {
         let mut cfg = state.config.lock().unwrap();
         cfg.watch_codex = enabled;
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
+/// Toggle whether Tablo follows the focused AeroSpace workspace (macOS tiling WM)
+/// so the widget survives workspace switches. The follow loop reads this live on
+/// its next tick — no restart needed.
+#[tauri::command]
+fn set_aerospace_follow(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.aerospace_follow = enabled;
         cfg.save(&state.config_dir);
     }
     recompute_and_emit(&app);
@@ -362,7 +376,9 @@ fn open_dashboard(app: AppHandle) -> Result<(), String> {
         Some(w) => w,
         None => {
             let w = tauri::WebviewWindowBuilder::new(&app, "dashboard", tauri::WebviewUrl::default())
-                .title("tablo")
+                // Distinct from the widget windows so the AeroSpace follow loop
+                // can leave the dashboard under normal tiling (see `aerospace`).
+                .title("tablo dashboard")
                 .inner_size(980.0, 720.0)
                 .min_inner_size(640.0, 480.0)
                 .resizable(true)
@@ -955,6 +971,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             spawn_frontmost_tracker(handle.clone());
 
+            // Follow the focused AeroSpace workspace so the widget survives
+            // workspace switches (AeroSpace ignores `visibleOnAllWorkspaces`).
+            // No-ops off AeroSpace; macOS-only (AeroSpace doesn't exist elsewhere).
+            #[cfg(target_os = "macos")]
+            aerospace::spawn(handle.clone());
+
             spawn_watcher(handle.clone());
             spawn_hittest(handle);
             Ok(())
@@ -967,6 +989,7 @@ pub fn run() {
             set_cancel_grace_mins,
             set_clear_waiting_mins,
             set_watch_codex,
+            set_aerospace_follow,
             set_panel_shortcut_enabled,
             toggle_panel,
             hide_panel,

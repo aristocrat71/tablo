@@ -102,6 +102,11 @@ pub struct Snapshot {
     pub watch_codex: bool,
     /// Whether the global panel-summon hotkey is enabled, echoed for the Settings toggle.
     pub panel_shortcut_enabled: bool,
+    /// Whether Tablo follows the focused AeroSpace workspace, echoed for the Settings toggle.
+    pub aerospace_follow: bool,
+    /// Whether AeroSpace was detected this run — gates the "Follow AeroSpace"
+    /// toggle so it only appears to users actually running AeroSpace.
+    pub aerospace_available: bool,
 }
 
 impl Default for Snapshot {
@@ -121,6 +126,8 @@ impl Default for Snapshot {
             clear_waiting_mins: 10,
             watch_codex: true,
             panel_shortcut_enabled: true,
+            aerospace_follow: true,
+            aerospace_available: false,
         }
     }
 }
@@ -837,6 +844,8 @@ pub fn scan(
             generated_at: now_ms(),
             watch_codex: cfg.watch_codex,
             panel_shortcut_enabled: cfg.panel_shortcut_enabled,
+            aerospace_follow: cfg.aerospace_follow,
+            aerospace_available: crate::aerospace::available(),
             ..Default::default()
         };
     }
@@ -1017,6 +1026,8 @@ pub fn scan(
         clear_waiting_mins: cfg.clear_waiting_mins.max(1),
         watch_codex: cfg.watch_codex,
         panel_shortcut_enabled: cfg.panel_shortcut_enabled,
+        aerospace_follow: cfg.aerospace_follow,
+        aerospace_available: crate::aerospace::available(),
     }
 }
 
