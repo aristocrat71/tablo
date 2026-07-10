@@ -234,12 +234,17 @@ fn set_panel_shortcut_enabled(app: AppHandle, state: State<'_, AppState>, enable
 /// normal app. We flip to `Regular` only while the dashboard is open, so the
 /// avatar and panel alone never clutter the switcher. No-op off macOS.
 fn set_switcher_visible(app: &AppHandle, visible: bool) {
-    let policy = if visible {
-        tauri::ActivationPolicy::Regular
-    } else {
-        tauri::ActivationPolicy::Accessory
-    };
-    let _ = app.set_activation_policy(policy);
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if visible {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        let _ = app.set_activation_policy(policy);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, visible);
 }
 
 /// Hide the dashboard (kept alive so it can reopen) and drop Tablo back to a
