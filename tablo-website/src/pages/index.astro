@@ -98,7 +98,7 @@ import InstallDeck from "../components/InstallDeck.astro";
   <!-- ===== Act 2 — IT WATCHES ===== -->
   <section class="act watch" id="watch" data-act data-lamp="blue">
     <span class="act-num">01 · what it does</span>
-    <h2 class="act-title watch-title" data-typeon>keeps an eye, so you don't have to</h2>
+    <h2 class="act-title watch-title" data-typeon>a tiny cat widget on your screen</h2>
 
     <div class="watch-cat">
       <Cat
@@ -109,53 +109,47 @@ import InstallDeck from "../components/InstallDeck.astro";
       />
     </div>
 
-    <p class="watch-lede mono">
-      a tiny cat that sits in the corner of your screen — one place watching
-      every <span class="src">claude code</span> and <span class="src">codex</span>
-      agent you've got running.
-    </p>
-
     <div class="feats mono">
       <p class="feat">
         <span class="feat-mark" aria-hidden="true">&gt;</span>
         <span class="feat-line">
-          <b>one place for all</b><span class="feat-desc"> — every claude &amp; codex session, side by side in your corner.</span>
+          <b>one place for all</b><span class="feat-desc"> — every agent's activity at a glance</span>
         </span>
       </p>
       <p class="feat">
         <span class="feat-mark" aria-hidden="true">&gt;</span>
         <span class="feat-line">
-          <b>context window</b><span class="feat-desc"> — a live meter per session that auto-sizes to the 200k or 1M window and warns before you hit the wall.</span>
+          <b>context window monitoring</b><span class="feat-desc"> — live per session with threshold warning</span>
         </span>
       </p>
       <p class="feat">
         <span class="feat-mark" aria-hidden="true">&gt;</span>
         <span class="feat-line">
-          <b>approve / deny</b><span class="feat-desc"> — gate a tool call behind a tap; nothing runs until you say so.</span>
+          <b>approve / deny</b><span class="feat-desc"> — gate a tool call behind a tap</span>
         </span>
       </p>
       <p class="feat">
         <span class="feat-mark" aria-hidden="true">&gt;</span>
         <span class="feat-line">
-          <b>notifications</b><span class="feat-desc"> — a ping the moment an agent needs input or an approval.</span>
+          <b>notifications</b><span class="feat-desc"> — a ping the moment an agent needs input or an approval</span>
         </span>
       </p>
       <p class="feat">
         <span class="feat-mark" aria-hidden="true">&gt;</span>
         <span class="feat-line">
-          <b>jump to session</b><span class="feat-desc"> — tap one and land right in its terminal, focused <i>(experimental)</i>.</span>
+          <b>jump to session</b> <i>(experimental)</i><span class="feat-desc"> — lands right into the session</span>
         </span>
       </p>
       <p class="feat">
         <span class="feat-mark" aria-hidden="true">&gt;</span>
         <span class="feat-line">
-          <b>full dashboard</b><span class="feat-desc"> — per-session gauges, a live activity preview, and every setting in one window.</span>
+          <b>dashboard</b><span class="feat-desc"> — per-session live activity preview</span>
         </span>
       </p>
       <p class="feat">
         <span class="feat-mark" aria-hidden="true">&gt;</span>
         <span class="feat-line">
-          <b>quiet by default</b><span class="feat-desc"> — sits in your menu bar, dark or light, and follows you across spaces.</span>
+          <b>quiet by default</b><span class="feat-desc"> — sits in your menu bar and follows you across spaces</span>
         </span>
       </p>
     </div>
@@ -589,20 +583,6 @@ import InstallDeck from "../components/InstallDeck.astro";
        without clipping the cat */
     margin: -34px 0 4px;
   }
-  /* one-line thesis: what tablo actually is */
-  .watch-lede {
-    max-width: 560px;
-    margin: 14px auto 0;
-    font-size: var(--fs-mono);
-    line-height: 1.6;
-    letter-spacing: 0.02em;
-    color: var(--ink-dim);
-  }
-  .watch-lede .src {
-    color: var(--blue);
-    text-shadow: var(--glow-blue);
-  }
-
   /* feature readout — a retro phosphor terminal listing, no cards.
      echoes the boot-log / install-terminal "> ..." language. */
   .feats {
