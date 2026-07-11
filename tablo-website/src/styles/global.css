@@ -117,7 +117,7 @@ img {
   margin-bottom: 18px;
 }
 .act-title {
-  font-family: var(--font-round);
+  font-family: var(--font-mono);
   font-size: var(--fs-scene);
   font-weight: 600;
   letter-spacing: -0.02em;
