@@ -78,6 +78,25 @@ const lines = [
         <Cat state="idle" size={70} label="tablo, asleep" class="cat-desk" />
       </button>
 
+      <!-- little callout pointing up at the cat -->
+      <div class="cat-hint" aria-hidden="true">
+        <svg
+          class="cat-hint-arrow"
+          viewBox="0 0 14 52"
+          width="14"
+          height="52"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M7 50 V5" />
+          <path d="M2 11 L7 4 L12 11" />
+        </svg>
+        <span class="cat-hint-label">this is tablo</span>
+      </div>
+
       <!-- waiting toast — flies out of the cat when a run finishes -->
       <div class="desk-toast" data-toast role="status" aria-live="polite">
         <div class="t-txt">
@@ -378,6 +397,37 @@ const lines = [
     z-index: 1;
   }
 
+  /* ---- "this is tablo" callout, centred directly under the cat ---- */
+  .cat-hint {
+    position: absolute;
+    /* below the sprite's visible bottom (stage 12 + 98 ≈ 110) so the arrowhead
+       clears the cat */
+    top: 115px;
+    /* the cat's true horizontal centre: the stage is 1.7×70 wide and the sprite
+       sits bottom-centre, so centre = widget right:16 + 119/2 ≈ 76px;
+       translateX(50%) then sits the callout's centre on that line */
+    right: 76px;
+    transform: translateX(50%);
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    pointer-events: none;
+    color: var(--blue);
+  }
+  .cat-hint-arrow {
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--blue) 45%, transparent));
+  }
+  .cat-hint-label {
+    font-family: var(--font-round);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--blue);
+    white-space: nowrap;
+  }
+
   /* ---- waiting toast (mirrors the app's Toast.svelte) ---- */
   .desk-toast {
     position: absolute;
@@ -538,6 +588,10 @@ const lines = [
     .widget {
       right: 10px;
       top: 6px;
+    }
+    /* no room for the callout beside the tight mobile terminal */
+    .cat-hint {
+      display: none;
     }
     .panel-pop {
       right: 12px;
