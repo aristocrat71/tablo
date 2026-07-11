@@ -177,6 +177,10 @@ import InstallDeck from "../components/InstallDeck.astro";
     <h2 class="act-title" data-typeon>one line. clean install.</h2>
     <div class="install-stage">
       <InstallDeck />
+      <p class="platform-note mono">
+        Optimized for <strong>macOS</strong>. Core monitoring works on windows and
+        linux, but some features are experimental on those platforms.
+      </p>
     </div>
   </section>
 
@@ -674,8 +678,22 @@ import InstallDeck from "../components/InstallDeck.astro";
   .install-stage {
     margin-top: 32px;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     width: 100%;
+  }
+  .platform-note {
+    margin-top: 18px;
+    max-width: min(680px, 94vw);
+    text-align: center;
+    font-size: var(--fs-mono-xs);
+    line-height: 1.6;
+    letter-spacing: 0.03em;
+    color: var(--ink-faint);
+  }
+  .platform-note strong {
+    color: var(--blue);
+    font-weight: 600;
   }
 
   /* ===== signoff ===== */
