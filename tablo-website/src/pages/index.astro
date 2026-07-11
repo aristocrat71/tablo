@@ -158,13 +158,17 @@ import InstallDeck from "../components/InstallDeck.astro";
   <!-- ===== Act 3 — LIVE DEMO (desktop) ===== -->
   <section class="act live" id="live" data-act data-lamp="sage">
     <span class="act-num">02 · the whole thing, live</span>
-    <h2 class="act-title live-title" data-typeon>tablo lives on your desktop</h2>
+    <h2 class="act-title live-title" data-typeon>go on, try it out!</h2>
     <p class="live-hint mono">
-      an agent at rest <span class="hint-arr">&rarr;</span> tablo naps in the corner
+      yes, it is an actual desktop <span class="hint-arr">;)</span>
     </p>
     <div class="live-stage">
       <DesktopDemo />
     </div>
+    <p class="demo-note mono">
+      Please note, this is only a <strong>demo</strong> with fixed values/text built for
+      conveying the ui/ux of the widget
+    </p>
   </section>
 
   <!-- ===== Act 4 — GET IT ===== -->
@@ -651,6 +655,19 @@ import InstallDeck from "../components/InstallDeck.astro";
     margin-top: 26px;
     display: flex;
     justify-content: center;
+  }
+  .demo-note {
+    margin: 16px auto 0;
+    text-align: center;
+    white-space: nowrap;
+    font-size: clamp(0.5rem, 0.74vw, var(--fs-mono-xs));
+    line-height: 1.6;
+    letter-spacing: 0.03em;
+    color: var(--ink-faint);
+  }
+  .demo-note strong {
+    color: var(--blue);
+    font-weight: 600;
   }
 
   /* ===== install ===== */
