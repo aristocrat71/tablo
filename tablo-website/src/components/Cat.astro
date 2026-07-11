@@ -44,7 +44,7 @@ const {
   }
   .cat {
     /* defaults (sit / static single frame) */
-    --sheet: url("/sprites/shocked-sprite-sheet.png");
+    --sheet: url("/sprites/shocked-sprite-sheet.webp");
     --ar: 0.701;
     --frames: 5;
     --dur: 2.4s;
@@ -71,7 +71,7 @@ const {
   /* ---- states ---- */
   /* sit: a single static frame (frame 0 of the shocked sheet, calm sitting) */
   .cat[data-state="sit"] {
-    --sheet: url("/sprites/shocked-sprite-sheet.png");
+    --sheet: url("/sprites/shocked-sprite-sheet.webp");
     --ar: 0.701;
     --frames: 5;
     --h: calc(var(--cat) * 1.14);
@@ -79,14 +79,14 @@ const {
     background-position-x: 0;
   }
   .cat[data-state="idle"] {
-    --sheet: url("/sprites/sleeping-sprite-sheet.png");
+    --sheet: url("/sprites/sleeping-sprite-sheet.webp");
     --ar: 1.306;
     --frames: 4;
     --dur: 2.4s;
     --h: calc(var(--cat) * 0.82);
   }
   .cat[data-state="working"] {
-    --sheet: url("/sprites/running-sprite-sheet.png");
+    --sheet: url("/sprites/running-sprite-sheet.webp");
     --ar: 1.258;
     --frames: 4;
     --dur: 0.6s;
@@ -94,21 +94,21 @@ const {
   }
   .cat[data-state="play"] {
     /* ball-play loop (frames 5-6-7 only), uniform 251x217 cells (no tail crop) */
-    --sheet: url("/sprites/playing-sprite-sheet.png");
+    --sheet: url("/sprites/playing-sprite-sheet.webp");
     --ar: 1.1567;
     --frames: 3;
     --dur: 0.8s;
     --h: calc(var(--cat) * 1.02);
   }
   .cat[data-state="alert"] {
-    --sheet: url("/sprites/shocked-sprite-sheet.png");
+    --sheet: url("/sprites/shocked-sprite-sheet.webp");
     --ar: 0.701;
     --frames: 5;
     --dur: 0.85s;
     --h: calc(var(--cat) * 1.16);
   }
   .cat[data-state="settling"] {
-    --sheet: url("/sprites/running-to-sleeping-sprite-sheet.png");
+    --sheet: url("/sprites/running-to-sleeping-sprite-sheet.webp");
     --ar: 1.144;
     --frames: 5;
     --dur: 0.7s;

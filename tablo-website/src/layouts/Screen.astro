@@ -20,9 +20,13 @@ const site = Astro.site?.href ?? "https://tablo.dev/";
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/png" href="/tablo-logo-v4.png" />
-    <link rel="apple-touch-icon" href="/tablo-logo-v4.png" />
+    <link rel="icon" type="image/png" href="/tablo-logo-sm.png" />
+    <link rel="apple-touch-icon" href="/tablo-logo-sm.png" />
     <meta name="generator" content={Astro.generator} />
+
+    <!-- warm the above-the-fold assets during parse so the hero reveals loaded -->
+    <link rel="preload" as="image" href="/sprites/shocked-sprite-sheet.webp" />
+    <link rel="preload" as="image" href="/tablo-logo-sm.png" />
 
     <title>{title}</title>
     <meta name="description" content={description} />
