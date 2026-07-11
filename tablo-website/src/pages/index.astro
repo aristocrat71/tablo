@@ -192,7 +192,7 @@ try {
   <!-- ===== Act 4 — GET IT ===== -->
   <section class="act install" id="get" data-act data-lamp="blue">
     <span class="act-num">03 · put it on your desk</span>
-    <h2 class="act-title" data-typeon>one line. clean install.</h2>
+    <h2 class="act-title install-title" data-typeon>one line. clean install.</h2>
     <div class="install-stage">
       <InstallDeck />
       <p class="platform-note mono">
@@ -602,7 +602,8 @@ try {
   /* keep the title on a single line; scale with the viewport so it never wraps
      or overflows (the base .act-title caps at 18ch which forced two lines) */
   .watch-title,
-  .live-title {
+  .live-title,
+  .install-title {
     max-width: none;
     white-space: nowrap;
     font-size: min(3rem, 4.2vw);
