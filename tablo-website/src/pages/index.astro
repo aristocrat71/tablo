@@ -677,6 +677,12 @@ import InstallDeck from "../components/InstallDeck.astro";
     color: var(--blue);
     font-weight: 600;
   }
+  /* the demo itself is desktop-only, so its caption is meaningless on mobile */
+  @media (max-width: 767.98px) {
+    .demo-note {
+      display: none;
+    }
+  }
 
   /* ===== install ===== */
   .install-stage {

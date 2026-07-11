@@ -24,7 +24,12 @@ const lines = [
 ];
 ---
 
-<div class="demo" data-demo>
+<div class="demo-root" data-demo-root>
+  <!-- desktop-only: the whole demo ships inert inside a <template>, so none of
+       its sprites / images / panels are ever fetched on small screens. The
+       script below clones + boots it only on desktop; mobile keeps the notice. -->
+  <template data-demo-tpl>
+    <div class="demo" data-demo>
   <div class="desk">
     <!-- menu bar — tablo sits up here, quietly -->
     <div class="menubar mono">
@@ -121,13 +126,62 @@ const lines = [
   <div class="dash-pop" data-dash-pop>
     <Dashboard />
   </div>
+    </div>
+  </template>
+
+  <!-- shown on small screens instead — the demo above is never rendered/loaded -->
+  <p class="live-fallback mono" data-demo-fallback>
+    <span class="lf-msg"
+      >&gt; The live demo is built for desktops. Stopped rendering to
+      optimize memory</span
+    ><span class="lf-cur">_</span>
+  </p>
 </div>
 
 <style>
+  .demo-root {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
   .demo {
     position: relative;
     width: min(920px, 96vw);
     margin: 0 auto;
+  }
+
+  /* desktop-only notice — shown on small screens in place of the (unloaded) demo */
+  .live-fallback {
+    display: block;
+    max-width: min(560px, 92vw);
+    margin: 4px auto 0;
+    padding: 16px 18px;
+    text-align: left;
+    font-size: var(--fs-mono-xs);
+    line-height: 1.7;
+    color: var(--ink-dim);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--bg-inset) 65%, transparent);
+  }
+  .lf-cur {
+    color: var(--blue);
+    animation: lf-blink 1.1s steps(1) infinite;
+  }
+  @keyframes lf-blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    50.01%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @media (min-width: 768px) {
+    .live-fallback {
+      display: none;
+    }
   }
   .desk {
     width: 100%;
@@ -762,10 +816,33 @@ const lines = [
     });
   }
 
-  function boot() {
-    initClock();
-    document.querySelectorAll<HTMLElement>("[data-demo]").forEach(initDemo);
+  // Act 3 is desktop-only. The demo markup ships inert inside a <template>, so
+  // its sprites / images / panels are never fetched on small screens — we clone
+  // and boot it only when the viewport is desktop-sized (otherwise the notice
+  // stays put and nothing loads).
+  const DESKTOP = "(min-width: 768px)";
+  function mountDemos() {
+    document
+      .querySelectorAll<HTMLElement>("[data-demo-root]")
+      .forEach((root) => {
+        if (root.dataset.mounted) return;
+        if (!window.matchMedia(DESKTOP).matches) return; // mobile: keep the notice
+        root.dataset.mounted = "1";
+        root.querySelector("[data-demo-fallback]")?.remove();
+        const tpl = root.querySelector<HTMLTemplateElement>(
+          "template[data-demo-tpl]",
+        );
+        if (tpl) {
+          root.appendChild(tpl.content.cloneNode(true));
+          tpl.remove();
+        }
+        const demo = root.querySelector<HTMLElement>("[data-demo]");
+        if (demo) initDemo(demo);
+        initClock();
+      });
   }
-  boot();
-  document.addEventListener("astro:page-load", boot);
+  mountDemos();
+  document.addEventListener("astro:page-load", mountDemos);
+  // if a desktop user started narrow and widens past the breakpoint, mount then
+  window.matchMedia(DESKTOP).addEventListener?.("change", mountDemos);
 </script>
