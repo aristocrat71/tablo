@@ -71,8 +71,8 @@ import InstallDeck from "../components/InstallDeck.astro";
       the menace monitoring your coding agents<span class="caret">▮</span>
     </p>
     <p class="subtag mono">
-      <span class="src">claude code</span> + <span class="src">codex</span> · one
-      cat · your corner
+      <span class="src">claude code</span> + <span class="src">codex</span> · one{" "}
+      <strong class="hl">widget</strong> to rule them all
     </p>
     <div class="hero-cta">
       <div class="cta-main">
@@ -532,6 +532,10 @@ import InstallDeck from "../components/InstallDeck.astro";
   }
   .subtag .src {
     color: var(--ink-dim);
+  }
+  .subtag .hl {
+    color: var(--blue);
+    font-weight: 600;
   }
   .hero-cta {
     margin-top: 30px;
