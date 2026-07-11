@@ -31,8 +31,18 @@ src/
     global.css       reset, bracket buttons, LED meter, cursor, LED scrollbar, [hidden] guard
   layouts/Screen.astro     html shell + CRT frame + block cursor + ClientRouter/OG
   components/
-    Cat.astro        the sprite state machine (idle/alert/working/settling/play), cursor-reactive
-    LiveWidget.astro the real tablo panel, recreated + run on a loop (dual-agent + permission beat)
+    Cat.astro         the sprite state machine (idle/alert/working/settling/play), cursor-reactive
+    DesktopDemo.astro Act 3's interactive macOS-desktop scene (coffee wallpaper, menu bar with
+                      tablo in it, a terminal running an agent session, cat asleep top-right).
+                      Owns the type-to-run interaction, the panel + dashboard pops, and the toast.
+    LiveWidget.astro  the tablo panel — faithful port of the app's Panel.svelte: grouped sessions
+                      (critical/permission/waiting/working), sort seg + filter popover
+                      (state + source, mirrors FilterButton.svelte), approve/deny. Pops from the cat.
+    Dashboard.astro   the larger tablo window — port of the app's Dashboard.svelte: statline header
+                      (active·waiting·projects) + info/gear, a pinned critical card + sessions card,
+                      filter popover. Opened from the panel's "dashboard" link.
+    SessionCard.astro one dashboard session row + its amber-phosphor "$ live preview" terminal
+                      (#/> markers, user/tool/text lines, live caret) — from Dashboard.svelte's snippets.
     InstallDeck.astro faux terminal, OS-detect tabs, copy buttons (commands from ../release-plan.md)
   pages/index.astro  the six acts (boot → hero → watches → live → install → sign-off) + orchestration
 ```
@@ -40,13 +50,24 @@ src/
 ## The scroll journey
 
 `Act 0` cold boot (mounts both agents, power-on flash) · `Act 1` the familiar
-(reactive hero cat) · `Act 2` it watches (state chips + one-cat-two-agents coda)
-· `Act 3` live widget (claude + codex, live activity, approve/deny, context
-warning, toast) · `Act 4` get it (install one-liners) · `Act 5` sign-off (cat
-sleeps).
+(reactive hero cat + mood slider) · `Act 2` what it does (7-item phosphor feature
+readout; the marquee ticker was removed) · `Act 3` **the live demo** — an
+interactive macOS desktop: coffee wallpaper, menu bar with tablo living in it, a
+terminal running a claude session, the cat asleep top-right. Type a prompt (≤20
+chars) and send → the cat wakes and **runs** (amber), then **naps** (sage) and a
+**waiting toast** flies out to the cat's left for 3s. **Tap the cat** → the real
+**panel** pops (anchored by the cat); its **`dashboard ↗`** link → the
+**dashboard** window (scaled to 0.75, scrolls internally, contained in the
+screen). · `Act 4` get it (install one-liners) · `Act 5` sign-off (cat sleeps).
 
 ## Notes
 
+- **The panel / dashboard / toast are faithful ports** of the app's
+  `src/lib/Panel.svelte`, `Dashboard.svelte`, `SessionCard`↔`Dashboard.svelte`
+  snippets, `FilterButton.svelte`, and `Toast.svelte`. When the app UI changes,
+  re-port them (markup + scoped styles copied over; sample data + progressive-
+  enhancement scripts are the only additions). The desktop demo uses static
+  sample sessions, not live data.
 - **Assets are reused, not redrawn.** Sprite frame math is baked into `Cat.astro`
   (uniform-grid `steps()`; frame counts 4/4/5/5/4).
 - **No emojis** — LED dots, CSS shapes, ASCII, and the pixel sprites only.

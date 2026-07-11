@@ -1,36 +1,11 @@
 ---
 import Screen from "../layouts/Screen.astro";
 import Cat from "../components/Cat.astro";
-import LiveWidget from "../components/LiveWidget.astro";
+import DesktopDemo from "../components/DesktopDemo.astro";
 import InstallDeck from "../components/InstallDeck.astro";
-
-const marqueeItems = [
-  "claude·optilife 64%",
-  "codex·api 71%",
-  "claude·tablo 23%",
-  "3 sessions · 1 waiting · 1 approval",
-];
 ---
 
 <Screen>
-  <!-- ===== marquee ticker (fixed top) ===== -->
-  <div class="marquee" aria-hidden="true">
-    <div class="marquee-track" data-marquee>
-      {
-        [0, 1].map(() => (
-          <span class="marquee-run">
-            {marqueeItems.map((m) => (
-              <span class="mq">
-                {m}
-                <b>▮</b>
-              </span>
-            ))}
-          </span>
-        ))
-      }
-    </div>
-  </div>
-
   <!-- ===== the LED scrollbar ===== -->
   <div class="scroll-led" aria-hidden="true"><i data-scroll-fill></i></div>
 
@@ -96,8 +71,8 @@ const marqueeItems = [
       the menace monitoring your coding agents<span class="caret">▮</span>
     </p>
     <p class="subtag mono">
-      <span class="src">claude code</span> + <span class="src">codex</span> · one
-      cat · your corner
+      <span class="src">claude code</span> + <span class="src">codex</span> · one{" "}
+      <strong class="hl">widget</strong> to rule them all
     </p>
     <div class="hero-cta">
       <div class="cta-main">
@@ -123,7 +98,7 @@ const marqueeItems = [
   <!-- ===== Act 2 — IT WATCHES ===== -->
   <section class="act watch" id="watch" data-act data-lamp="blue">
     <span class="act-num">01 · what it does</span>
-    <h2 class="act-title watch-title" data-typeon>keeps an eye, so you don't have to</h2>
+    <h2 class="act-title watch-title" data-typeon>a tiny cat widget on your screen</h2>
 
     <div class="watch-cat">
       <Cat
@@ -134,51 +109,66 @@ const marqueeItems = [
       />
     </div>
 
-    <div class="chips" data-chips>
-      <div class="chip" data-chip="sage">
-        <span class="chip-dot ok"></span>
-        <div class="chip-body">
-          <b>idle</b>
-          <span>nothing running.</span>
-          <div class="led"><i class="ok" style="width:22%"></i></div>
-        </div>
-      </div>
-      <div class="chip" data-chip="amber">
-        <span class="chip-dot warn"></span>
-        <div class="chip-body">
-          <b>working</b>
-          <span>agents on the move.</span>
-          <div class="led"><i class="warn" style="width:64%"></i></div>
-        </div>
-      </div>
-      <div class="chip" data-chip="coral">
-        <span class="chip-dot crit"></span>
-        <div class="chip-body">
-          <b>alarmed</b>
-          <span>context past x%.</span>
-          <div class="led"><i class="crit" style="width:88%"></i></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- coda: one cat, two agents -->
-    <div class="coda">
-      <span class="coda-tags">
-        <span class="src">claude</span><span class="src">codex</span>
-      </span>
+    <div class="feats mono">
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>one place for all</b><span class="feat-desc"> — every agent's activity at a glance</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>context window monitoring</b><span class="feat-desc"> — live per session with threshold warning</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>approve / deny</b><span class="feat-desc"> — gate a tool call behind a tap</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>notifications</b><span class="feat-desc"> — a ping the moment an agent needs input or an approval</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>jump to session</b> <i>(experimental)</i><span class="feat-desc"> — lands right into the session</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>dashboard</b><span class="feat-desc"> — per-session live activity preview</span>
+        </span>
+      </p>
+      <p class="feat">
+        <span class="feat-mark" aria-hidden="true">&gt;</span>
+        <span class="feat-line">
+          <b>quiet by default</b><span class="feat-desc"> — sits in your menu bar and follows you across spaces</span>
+        </span>
+      </p>
     </div>
   </section>
 
-  <!-- ===== Act 3 — LIVE WIDGET ===== -->
-  <section class="act live" data-act data-lamp="blue">
+  <!-- ===== Act 3 — LIVE DEMO (desktop) ===== -->
+  <section class="act live" id="live" data-act data-lamp="sage">
     <span class="act-num">02 · the whole thing, live</span>
-    <h2 class="act-title live-title" data-typeon>go on, play around with it</h2>
+    <h2 class="act-title live-title" data-typeon>go on, try it out!</h2>
     <p class="live-hint mono">
-      click the widget <span class="hint-arr">&rarr;</span> open the panel
+      yes, it is an actual desktop <span class="hint-arr">;)</span>
     </p>
     <div class="live-stage">
-      <LiveWidget />
+      <DesktopDemo />
     </div>
+    <p class="demo-note mono">
+      Please note, this is only a <strong>demo</strong> with fixed values/text built for
+      conveying the ui/ux of the widget
+    </p>
   </section>
 
   <!-- ===== Act 4 — GET IT ===== -->
@@ -187,6 +177,10 @@ const marqueeItems = [
     <h2 class="act-title" data-typeon>one line. clean install.</h2>
     <div class="install-stage">
       <InstallDeck />
+      <p class="platform-note mono">
+        Optimized for <strong>macOS</strong>. Core monitoring works on windows and
+        linux, but some features are experimental on those platforms.
+      </p>
     </div>
   </section>
 
@@ -218,46 +212,6 @@ const marqueeItems = [
 </Screen>
 
 <style>
-  /* ===== marquee ===== */
-  .marquee {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: var(--z-marquee);
-    overflow: hidden;
-    background: color-mix(in srgb, var(--bg-inset) 88%, transparent);
-    border-bottom: 1px solid var(--border-soft);
-    backdrop-filter: blur(4px);
-  }
-  .marquee-track {
-    display: flex;
-    width: max-content;
-    animation: marquee 34s linear infinite;
-  }
-  .marquee-run {
-    display: flex;
-    flex-shrink: 0;
-  }
-  .mq {
-    font-family: var(--font-mono);
-    font-size: var(--fs-mono-xs);
-    color: var(--ink-dim);
-    padding: 7px 18px;
-    white-space: nowrap;
-    letter-spacing: 0.04em;
-  }
-  .mq b {
-    color: var(--blue);
-    margin-left: 18px;
-    opacity: 0.7;
-  }
-  @keyframes marquee {
-    to {
-      transform: translateX(-50%);
-    }
-  }
-
   /* ===== top-right controls (reboot + light-mode troll, stacked) ===== */
   .top-controls {
     position: fixed;
@@ -579,6 +533,10 @@ const marqueeItems = [
   .subtag .src {
     color: var(--ink-dim);
   }
+  .subtag .hl {
+    color: var(--blue);
+    font-weight: 600;
+  }
   .hero-cta {
     margin-top: 30px;
     display: flex;
@@ -637,131 +595,57 @@ const marqueeItems = [
        without clipping the cat */
     margin: -34px 0 4px;
   }
-  .chips {
-    display: flex;
-    gap: 16px;
-    justify-content: center;
-    /* fill the row (this sits in a centered flex column, so without an explicit
-       width it shrink-to-fits its content and the boxes collapse) */
+  /* feature readout — a retro phosphor terminal listing, no cards.
+     echoes the boot-log / install-terminal "> ..." language. */
+  .feats {
     width: 100%;
-    /* match the (nowrap) title width so the row's left/right edges line up
-       with the title text */
-    max-width: 760px;
-    margin-top: 8px;
-  }
-  .chip {
-    /* boxes wide enough that every description fits on ONE line — keeps the
-       three context bars on the same baseline; min-width:0 keeps them one row */
-    flex: 1 1 240px;
-    min-width: 0;
-    max-width: 260px;
-    display: flex;
-    gap: 12px;
+    max-width: 600px;
+    margin-top: 26px;
     text-align: left;
-    padding: 16px;
-    border-radius: var(--r-md);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-soft);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    /* a thin phosphor gutter, like a terminal left margin (not a box) */
+    padding-left: 20px;
+    border-left: 1px solid color-mix(in srgb, var(--blue) 28%, var(--border));
+  }
+  .feat {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0 10px;
+    align-items: baseline;
+    font-size: var(--fs-mono);
+    line-height: 1.55;
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateX(-10px);
     transition:
       opacity 0.5s var(--ease),
-      transform 0.5s var(--ease-back),
-      border-color 0.4s var(--ease);
+      transform 0.5s var(--ease-back);
   }
-  .chip.in {
+  .feat.in {
     opacity: 1;
     transform: none;
   }
-  .chip.hot[data-chip="sage"] {
-    border-color: color-mix(in srgb, var(--sage) 55%, var(--border));
+  .feat-mark {
+    color: var(--blue);
+    text-shadow: var(--glow-blue);
   }
-  .chip.hot[data-chip="amber"] {
-    border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  .feat-line b {
+    color: var(--blue);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-shadow: var(--glow-blue);
   }
-  .chip.hot[data-chip="coral"] {
-    border-color: color-mix(in srgb, var(--coral) 55%, var(--border));
-  }
-  .chip-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 999px;
-    margin-top: 5px;
-    flex-shrink: 0;
-  }
-  .chip-dot.ok {
-    background: var(--sage);
-    box-shadow: 0 0 8px var(--sage);
-  }
-  .chip-dot.warn {
-    background: var(--blue);
-    box-shadow: 0 0 8px var(--blue);
-  }
-  .chip-dot.crit {
-    background: var(--coral);
-    box-shadow: 0 0 8px var(--coral);
-  }
-  /* the working card shows the app's real amber "working" colour, not the
-     brand blue — so the demo reads as sage / amber / coral like the app */
-  .chip[data-chip="amber"] .chip-dot {
-    background: var(--amber);
-    box-shadow: 0 0 8px var(--amber);
-  }
-  .chip[data-chip="amber"] .led > i {
-    background-color: var(--amber);
-    box-shadow: 0 0 9px -1px var(--amber);
-  }
-  .chip-body {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    width: 100%;
-  }
-  .chip-body b {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--ink);
-  }
-  .chip-body span {
-    font-size: 12.5px;
+  .feat-desc {
     color: var(--ink-dim);
-    line-height: 1.4;
   }
-  .chip-body .led {
-    margin-top: 4px;
-  }
-  /* keep the three cards on one row on desktop; stack only on true mobile */
-  @media (max-width: 600px) {
-    .chips {
-      flex-wrap: wrap;
+  @media (max-width: 520px) {
+    .feats {
+      padding-left: 16px;
     }
-  }
-
-  .coda {
-    margin-top: 40px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-  }
-  .coda-tags {
-    display: flex;
-    gap: 10px;
-  }
-  .coda-tags .src {
-    padding: 5px 12px;
-    border-radius: var(--r-sm);
-    background: var(--bg-raised);
-    border: 1px solid var(--border-soft);
-    color: var(--ink-dim);
-    text-transform: uppercase;
-    font-size: 11px;
-  }
-  .coda-line {
-    font-size: var(--fs-mono);
-    color: var(--ink-faint);
+    .feat-desc {
+      font-size: var(--fs-mono-xs);
+    }
   }
 
   /* ===== live ===== */
@@ -780,13 +664,46 @@ const marqueeItems = [
     display: flex;
     justify-content: center;
   }
+  .demo-note {
+    margin: 16px auto 0;
+    text-align: center;
+    white-space: nowrap;
+    font-size: clamp(0.5rem, 0.74vw, var(--fs-mono-xs));
+    line-height: 1.6;
+    letter-spacing: 0.03em;
+    color: var(--ink-faint);
+  }
+  .demo-note strong {
+    color: var(--blue);
+    font-weight: 600;
+  }
+  /* the demo itself is desktop-only, so its caption is meaningless on mobile */
+  @media (max-width: 767.98px) {
+    .demo-note {
+      display: none;
+    }
+  }
 
   /* ===== install ===== */
   .install-stage {
     margin-top: 32px;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     width: 100%;
+  }
+  .platform-note {
+    margin-top: 18px;
+    max-width: min(680px, 94vw);
+    text-align: center;
+    font-size: var(--fs-mono-xs);
+    line-height: 1.6;
+    letter-spacing: 0.03em;
+    color: var(--ink-faint);
+  }
+  .platform-note strong {
+    color: var(--blue);
+    font-weight: 600;
   }
 
   /* ===== signoff ===== */
@@ -946,7 +863,7 @@ const marqueeItems = [
     }
 
     const lines = [
-      "tablo v0.1.0  ·  familiar daemon",
+      "tablo v1.0.0  ·  familiar daemon",
       "> mounting ~/.claude/projects  (claude code) ... ok",
       "> mounting ~/.codex/sessions   (codex) ....... ok",
       "> tailing transcripts ....................... ok",
@@ -1010,11 +927,11 @@ const marqueeItems = [
   function playWatchSequence() {
     if (watchPlayed) return;
     watchPlayed = true;
-    // reveal the state chips once (one-time entrance, not a loop); the cat
-    // stays on its running loop — no cycling through idle/working/alert.
-    const chips = Array.from(document.querySelectorAll<HTMLElement>(".chip"));
-    chips.forEach((c, i) =>
-      setTimeout(() => c.classList.add("in", "hot"), reduce ? 0 : 140 * i),
+    // reveal the feature cards once (staggered one-time entrance); the cat
+    // stays on its running loop.
+    const feats = Array.from(document.querySelectorAll<HTMLElement>(".feat"));
+    feats.forEach((c, i) =>
+      setTimeout(() => c.classList.add("in"), reduce ? 0 : 120 * i),
     );
     setCat(".cat-watch", "working");
   }
@@ -1123,12 +1040,6 @@ const marqueeItems = [
           ms.value = "3";
           ms.dispatchEvent(new Event("input"));
         }
-        document
-          .querySelector("[data-marquee]")
-          ?.insertAdjacentHTML(
-            "afterbegin",
-            '<span class="marquee-run"><span class="mq">&gt; meow<b>▮</b></span></span>',
-          );
       }
     });
   }

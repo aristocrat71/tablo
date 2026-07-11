@@ -49,7 +49,7 @@ const tabs = [
         <div class="pane" data-pane={t.id} hidden>
           <div class="cmd-row">
             <code class="cmd mono">
-              <span class="prompt">$</span> {t.cmd}
+              <span class="prompt">$</span>{t.cmd}
             </code>
             <button class="bkt copy" data-copy={t.cmd} aria-label="Copy command">
               copy
@@ -66,6 +66,10 @@ const tabs = [
         <a class="bkt" href={REPO} target="_blank" rel="noopener">
           github.com/aristocrat71/tablo
         </a>
+      </div>
+      <div class="fact">
+        <b>stays up to date on its own</b>
+        <span>checks Releases and updates quietly in the background</span>
       </div>
     </div>
 
@@ -151,6 +155,10 @@ const tabs = [
     line-height: 1.5;
     word-break: break-all;
     align-self: center;
+    /* hang wrapped lines under the command text, not under the "$" prompt
+       (indent = the "$" glyph width 1ch + its 8px right margin) */
+    padding-left: calc(1ch + 8px);
+    text-indent: calc(-1ch - 8px);
   }
   .prompt {
     color: var(--blue);
@@ -203,9 +211,10 @@ const tabs = [
 
   .releases {
     margin-top: 18px;
-    /* drop the bracket-button's left padding so the "[" lands on the shared
-       left margin (command-box border / "downloads" / facts label) */
-    padding-left: 0;
+    /* pull the box left by its own left padding so the "[" lands on the shared
+       left margin (command-box border / "downloads" / facts label) while the
+       hover border/background keeps symmetric padding on both sides */
+    margin-left: -14px;
     font-size: var(--fs-mono);
   }
 
