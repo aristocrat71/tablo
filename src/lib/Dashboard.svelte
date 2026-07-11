@@ -6,6 +6,7 @@
   import {
     prefs,
     byMode,
+    toggleCollapse,
     setNotifyOnWaiting,
     setWaitingToastSecs,
     TOAST_SECS_MIN,
@@ -98,12 +99,19 @@
   let filtersActive = $derived(snap.sessions.length > 1);
   let showWork = $derived(!filtersActive || prefs.showWorking);
   let showWait = $derived(!filtersActive || prefs.showWaiting);
-  let visibleRest = $derived(
-    restCards.filter((c) => {
-      if (!srcVisible(c)) return false;
-      return c.requests.length > 0 ? true : c.session?.activityKind === "waiting" ? showWait : showWork;
-    }),
+  // Panel-style groups: requests pin to top (never collapsed), then collapsible Waiting, then Working.
+  let reqCards = $derived(restCards.filter((c) => srcVisible(c) && c.requests.length > 0));
+  let waitCards = $derived(
+    restCards.filter(
+      (c) => srcVisible(c) && c.requests.length === 0 && c.session?.activityKind === "waiting" && showWait,
+    ),
   );
+  let workCards = $derived(
+    restCards.filter(
+      (c) => srcVisible(c) && c.requests.length === 0 && c.session?.activityKind !== "waiting" && showWork,
+    ),
+  );
+  let visibleCount = $derived(reqCards.length + waitCards.length + workCards.length);
   let warnPct = $derived(Math.round(snap.warnPct));
   let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
   let clearWaitingMins = $derived(Math.round(snap.clearWaitingMins));
@@ -111,6 +119,9 @@
   let panelShortcutEnabled = $derived(snap.panelShortcutEnabled);
   let aerospaceFollow = $derived(snap.aerospaceFollow);
   let aerospaceAvailable = $derived(snap.aerospaceAvailable);
+  // Jump is macOS-only; approvals run everywhere but Windows. Backend echoes both.
+  let jumpSupported = $derived(snap.jumpSupported);
+  let approvalsSupported = $derived(snap.approvalsSupported);
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -249,21 +260,35 @@
               <span><i class="lmk agent">&gt;</i> agent response</span>
             </span>
           {/if}
+          {#if filtersActive}
+            <span class="h3-filter"><FilterButton showSource={sourceFilterActive} /></span>
+          {/if}
           <span class="n">{restCards.length}</span>
         </h3>
-        {#if filtersActive}
-          <div class="filt-bar">
-            <FilterButton showSource={sourceFilterActive} />
-          </div>
-        {/if}
         {#if cards.length === 0}
           <div class="dash-empty">Nothing running. Tablo is watching.</div>
-        {:else if visibleRest.length === 0}
+        {:else if visibleCount === 0}
           <div class="dash-empty">Everything's filtered out.</div>
         {:else}
-          {#each visibleRest as c (c.key)}
+          {#each reqCards as c (c.key)}
             {@render sessionCard(c)}
           {/each}
+          {#if waitCards.length}
+            {@render groupHead("waiting", "Waiting", waitCards.length, prefs.collapseWaiting)}
+            {#if !prefs.collapseWaiting}
+              {#each waitCards as c (c.key)}
+                {@render sessionCard(c)}
+              {/each}
+            {/if}
+          {/if}
+          {#if workCards.length}
+            {@render groupHead("working", "Working", workCards.length, prefs.collapseWorking)}
+            {#if !prefs.collapseWorking}
+              {#each workCards as c (c.key)}
+                {@render sessionCard(c)}
+              {/each}
+            {/if}
+          {/if}
         {/if}
       </div>
     {/if}
@@ -281,17 +306,17 @@
       <h3>Settings</h3>
 
       <div class="setting-grid">
-        {#if hook}
+        {#if hook && approvalsSupported}
           {@render toggle("Tool approvals", hook.serverUp ? `Intercept ${hook.tools.join(", ")} so you can approve or deny before they run.` : "Approval server not running.", hook.installed, busy, toggleApprovals)}
         {/if}
-        {#if loc}
+        {#if loc && jumpSupported}
           {@render toggle("Jump to Claude session (experimental)", "Focus the terminal window a session lives in (reads its tmux pane / terminal app).", loc.installed, locBusy, toggleLocate)}
         {/if}
       </div>
 
       <div class="setting-grid">
         {@render toggle("Watch Codex", "Show OpenAI Codex CLI sessions (~/.codex) alongside Claude Code.", watchCodex, false, () => setWatchCodex(!watchCodex))}
-        {#if codexLoc && watchCodex}
+        {#if codexLoc && watchCodex && jumpSupported}
           {@render toggle("Jump to Codex session (experimental)", "Focus the terminal a Codex session lives in (installs a hook in ~/.codex/hooks.json — Codex asks you to trust it once).", codexLoc.installed, codexLocBusy, toggleCodexLocate)}
         {/if}
       </div>
@@ -434,6 +459,15 @@
       {on ? "on" : "off"}
     </button>
   </div>
+{/snippet}
+
+{#snippet groupHead(kind: "working" | "waiting", name: string, count: number, collapsed: boolean)}
+  <button class="dgroup" class:collapsed onclick={() => toggleCollapse(kind)} aria-expanded={!collapsed}>
+    <span class="dgroup-dot {kind === 'waiting' ? 'wait' : 'work'}"></span>
+    <span class="dgroup-name">{name}</span>
+    <span class="dgroup-count">{count}</span>
+    <span class="dgroup-caret">&gt;</span>
+  </button>
 {/snippet}
 
 {#snippet sessionCard(c: Card)}
@@ -1376,10 +1410,59 @@
     box-shadow: 0 0 8px -1px var(--coral);
   }
 
-  /* filter popover trigger — holds the state + source toggles */
-  .filt-bar {
+  /* inline filter in the Sessions header — reset the header's uppercasing so its labels stay lowercase */
+  .h3-filter {
+    display: inline-flex;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  /* collapsible Working / Waiting subgroup headers — caret points down when open, right when collapsed */
+  .dgroup {
     display: flex;
-    margin: 2px 0 14px;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 2px 8px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--ink-dim);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: color 0.15s var(--ease);
+  }
+  .dgroup:hover {
+    color: var(--ink);
+  }
+  .dgroup-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .dgroup-dot.wait {
+    background: var(--sage);
+    box-shadow: 0 0 8px var(--sage);
+  }
+  .dgroup-dot.work {
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+  }
+  .dgroup-count {
+    margin-left: auto;
+    color: var(--ink-faint);
+  }
+  .dgroup-caret {
+    color: var(--ink-faint);
+    transform: rotate(90deg);
+    transition: transform 0.18s var(--ease);
+  }
+  .dgroup.collapsed .dgroup-caret {
+    transform: none;
   }
 
   .dash-empty {

@@ -10,6 +10,8 @@ import type { SessionView } from "./types";
 export type SortMode = "context" | "recent";
 export type StateFilter = "working" | "waiting";
 export type SourceFilter = "claude" | "codex";
+// The two state groups the panel/dashboard can fold away to save scrolling.
+export type CollapseGroup = "working" | "waiting";
 
 const KEY = "tablo.viewPrefs";
 
@@ -27,6 +29,9 @@ interface Prefs {
   notifyOnWaiting: boolean;
   // How long that toast stays on screen, in seconds. Default 4.
   waitingToastSecs: number;
+  // Fold the Working / Waiting groups closed; both expanded by default, shared live across panel + dashboard.
+  collapseWorking: boolean;
+  collapseWaiting: boolean;
 }
 
 // Bounds for the toast hover time (seconds).
@@ -47,6 +52,8 @@ const DEFAULTS: Prefs = {
   showCodex: true,
   notifyOnWaiting: true,
   waitingToastSecs: 4,
+  collapseWorking: false,
+  collapseWaiting: false,
 };
 
 function coerce(raw: unknown): Prefs {
@@ -59,6 +66,8 @@ function coerce(raw: unknown): Prefs {
     showCodex: p.showCodex !== false,
     notifyOnWaiting: p.notifyOnWaiting !== false,
     waitingToastSecs: p.waitingToastSecs == null ? 4 : clampSecs(p.waitingToastSecs),
+    collapseWorking: p.collapseWorking === true,
+    collapseWaiting: p.collapseWaiting === true,
   };
 }
 
@@ -87,6 +96,8 @@ function persist() {
         showCodex: prefs.showCodex,
         notifyOnWaiting: prefs.notifyOnWaiting,
         waitingToastSecs: prefs.waitingToastSecs,
+        collapseWorking: prefs.collapseWorking,
+        collapseWaiting: prefs.collapseWaiting,
       })
     );
   } catch {
@@ -108,6 +119,12 @@ export function toggleFilter(kind: StateFilter) {
 export function toggleSource(kind: SourceFilter) {
   if (kind === "claude") prefs.showClaude = !prefs.showClaude;
   else prefs.showCodex = !prefs.showCodex;
+  persist();
+}
+
+export function toggleCollapse(kind: CollapseGroup) {
+  if (kind === "working") prefs.collapseWorking = !prefs.collapseWorking;
+  else prefs.collapseWaiting = !prefs.collapseWaiting;
   persist();
 }
 
@@ -136,6 +153,8 @@ if (browser) {
       prefs.showCodex = next.showCodex;
       prefs.notifyOnWaiting = next.notifyOnWaiting;
       prefs.waitingToastSecs = next.waitingToastSecs;
+      prefs.collapseWorking = next.collapseWorking;
+      prefs.collapseWaiting = next.collapseWaiting;
     } catch {
       /* ignore malformed cross-window payload */
     }

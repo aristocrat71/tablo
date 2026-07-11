@@ -13,7 +13,7 @@
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
-  import { prefs, setSort, byMode } from "./prefs.svelte";
+  import { prefs, setSort, byMode, toggleCollapse } from "./prefs.svelte";
   import FilterButton from "./FilterButton.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
@@ -171,25 +171,41 @@
         {/if}
 
         {#if waitingCards.length && showWait}
-          <div class="group-head">
+          <button
+            class="group-head toggle"
+            class:collapsed={prefs.collapseWaiting}
+            aria-expanded={!prefs.collapseWaiting}
+            onclick={() => toggleCollapse("waiting")}
+          >
             <span class="group-dot wait"></span>
             <span class="group-name">Waiting</span>
             <span class="group-count">{waitingCards.length}</span>
-          </div>
-          {#each waitingCards as c (c.key)}
-            {@render sessionCard(c)}
-          {/each}
+            <span class="group-caret">&gt;</span>
+          </button>
+          {#if !prefs.collapseWaiting}
+            {#each waitingCards as c (c.key)}
+              {@render sessionCard(c)}
+            {/each}
+          {/if}
         {/if}
 
         {#if workCards.length && showWork}
-          <div class="group-head">
+          <button
+            class="group-head toggle"
+            class:collapsed={prefs.collapseWorking}
+            aria-expanded={!prefs.collapseWorking}
+            onclick={() => toggleCollapse("working")}
+          >
             <span class="group-dot work"></span>
             <span class="group-name">Working</span>
             <span class="group-count">{workCards.length}</span>
-          </div>
-          {#each workCards as c (c.key)}
-            {@render sessionCard(c)}
-          {/each}
+            <span class="group-caret">&gt;</span>
+          </button>
+          {#if !prefs.collapseWorking}
+            {#each workCards as c (c.key)}
+              {@render sessionCard(c)}
+            {/each}
+          {/if}
         {/if}
 
         {#if nothingVisible}
@@ -431,6 +447,30 @@
     font-size: 11px;
     color: var(--ink-faint);
     margin-left: auto;
+  }
+  /* collapsible Waiting / Working headers — caret points down when open, right when collapsed */
+  .group-head.toggle {
+    width: 100%;
+    border: none;
+    background: none;
+    cursor: pointer;
+    text-align: left;
+    border-radius: 7px;
+    transition: background-color 0.15s var(--ease);
+  }
+  .group-head.toggle:hover {
+    background: var(--bg-inset);
+  }
+  .group-caret {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1;
+    color: var(--ink-faint);
+    transform: rotate(90deg);
+    transition: transform 0.18s var(--ease);
+  }
+  .group-head.collapsed .group-caret {
+    transform: none;
   }
 
   .ucard {
