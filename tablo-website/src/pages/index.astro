@@ -3,6 +3,24 @@ import Screen from "../layouts/Screen.astro";
 import Cat from "../components/Cat.astro";
 import DesktopDemo from "../components/DesktopDemo.astro";
 import InstallDeck from "../components/InstallDeck.astro";
+
+// Boot-screen version, read from the app's updater manifest at BUILD time (no
+// runtime cost — the boot stays fast). Falls back if the fetch fails / times out.
+const LATEST_JSON =
+  "https://github.com/aristocrat71/tablo/releases/latest/download/latest.json";
+let appVersion = "1.0.1";
+try {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 5000);
+  const res = await fetch(LATEST_JSON, { signal: ctrl.signal });
+  clearTimeout(t);
+  if (res.ok) {
+    const data = await res.json();
+    if (data?.version) appVersion = String(data.version).replace(/^v/, "");
+  }
+} catch {
+  /* offline / rate-limited at build — keep the fallback */
+}
 ---
 
 <Screen>
@@ -29,7 +47,7 @@ import InstallDeck from "../components/InstallDeck.astro";
   </div>
 
   <!-- ===== Act 0 — COLD BOOT ===== -->
-  <div id="boot" data-boot>
+  <div id="boot" data-boot data-version={`v${appVersion}`}>
     <pre class="boot-log mono" data-boot-log></pre>
     <button class="bkt boot-skip" data-boot-skip>skip</button>
     <div class="boot-flash" data-boot-flash></div>
@@ -862,8 +880,26 @@ import InstallDeck from "../components/InstallDeck.astro";
       return;
     }
 
+    // Preload the above-the-fold assets so the curtain lifts on a loaded hero,
+    // never blocking past a 5s cap (a slow/failed fetch still reveals).
+    const critical = ["/sprites/shocked-sprite-sheet.webp", "/tablo-logo-sm.png"];
+    const ready = Promise.race([
+      Promise.all(
+        critical.map(
+          (src) =>
+            new Promise<void>((res) => {
+              const img = new Image();
+              img.onload = img.onerror = () => res();
+              img.src = src;
+            }),
+        ),
+      ),
+      new Promise<void>((res) => setTimeout(res, 5000)),
+    ]);
+
+    const ver = boot.dataset.version || "v1.0.1";
     const lines = [
-      "tablo v1.0.0  ·  familiar daemon",
+      `tablo ${ver}  ·  familiar daemon`,
       "> mounting ~/.claude/projects  (claude code) ... ok",
       "> mounting ~/.codex/sessions   (codex) ....... ok",
       "> tailing transcripts ....................... ok",
@@ -874,13 +910,14 @@ import InstallDeck from "../components/InstallDeck.astro";
     let cancelled = false;
 
     const powerOn = () => {
+      if (cancelled) return;
       flash.classList.add("go");
       setTimeout(finish, 380);
     };
     const type = () => {
       if (cancelled) return;
       if (li >= lines.length) {
-        setTimeout(powerOn, 260);
+        ready.then(() => setTimeout(powerOn, 260));
         return;
       }
       const line = lines[li];
