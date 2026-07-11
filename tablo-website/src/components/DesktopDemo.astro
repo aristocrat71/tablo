@@ -1,0 +1,588 @@
+---
+/**
+ * DesktopDemo — Act 3. A deliberately minimal macOS desktop: a menu bar (tablo
+ * lives in it), one terminal window with an agent session, and the tablo widget
+ * in the corner.
+ *
+ * Interactive: type a prompt (≤20 chars) and send it → the agent "works" and the
+ * cat wakes into its running state (amber), then settles back to sleep (sage).
+ * Tap the cat to open the real tablo panel (LiveWidget), tap away / Esc to close.
+ */
+import Cat from "./Cat.astro";
+import LiveWidget from "./LiveWidget.astro";
+import Dashboard from "./Dashboard.astro";
+
+// the resting session — agent finished its last turn, waiting on you (cat naps)
+const lines = [
+  { k: "prompt", t: "$ claude" },
+  { k: "sys", t: "● ready — what should we build?" },
+  { k: "you", t: "> add a rate-limit middleware to the api" },
+  { k: "agent", t: "● token-bucket limiter, wired into the router." },
+  { k: "tool", t: "└ updated  src/mw/rate_limit.rs  +38" },
+  { k: "tool", t: "└ updated  src/router.rs         +4" },
+  { k: "agent", t: "● done — 60 req/min per IP, burst 10. tests next?" },
+];
+---
+
+<div class="demo" data-demo>
+  <div class="desk">
+    <!-- menu bar — tablo sits up here, quietly -->
+    <div class="menubar mono">
+      <div class="mb-left">
+        <span class="mb-app">Terminal</span>
+        <span class="mb-x">Shell</span>
+        <span class="mb-x">Edit</span>
+        <span class="mb-x">View</span>
+        <span class="mb-x">Window</span>
+      </div>
+      <div class="mb-right">
+        <span class="mb-tablo" title="tablo lives in your menu bar">
+          <img class="mb-logo-img" src="/tablo-logo-v4.png" alt="tablo" />
+          <span class="mb-dot" aria-hidden="true"></span>
+        </span>
+        <span class="mb-batt">100%</span>
+        <span class="mb-clock" data-clock>9:41 AM</span>
+      </div>
+    </div>
+
+    <!-- the desktop / wallpaper -->
+    <div class="space">
+      <div class="win">
+        <div class="win-bar">
+          <span class="lights" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+          <span class="win-title mono">claude — ~/dev/tablo — 80×24</span>
+        </div>
+        <div class="win-body mono" data-term-body>
+          {lines.map((l) => (
+            <div class:list={["ln", l.k]}>{l.t}</div>
+          ))}
+          <form class="ln input-ln" data-termform>
+            <span class="ip" aria-hidden="true">&gt;</span>
+            <input
+              class="tinput mono"
+              type="text"
+              maxlength="20"
+              placeholder="type a prompt…"
+              aria-label="type a prompt for the agent"
+              autocomplete="off"
+              spellcheck="false"
+              data-terminput
+            />
+            <button class="tsend" type="submit" aria-label="send prompt">↵</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- the tablo widget — asleep, tap to open the panel -->
+      <button class="widget" type="button" data-cat-toggle aria-label="tablo — open panel">
+        <Cat state="idle" size={70} label="tablo, asleep" class="cat-desk" />
+      </button>
+    </div>
+  </div>
+
+  <!-- the real panel, popped over the desktop on tap -->
+  <div class="panel-pop" data-panel-pop>
+    <LiveWidget />
+  </div>
+
+  <!-- the dashboard, opened from the panel's "dashboard" link -->
+  <div class="dash-pop" data-dash-pop>
+    <Dashboard />
+  </div>
+</div>
+
+<style>
+  .demo {
+    position: relative;
+    width: min(920px, 96vw);
+    margin: 0 auto;
+  }
+  .desk {
+    width: 100%;
+    border-radius: var(--r-lg);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-panel);
+    overflow: hidden;
+    text-align: left;
+    background: #0f0c09;
+  }
+
+  /* ---- menu bar ---- */
+  .menubar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 28px;
+    padding: 0 12px;
+    font-size: 11px;
+    color: var(--ink-dim);
+    background: color-mix(in srgb, var(--bg-room) 72%, black);
+    border-bottom: 1px solid var(--border-soft);
+    backdrop-filter: blur(6px);
+  }
+  .mb-left,
+  .mb-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .mb-app {
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .mb-x {
+    color: var(--ink-faint);
+  }
+  .mb-right {
+    gap: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .mb-tablo {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .mb-logo-img {
+    height: 15px;
+    width: auto;
+    border-radius: 3px;
+    display: block;
+  }
+  .mb-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--sage);
+    box-shadow: 0 0 6px var(--sage);
+  }
+  .mb-batt,
+  .mb-clock {
+    color: var(--ink-dim);
+  }
+  @media (max-width: 560px) {
+    .mb-x {
+      display: none;
+    }
+  }
+
+  /* ---- the wallpaper / desktop area ---- */
+  .space {
+    position: relative;
+    min-height: clamp(360px, 50vw, 500px);
+    padding: 22px;
+    /* a coffee-brown desk, with the sleeping cat's sage glow pooling in its
+       (now top-right) corner */
+    background:
+      radial-gradient(
+        68% 58% at 86% 4%,
+        color-mix(in srgb, var(--sage) 22%, transparent),
+        transparent 60%
+      ),
+      linear-gradient(160deg, #55402e, #2f2116);
+  }
+
+  /* ---- terminal window ---- */
+  .win {
+    width: min(460px, 78%);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--bg-inset);
+    box-shadow:
+      0 18px 40px -18px rgba(0, 0, 0, 0.7),
+      0 4px 12px -6px rgba(0, 0, 0, 0.6);
+  }
+  .win-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 30px;
+    padding: 0 11px;
+    background: color-mix(in srgb, var(--bg-surface) 88%, black);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .lights {
+    display: flex;
+    gap: 6px;
+  }
+  .lights i {
+    width: 11px;
+    height: 11px;
+    border-radius: 999px;
+    display: block;
+  }
+  .lights .r {
+    background: color-mix(in srgb, var(--coral) 78%, var(--border));
+  }
+  .lights .y {
+    background: color-mix(in srgb, var(--amber) 78%, var(--border));
+  }
+  .lights .g {
+    background: color-mix(in srgb, var(--sage) 78%, var(--border));
+  }
+  .win-title {
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .win-body {
+    padding: 12px 14px 14px;
+    font-size: 11.5px;
+    line-height: 1.75;
+    color: var(--ink-dim);
+    max-height: 220px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .ln {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .ln.prompt {
+    color: var(--ink-faint);
+  }
+  .ln.sys {
+    color: var(--sage);
+  }
+  .ln.you {
+    color: var(--ink);
+  }
+  .ln.agent {
+    color: var(--blue);
+    text-shadow: 0 0 10px color-mix(in srgb, var(--blue) 40%, transparent);
+  }
+  .ln.tool {
+    color: var(--ink-faint);
+  }
+  /* the "working" line while the agent runs — amber, matching the running cat */
+  .ln.work {
+    color: var(--amber);
+    text-shadow: 0 0 10px color-mix(in srgb, var(--amber) 40%, transparent);
+  }
+
+  /* ---- the interactive prompt line ---- */
+  .input-ln {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 2px;
+  }
+  .input-ln .ip {
+    color: var(--ink);
+  }
+  .tinput {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 0;
+    font-size: 11.5px;
+    color: var(--ink);
+    caret-color: var(--blue);
+  }
+  .tinput::placeholder {
+    color: var(--ink-faint);
+  }
+  .tinput:disabled {
+    opacity: 0.6;
+  }
+  .tsend {
+    flex: none;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1;
+    color: var(--blue);
+    background: color-mix(in srgb, var(--blue) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--blue) 30%, transparent);
+    border-radius: 5px;
+    padding: 3px 7px;
+    transition:
+      background-color 0.15s var(--ease),
+      transform 0.12s var(--ease);
+  }
+  .tsend:hover {
+    background: color-mix(in srgb, var(--blue) 22%, transparent);
+  }
+  .tsend:active {
+    transform: scale(0.95);
+  }
+
+  /* ---- the tablo widget, asleep in the corner (a tap target) ---- */
+  .widget {
+    position: absolute;
+    right: 16px;
+    top: 12px;
+    border: none;
+    background: none;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+  .widget::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 62%;
+    width: 128px;
+    height: 128px;
+    transform: translate(-50%, -50%) scale(1);
+    border-radius: 999px;
+    /* idle => sage; working => amber (set by .working) */
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--sage) 40%, transparent),
+      transparent 68%
+    );
+    z-index: 0;
+    animation: breathe 4.5s var(--ease) infinite;
+    transition: background 0.4s var(--ease);
+  }
+  .widget.working::before {
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--amber) 46%, transparent),
+      transparent 68%
+    );
+    animation-duration: 2.2s;
+  }
+  @keyframes breathe {
+    0%,
+    100% {
+      opacity: 0.5;
+      transform: translate(-50%, -50%) scale(0.9);
+    }
+    50% {
+      opacity: 0.9;
+      transform: translate(-50%, -50%) scale(1.08);
+    }
+  }
+  .cat-desk {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ---- the panel, popped over the desk on tap ---- */
+  .panel-pop {
+    position: absolute;
+    right: 150px;
+    top: 14px;
+    z-index: 6;
+    width: min(384px, calc(100% - 32px));
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px) scale(0.97);
+    transform-origin: top right;
+    pointer-events: none;
+    transition:
+      opacity 0.18s var(--ease),
+      transform 0.22s var(--ease-back),
+      visibility 0s linear 0.24s;
+  }
+  .panel-pop.open {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    pointer-events: auto;
+    transition:
+      opacity 0.18s var(--ease),
+      transform 0.22s var(--ease-back);
+  }
+
+  /* ---- the dashboard, popped centred over the desk ---- */
+  /* top+bottom give the pop a definite height (relative to the desk), so its
+     inner .dwin-scroll can actually scroll and the cards stay inside the screen
+     instead of overflowing and stretching the page. */
+  .dash-pop {
+    position: absolute;
+    left: 50%;
+    top: 34px;
+    bottom: 16px;
+    z-index: 7;
+    width: min(720px, calc(100% - 36px));
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-50%) scale(0.97);
+    transform-origin: center top;
+    pointer-events: none;
+    transition:
+      opacity 0.18s var(--ease),
+      transform 0.22s var(--ease-back),
+      visibility 0s linear 0.24s;
+  }
+  .dash-pop.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) scale(1);
+    pointer-events: auto;
+    transition:
+      opacity 0.18s var(--ease),
+      transform 0.22s var(--ease-back);
+  }
+
+  @media (max-width: 640px) {
+    .win {
+      width: 100%;
+    }
+    .space {
+      padding: 16px;
+      padding-top: 88px; /* leave the top-right corner clear for the cat */
+    }
+    .widget {
+      right: 10px;
+      top: 6px;
+    }
+    .panel-pop {
+      right: 12px;
+      left: 12px;
+      top: 92px;
+      width: auto;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .widget::before {
+      animation: none;
+    }
+  }
+</style>
+
+<!-- keep the popped panel within the "screen": cap its height, scroll its body -->
+<style is:global>
+  [data-panel-pop] .panel {
+    max-height: min(430px, 72vh);
+  }
+  [data-panel-pop] .panel-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+</style>
+
+<script>
+  function initClock() {
+    document.querySelectorAll<HTMLElement>("[data-clock]").forEach((el) => {
+      if (el.dataset.clockReady) return;
+      el.dataset.clockReady = "1";
+      const set = () => {
+        const d = new Date();
+        let h = d.getHours();
+        const m = d.getMinutes();
+        const ap = h >= 12 ? "PM" : "AM";
+        h = h % 12 || 12;
+        el.textContent = `${h}:${String(m).padStart(2, "0")} ${ap}`;
+      };
+      set();
+      setInterval(set, 15000);
+    });
+  }
+
+  function initDemo(root: HTMLElement) {
+    if (root.dataset.ready) return;
+    root.dataset.ready = "1";
+
+    const catBtn = root.querySelector<HTMLElement>("[data-cat-toggle]");
+    const cat = root.querySelector<HTMLElement>(".cat-desk .cat");
+    const widget = root.querySelector<HTMLElement>(".widget");
+    const pop = root.querySelector<HTMLElement>("[data-panel-pop]");
+    const dashPop = root.querySelector<HTMLElement>("[data-dash-pop]");
+    const form = root.querySelector<HTMLFormElement>("[data-termform]");
+    const input = root.querySelector<HTMLInputElement>("[data-terminput]");
+    const body = root.querySelector<HTMLElement>("[data-term-body]");
+    if (!catBtn || !pop || !form || !input || !body) return;
+
+    // ---- cat state (idle=sleeping/sage, working=running/amber) ----
+    function setState(working: boolean) {
+      if (cat) cat.dataset.state = working ? "working" : "idle";
+      widget?.classList.toggle("working", working);
+    }
+
+    function addLine(cls: string, text: string) {
+      const div = document.createElement("div");
+      div.className = "ln " + cls;
+      div.textContent = text;
+      body.insertBefore(div, form); // committed lines sit above the input
+      body.scrollTop = body.scrollHeight;
+      return div;
+    }
+
+    // ---- type a prompt, send it, watch the cat run ----
+    let running = false;
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (running) return;
+      const val = input.value.trim().slice(0, 20);
+      if (!val) {
+        input.focus();
+        return;
+      }
+      addLine("you", "> " + val);
+      input.value = "";
+      running = true;
+      input.disabled = true;
+      const work = addLine("work", "● working…");
+      setState(true);
+      window.setTimeout(() => {
+        work.textContent = "● done. anything else?";
+        work.className = "ln agent";
+        setState(false);
+        running = false;
+        input.disabled = false;
+        body.scrollTop = body.scrollHeight;
+      }, 4200);
+    });
+
+    // ---- panel + dashboard surfaces ----
+    const setPanel = (open: boolean) => pop.classList.toggle("open", open);
+    const setDash = (open: boolean) => dashPop?.classList.toggle("open", open);
+    const dashLink = pop.querySelector<HTMLElement>("[data-dash]"); // panel's link
+    const dashClose = dashPop?.querySelector<HTMLElement>("[data-dash-close]");
+
+    // tap the cat → toggle the panel
+    catBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = !pop.classList.contains("open");
+      setDash(false);
+      setPanel(open);
+    });
+    // panel's "dashboard" link → swap panel for the dashboard
+    dashLink?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setPanel(false);
+      setDash(true);
+    });
+    dashClose?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setDash(false);
+    });
+
+    // tap-away closes whichever surface is open
+    document.addEventListener("click", (e) => {
+      const t = e.target as Node;
+      if (dashPop?.classList.contains("open") && !dashPop.contains(t)) setDash(false);
+      if (
+        pop.classList.contains("open") &&
+        !pop.contains(t) &&
+        !catBtn.contains(t)
+      )
+        setPanel(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        setPanel(false);
+        setDash(false);
+      }
+    });
+  }
+
+  function boot() {
+    initClock();
+    document.querySelectorAll<HTMLElement>("[data-demo]").forEach(initDemo);
+  }
+  boot();
+  document.addEventListener("astro:page-load", boot);
+</script>

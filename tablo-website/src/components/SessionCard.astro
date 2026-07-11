@@ -1,0 +1,404 @@
+---
+/**
+ * SessionCard — one dashboard session block: the context row (state LED, project
+ * + title, source tag, mode badge, context gauge, jump) plus the amber-phosphor
+ * "$ live preview" terminal tailing the agent's recent activity. Ported from the
+ * sessionCard/terminal snippets in the app's Dashboard.svelte.
+ */
+type Line = { kind: "user" | "tool" | "text" | "think"; text: string };
+interface Props {
+  s: {
+    project: string;
+    path: string;
+    branch: string | null;
+    title: string | null;
+    source: string;
+    mode: string;
+    pct: number;
+    level: "ok" | "warn" | "crit";
+    activityKind: "working" | "waiting" | "thinking";
+    canJump: boolean;
+    log: Line[];
+  };
+}
+const { s } = Astro.props;
+const pct = (n: number) => `${Math.round(n)}%`;
+const mark = (k: string) => (k === "user" ? "#" : ">");
+const termState = (k: string) =>
+  k === "working" ? "working" : k === "waiting" ? "waiting for input" : k === "thinking" ? "thinking" : "idle";
+---
+
+<div class="scard" data-scard data-kind={s.activityKind} data-source={s.source}>
+  <div class="drow">
+    <span class:list={["st", s.activityKind]}></span>
+    <div class="info">
+      <div class="p">
+        <span class="pname">{s.project}</span>
+        {s.title && (
+          <Fragment>
+            <span class="psep">·</span>
+            <span class="ptitle">{s.title}</span>
+          </Fragment>
+        )}
+      </div>
+      <div class="path">{s.path}{s.branch ? ` · ${s.branch}` : ""}</div>
+    </div>
+    <span class="src-tag">{s.source}</span>
+    <span class="mode-badge">mode : <span class:list={["mode-val", s.mode]}>{s.mode}</span></span>
+    <div class="gauge">
+      <div class="lab">
+        <span>context</span>
+        <span class:list={["val", s.level === "warn" && "warn", s.level === "crit" && "crit"]}>{pct(s.pct)}</span>
+      </div>
+      <div class="tk"><i class:list={[s.level]} style={`width:${s.pct}%`}></i></div>
+    </div>
+    {s.canJump && (
+      <button class="jump" type="button" title="Focus the window this session lives in">jump &rarr;</button>
+    )}
+  </div>
+
+  <div class:list={["term", s.activityKind]}>
+    <div class="term-bar">
+      <span class="term-name"><span class="term-dollar">$</span> live preview</span>
+      <span class="term-state">{termState(s.activityKind)}</span>
+    </div>
+    <div class="term-scroll">
+      {s.log.map((ln) => (
+        <div class:list={["term-line", ln.kind]}>
+          <span class="mk">{mark(ln.kind)}</span>
+          <span class="tx">{ln.text}</span>
+        </div>
+      ))}
+      <div class="term-line caret">
+        <span class="mk">&gt;</span>
+        <span class:list={["cur", s.activityKind === "working" && "blink"]}></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .scard {
+    padding: 15px 0;
+  }
+  .scard + .scard {
+    border-top: 1px solid var(--border-soft);
+  }
+  .drow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 3px 0;
+  }
+  .st {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .st.working {
+    background: var(--amber);
+    box-shadow: 0 0 7px var(--amber);
+  }
+  .st.waiting {
+    background: var(--sage);
+    box-shadow: 0 0 7px var(--sage);
+  }
+  .st.thinking {
+    background: var(--ink-faint);
+  }
+  .info {
+    flex: 1;
+    min-width: 0;
+  }
+  .info .p {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .info .p .pname {
+    flex-shrink: 0;
+  }
+  .info .p .psep {
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+  .info .p .ptitle {
+    font-weight: 500;
+    color: var(--ink-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .info .path {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 3px;
+  }
+  .src-tag {
+    flex-shrink: 0;
+    align-self: flex-end;
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--bg-inset);
+    color: var(--ink-faint);
+    border: 1px solid var(--border-soft);
+  }
+  .mode-badge {
+    flex-shrink: 0;
+    align-self: flex-end;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .mode-val {
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+  .mode-val.auto {
+    color: var(--amber);
+  }
+  .mode-val.plan {
+    color: var(--sage);
+  }
+  .mode-val.bypass {
+    color: var(--coral);
+  }
+  .gauge {
+    width: 168px;
+    flex-shrink: 0;
+    align-self: flex-end;
+  }
+  .gauge .lab {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--ink-faint);
+    margin-bottom: 4px;
+  }
+  .gauge .lab .val {
+    font-weight: 600;
+  }
+  .gauge .lab .val.warn {
+    color: var(--amber);
+  }
+  .gauge .lab .val.crit {
+    color: var(--coral);
+  }
+  .gauge .tk {
+    height: 7px;
+    border-radius: 2px;
+    background: var(--bg-inset);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background-image: repeating-linear-gradient(
+      90deg,
+      transparent 0 4px,
+      color-mix(in srgb, var(--bg-surface) 75%, black) 4px 5px
+    );
+  }
+  .gauge .tk i {
+    display: block;
+    height: 100%;
+    background-image: repeating-linear-gradient(90deg, transparent 0 4px, rgba(0, 0, 0, 0.25) 4px 5px);
+  }
+  .gauge .tk i.ok {
+    background-color: var(--sage);
+    box-shadow: 0 0 7px -1px var(--sage);
+  }
+  .gauge .tk i.warn {
+    background-color: var(--amber);
+    box-shadow: 0 0 8px -1px var(--amber);
+  }
+  .gauge .tk i.crit {
+    background-color: var(--coral);
+    box-shadow: 0 0 8px -1px var(--coral);
+  }
+  .jump {
+    flex-shrink: 0;
+    align-self: flex-end;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--amber);
+    background: var(--amber-soft);
+    border: 1px solid color-mix(in srgb, var(--amber) 32%, transparent);
+    border-radius: 6px;
+    padding: 5px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s var(--ease), transform 0.12s var(--ease);
+  }
+  .jump:hover {
+    background: color-mix(in srgb, var(--amber) 22%, var(--amber-soft));
+    transform: translateY(-1px);
+  }
+
+  /* ---- amber-phosphor terminal preview ---- */
+  .term {
+    margin-top: 13px;
+    border-radius: 11px;
+    border: 1px solid #2b2015;
+    background:
+      radial-gradient(130% 80% at 50% -20%, rgba(224, 164, 88, 0.1), transparent 55%),
+      #140e07;
+    box-shadow:
+      inset 0 1px 0 rgba(224, 164, 88, 0.06),
+      inset 0 0 44px rgba(0, 0, 0, 0.55),
+      0 2px 12px -6px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+    position: relative;
+  }
+  .term::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(0, 0, 0, 0.12) 2px 3px);
+    opacity: 0.5;
+  }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-bottom: 1px solid #241a10;
+    background: linear-gradient(180deg, rgba(224, 164, 88, 0.05), transparent);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    position: relative;
+    z-index: 1;
+  }
+  .term-name {
+    color: #9c8c78;
+  }
+  .term-dollar {
+    color: #e0a458;
+    font-weight: 700;
+    margin-right: 3px;
+  }
+  .term-state {
+    margin-left: auto;
+    color: #6f6250;
+  }
+  .term.working .term-state {
+    color: #e0a458;
+  }
+  .term.waiting .term-state {
+    color: #8faa7e;
+  }
+  .term-scroll {
+    padding: 11px 13px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.75;
+    min-height: 92px;
+    max-height: 176px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    position: relative;
+    z-index: 1;
+  }
+  .term-line {
+    display: flex;
+    gap: 9px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .term-line .mk {
+    flex-shrink: 0;
+    width: 9px;
+    text-align: center;
+  }
+  .term-line .tx {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .term-line.user {
+    margin-top: 7px;
+  }
+  .term-line.user:first-child {
+    margin-top: 0;
+  }
+  .term-line.user .mk {
+    color: #e0a458;
+    font-weight: 700;
+    text-shadow: 0 0 9px rgba(224, 164, 88, 0.5);
+  }
+  .term-line.user .tx {
+    color: #f6ead8;
+    font-weight: 600;
+  }
+  .term-line.tool .mk {
+    color: #e0a458;
+  }
+  .term-line.tool .tx {
+    color: #f1ddc0;
+    text-shadow: 0 0 10px rgba(224, 164, 88, 0.3);
+  }
+  .term-line.text .mk {
+    color: #6f6250;
+  }
+  .term-line.text .tx {
+    color: #c9b8a0;
+  }
+  .term-line.think {
+    opacity: 0.62;
+  }
+  .term-line.think .mk {
+    color: #6f6250;
+  }
+  .term-line.think .tx {
+    color: #8a7c69;
+    font-style: italic;
+  }
+  .term-line.caret .mk {
+    color: #e0a458;
+  }
+  .cur {
+    display: inline-block;
+    width: 8px;
+    height: 13px;
+    align-self: center;
+    background: #e0a458;
+    box-shadow: 0 0 9px rgba(224, 164, 88, 0.55);
+    opacity: 0.22;
+  }
+  .cur.blink {
+    animation: term-blink 1.05s steps(1) infinite;
+  }
+  @keyframes term-blink {
+    0%, 50% {
+      opacity: 0.95;
+    }
+    50.01%, 100% {
+      opacity: 0.08;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cur.blink {
+      animation: none;
+    }
+  }
+</style>

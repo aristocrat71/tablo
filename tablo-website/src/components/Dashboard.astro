@@ -1,0 +1,536 @@
+---
+/**
+ * Dashboard — the larger tablo window, opened from the panel's "dashboard" link
+ * inside the desktop demo. A faithful static port of the app's Dashboard.svelte
+ * (dashboard view): statline header + info/gear, a pinned Critical card, and a
+ * Sessions card whose rows each carry the signature amber-phosphor "$ live
+ * preview" terminal (see SessionCard.astro). The filter popover mirrors the
+ * app's FilterButton.
+ */
+import SessionCard from "./SessionCard.astro";
+
+type Line = { kind: "user" | "tool" | "text" | "think"; text: string };
+type Session = {
+  key: string;
+  project: string;
+  path: string;
+  branch: string | null;
+  title: string | null;
+  source: "claude" | "codex";
+  mode: "normal" | "auto" | "plan" | "bypass";
+  pct: number;
+  used: number;
+  limit: number;
+  level: "ok" | "warn" | "crit";
+  activityKind: "working" | "waiting" | "thinking";
+  canJump: boolean;
+  log: Line[];
+};
+
+const sessions: Session[] = [
+  {
+    key: "s-api", project: "api", path: "~/dev/api", branch: "main", title: "add rate-limit middleware",
+    source: "codex", mode: "auto", pct: 72, used: 186000, limit: 258000, level: "warn",
+    activityKind: "working", canJump: false,
+    log: [
+      { kind: "user", text: "wire the limiter into the router" },
+      { kind: "tool", text: "edit src/router.rs" },
+      { kind: "tool", text: "cargo test rate_limit" },
+      { kind: "text", text: "3 passing" },
+    ],
+  },
+  {
+    key: "s-tablo", project: "tablo", path: "~/dev/tablo/src-tauri", branch: "feat/polish", title: "wiring the permission hook",
+    source: "claude", mode: "normal", pct: 38, used: 76000, limit: 200000, level: "ok",
+    activityKind: "working", canJump: true,
+    log: [
+      { kind: "user", text: "add a rate-limit middleware to the api" },
+      { kind: "text", text: "I'll add a token-bucket limiter and wire it in." },
+      { kind: "tool", text: "edit src/mw/rate_limit.rs" },
+      { kind: "tool", text: "cargo check" },
+      { kind: "text", text: "60 req/min per IP, burst 10." },
+    ],
+  },
+  {
+    key: "s-web", project: "web", path: "~/dev/web", branch: "main", title: "polishing the settings pane",
+    source: "claude", mode: "plan", pct: 41, used: 82000, limit: 200000, level: "ok",
+    activityKind: "waiting", canJump: true,
+    log: [
+      { kind: "user", text: "polish the settings pane" },
+      { kind: "tool", text: "edit src/lib/Dashboard.svelte" },
+      { kind: "text", text: "spacing + toggle states tuned." },
+      { kind: "text", text: "want me to add the theme toggle too?" },
+    ],
+  },
+];
+
+const warnPct = 60;
+const critSessions = sessions.filter((s) => s.level !== "ok");
+const restSessions = sessions.filter((s) => s.level === "ok");
+const nWaiting = sessions.filter((s) => s.activityKind === "waiting").length;
+---
+
+<div class="dwin">
+  <div class="dwin-bar">
+    <span class="lights" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+    <span class="dwin-title mono">tablo — dashboard</span>
+    <button class="dwin-x" type="button" data-dash-close aria-label="close dashboard">×</button>
+  </div>
+
+  <div class="dwin-scroll" data-dash-root>
+    <div class="dash">
+      <div class="dash-head">
+        <div class="lead">
+          <h2><img class="g" src="/tablo-logo-v4.png" alt="" /> tablo</h2>
+          <p class="statline">
+            <span><b>{sessions.length}</b> active</span>
+            <span class="sep">·</span>
+            <span class:list={[nWaiting > 0 && "warn"]}><b>{nWaiting}</b> waiting</span>
+            <span class="sep">·</span>
+            <span><b>{sessions.length}</b> projects</span>
+          </p>
+        </div>
+        <div class="head-actions">
+          <span class="settings-btn" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </span>
+          <span class="settings-btn" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        {critSessions.length > 0 && (
+          <div class="card crit-card" data-card-group="crit">
+            <h3 class="crit-h3">
+              <span class="crit-led"></span>
+              Context window warning ! &gt;{warnPct}%
+              <span class="n" data-count>{critSessions.length}</span>
+            </h3>
+            {critSessions.map((s) => <SessionCard s={s} />)}
+          </div>
+        )}
+
+        <div class="card" data-card-group="rest">
+          <h3>
+            Sessions
+            <span class="sep">·</span>
+            <span class="legend" aria-hidden="true">
+              <span><i class="lmk">#</i> user prompt</span>
+              <span><i class="lmk">&gt;</i> agent response</span>
+            </span>
+            <span class="n" data-count>{restSessions.length}</span>
+          </h3>
+          <div class="filt-bar">
+            <div class="fbtn-wrap" data-filter-wrap>
+              <button class="fbtn" type="button" data-filter-btn aria-haspopup="menu" aria-expanded="false">
+                filter<span class="fbadge" data-filter-badge hidden>0</span>
+                <span class="fcaret">&gt;</span>
+              </button>
+              <div class="fpop" data-filter-pop role="menu" hidden>
+                <div class="flabel">state</div>
+                <button class="fitem" type="button" data-filter="waiting" role="menuitemcheckbox" aria-checked="true"><span class="fled wait"></span>waiting</button>
+                <button class="fitem" type="button" data-filter="working" role="menuitemcheckbox" aria-checked="true"><span class="fled work"></span>working</button>
+                <div class="flabel">source</div>
+                <button class="fitem" type="button" data-source="claude" role="menuitemcheckbox" aria-checked="true"><span class="fled src"></span>claude</button>
+                <button class="fitem" type="button" data-source="codex" role="menuitemcheckbox" aria-checked="true"><span class="fled src"></span>codex</button>
+              </div>
+            </div>
+          </div>
+          {restSessions.map((s) => <SessionCard s={s} />)}
+          <div class="dash-empty" data-empty hidden>Everything's filtered out.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // The filter popover (state + source) hides/shows session cards, mirroring the
+  // app. Approve/deny isn't modelled here (this demo view has no pending
+  // requests) — the panel already shows that flow.
+  function initDash(root: HTMLElement) {
+    if (root.dataset.ready) return;
+    root.dataset.ready = "1";
+
+    const filt: Record<string, boolean> = { waiting: true, working: true, claude: true, codex: true };
+    const scards = Array.from(root.querySelectorAll<HTMLElement>("[data-scard]"));
+    const cardGroups = Array.from(root.querySelectorAll<HTMLElement>("[data-card-group]"));
+    const emptyEl = root.querySelector<HTMLElement>("[data-empty]");
+
+    const fWrap = root.querySelector<HTMLElement>("[data-filter-wrap]");
+    const fBtn = root.querySelector<HTMLElement>("[data-filter-btn]");
+    const fPop = root.querySelector<HTMLElement>("[data-filter-pop]");
+    const fBadge = root.querySelector<HTMLElement>("[data-filter-badge]");
+    const stateItems = fPop ? Array.from(fPop.querySelectorAll<HTMLElement>("[data-filter]")) : [];
+    const srcItems = fPop ? Array.from(fPop.querySelectorAll<HTMLElement>("[data-source]")) : [];
+
+    function apply() {
+      let restVisible = 0;
+      for (const el of scards) {
+        const group = (el.closest("[data-card-group]") as HTMLElement | null)?.dataset.cardGroup;
+        const srcOk = el.dataset.source === "codex" ? filt.codex : filt.claude;
+        let vis = srcOk;
+        if (group === "rest") {
+          if (el.dataset.kind === "waiting" && !filt.waiting) vis = false;
+          if (el.dataset.kind !== "waiting" && !filt.working) vis = false;
+        }
+        el.hidden = !vis;
+        if (group === "rest" && vis) restVisible++;
+      }
+      for (const g of cardGroups) {
+        const shown = g.querySelectorAll<HTMLElement>("[data-scard]:not([hidden])").length;
+        const n = g.querySelector<HTMLElement>("[data-count]");
+        if (n) n.textContent = String(shown);
+        if (g.dataset.cardGroup === "crit") g.hidden = shown === 0;
+      }
+      if (emptyEl) emptyEl.hidden = restVisible > 0;
+
+      stateItems.forEach((b) => {
+        const on = filt[b.dataset.filter!];
+        b.classList.toggle("off", !on);
+        b.setAttribute("aria-checked", String(on));
+      });
+      srcItems.forEach((b) => {
+        const on = filt[b.dataset.source!];
+        b.classList.toggle("off", !on);
+        b.setAttribute("aria-checked", String(on));
+      });
+      const hidden = (filt.waiting ? 0 : 1) + (filt.working ? 0 : 1) + (filt.claude ? 0 : 1) + (filt.codex ? 0 : 1);
+      if (fBadge) {
+        fBadge.hidden = hidden === 0;
+        fBadge.textContent = String(hidden);
+      }
+      if (fBtn) fBtn.classList.toggle("on", hidden > 0 || !!(fPop && !fPop.hidden));
+    }
+
+    stateItems.forEach((b) => b.addEventListener("click", () => { const k = b.dataset.filter!; filt[k] = !filt[k]; apply(); }));
+    srcItems.forEach((b) => b.addEventListener("click", () => { const k = b.dataset.source!; filt[k] = !filt[k]; apply(); }));
+
+    function setPop(open: boolean) {
+      if (!fPop || !fBtn) return;
+      fPop.hidden = !open;
+      fBtn.setAttribute("aria-expanded", String(open));
+      apply();
+    }
+    fBtn?.addEventListener("click", (e) => { e.stopPropagation(); setPop(!!fPop?.hidden); });
+    document.addEventListener("click", (e) => {
+      if (fPop && !fPop.hidden && fWrap && !fWrap.contains(e.target as Node)) setPop(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && fPop && !fPop.hidden) { setPop(false); e.stopPropagation(); }
+    });
+
+    apply();
+  }
+
+  function boot() {
+    document.querySelectorAll<HTMLElement>("[data-dash-root]").forEach(initDash);
+  }
+  boot();
+  document.addEventListener("astro:page-load", boot);
+</script>
+
+<style>
+  /* ---- window chrome (desktop demo) ---- */
+  .dwin {
+    width: 100%;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-panel);
+    overflow: hidden;
+    text-align: left;
+  }
+  .dwin-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 32px;
+    padding: 0 12px;
+    background: color-mix(in srgb, var(--bg-surface) 88%, black);
+    border-bottom: 1px solid var(--border-soft);
+    flex: none;
+  }
+  .lights {
+    display: flex;
+    gap: 6px;
+  }
+  .lights i {
+    width: 11px;
+    height: 11px;
+    border-radius: 999px;
+    display: block;
+  }
+  .lights .r { background: color-mix(in srgb, var(--coral) 78%, var(--border)); }
+  .lights .y { background: color-mix(in srgb, var(--amber) 78%, var(--border)); }
+  .lights .g { background: color-mix(in srgb, var(--sage) 78%, var(--border)); }
+  .dwin-title {
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    flex: 1;
+  }
+  .dwin-x {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border: none;
+    background: transparent;
+    border-radius: 5px;
+    color: var(--ink-faint);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.15s var(--ease), background-color 0.15s var(--ease);
+  }
+  .dwin-x:hover {
+    color: var(--coral);
+    background: var(--coral-soft);
+  }
+  .dwin-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  /* ---- app dashboard content (ported from Dashboard.svelte) ---- */
+  .dash {
+    padding: 20px 22px 24px;
+  }
+  .dash-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .lead h2 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+  .lead h2 .g {
+    height: 30px;
+    width: auto;
+    border-radius: 7px;
+    flex: none;
+  }
+  .statline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-dim);
+  }
+  .statline b {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .statline .sep {
+    color: var(--ink-faint);
+  }
+  .statline .warn,
+  .statline .warn b {
+    color: var(--coral);
+  }
+  .head-actions {
+    align-self: flex-start;
+    display: flex;
+    gap: 8px;
+  }
+  .settings-btn {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg-raised);
+    color: var(--ink-dim);
+  }
+  .settings-btn svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+  }
+
+  .dash-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+    padding: 16px;
+  }
+  .card h3 {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-dim);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card h3 .n {
+    color: var(--ink-faint);
+    margin-left: auto;
+  }
+  .card.crit-card {
+    border-color: color-mix(in srgb, var(--coral) 45%, var(--border));
+  }
+  .card h3.crit-h3 {
+    color: var(--coral);
+  }
+  .crit-led {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--coral);
+    box-shadow: 0 0 8px var(--coral);
+    flex-shrink: 0;
+  }
+  .card h3 .sep {
+    color: var(--ink-faint);
+    font-weight: 400;
+  }
+  .card h3 .legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    text-transform: none;
+  }
+  .card h3 .legend .lmk {
+    font-style: normal;
+    font-weight: 700;
+    margin-right: 5px;
+    color: var(--amber);
+  }
+  .filt-bar {
+    display: flex;
+    margin: 2px 0 14px;
+  }
+  .dash-empty {
+    padding: 24px 0;
+    text-align: center;
+    color: var(--ink-faint);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  /* ---- filter popover (mirrors FilterButton.svelte) ---- */
+  .fbtn-wrap { position: relative; display: inline-flex; }
+  .fbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 8px;
+    border: 1px solid var(--border-soft);
+    background: var(--bg-surface);
+    color: var(--ink-faint);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    transition: color 0.18s var(--ease), background-color 0.18s var(--ease), border-color 0.18s var(--ease);
+  }
+  .fbtn:hover { color: var(--ink-dim); }
+  .fbtn.on { color: var(--ink); border-color: var(--border); background: var(--bg-raised); }
+  .fbadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 999px;
+    background: var(--amber);
+    color: var(--bg-surface);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .fcaret { font-size: 10px; line-height: 1; opacity: 0.7; }
+  .fpop {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 40;
+    min-width: 148px;
+    padding: 6px;
+    border-radius: 10px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-panel);
+  }
+  .flabel {
+    padding: 6px 8px 3px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .flabel:first-child { padding-top: 2px; }
+  .fitem {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    transition: background-color 0.15s var(--ease), opacity 0.15s var(--ease);
+  }
+  .fitem:hover { background: var(--bg-raised); }
+  .fitem.off { color: var(--ink-faint); opacity: 0.72; }
+  .fled {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    transition: background-color 0.15s var(--ease);
+  }
+  .fled.wait { background: var(--sage); box-shadow: 0 0 6px var(--sage); }
+  .fled.work { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .fled.src { background: var(--ink-dim); box-shadow: 0 0 5px color-mix(in srgb, var(--ink-dim) 60%, transparent); }
+  .fitem.off .fled { background: color-mix(in srgb, var(--ink-faint) 55%, transparent); box-shadow: none; }
+</style>

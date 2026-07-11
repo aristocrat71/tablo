@@ -1,7 +1,7 @@
 ---
 import Screen from "../layouts/Screen.astro";
 import Cat from "../components/Cat.astro";
-import LiveWidget from "../components/LiveWidget.astro";
+import DesktopDemo from "../components/DesktopDemo.astro";
 import InstallDeck from "../components/InstallDeck.astro";
 ---
 
@@ -155,15 +155,15 @@ import InstallDeck from "../components/InstallDeck.astro";
     </div>
   </section>
 
-  <!-- ===== Act 3 — LIVE WIDGET ===== -->
-  <section class="act live" data-act data-lamp="blue">
+  <!-- ===== Act 3 — LIVE DEMO (desktop) ===== -->
+  <section class="act live" id="live" data-act data-lamp="sage">
     <span class="act-num">02 · the whole thing, live</span>
-    <h2 class="act-title live-title" data-typeon>go on, play around with it</h2>
+    <h2 class="act-title live-title" data-typeon>tablo lives on your desktop</h2>
     <p class="live-hint mono">
-      click the widget <span class="hint-arr">&rarr;</span> open the panel
+      an agent at rest <span class="hint-arr">&rarr;</span> tablo naps in the corner
     </p>
     <div class="live-stage">
-      <LiveWidget />
+      <DesktopDemo />
     </div>
   </section>
 

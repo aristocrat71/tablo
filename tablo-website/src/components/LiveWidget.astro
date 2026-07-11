@@ -161,13 +161,33 @@ const sub =
             <button class="on" type="button" data-sort="context">context</button>
             <button type="button" data-sort="recent">recent</button>
           </div>
-          <div class="seg filt" role="group" aria-label="Filter by state">
-            <button class="on" type="button" data-filter="waiting">
-              <span class="fdot wait" />waiting
+          <div class="fbtn-wrap" data-filter-wrap>
+            <button
+              class="fbtn"
+              type="button"
+              data-filter-btn
+              aria-haspopup="menu"
+              aria-expanded="false"
+            >
+              filter<span class="fbadge" data-filter-badge hidden>0</span>
+              <span class="fcaret">&gt;</span>
             </button>
-            <button class="on" type="button" data-filter="working">
-              <span class="fdot work" />working
-            </button>
+            <div class="fpop" data-filter-pop role="menu" hidden>
+              <div class="flabel">state</div>
+              <button class="fitem" type="button" data-filter="waiting" role="menuitemcheckbox" aria-checked="true">
+                <span class="fled wait" />waiting
+              </button>
+              <button class="fitem" type="button" data-filter="working" role="menuitemcheckbox" aria-checked="true">
+                <span class="fled work" />working
+              </button>
+              <div class="flabel">source</div>
+              <button class="fitem" type="button" data-source="claude" role="menuitemcheckbox" aria-checked="true">
+                <span class="fled src" />claude
+              </button>
+              <button class="fitem" type="button" data-source="codex" role="menuitemcheckbox" aria-checked="true">
+                <span class="fled src" />codex
+              </button>
+            </div>
           </div>
         </div>
       )
@@ -190,6 +210,7 @@ const sub =
                 data-pct={c.pct}
                 data-recent={c.recent}
                 data-kind={c.activityKind}
+                data-source={c.source}
               >
                 <div class="session-line1">
                   <span class="session-proj">{c.project}</span>
@@ -386,26 +407,125 @@ const sub =
     background: var(--amber-soft);
     color: var(--amber);
   }
-  /* state filters: neutral "on" highlight (the colored LED carries the meaning) */
-  .seg.filt button.on {
-    background: var(--bg-raised);
-    color: var(--ink);
+  /* ---- filter popover (mirrors the app's FilterButton.svelte) ---- */
+  .fbtn-wrap {
+    position: relative;
+    display: inline-flex;
   }
-  .fdot {
-    width: 6px;
-    height: 6px;
+  .fbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 8px;
+    border: 1px solid var(--border-soft);
+    background: var(--bg-surface);
+    color: var(--ink-faint);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    transition: color 0.18s var(--ease), background-color 0.18s var(--ease),
+      border-color 0.18s var(--ease);
+  }
+  .fbtn:hover {
+    color: var(--ink-dim);
+  }
+  .fbtn.on {
+    color: var(--ink);
+    border-color: var(--border);
+    background: var(--bg-raised);
+  }
+  .fbadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 999px;
+    background: var(--amber);
+    color: var(--bg-surface);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .fcaret {
+    font-size: 10px;
+    line-height: 1;
+    opacity: 0.7;
+  }
+  .fpop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 40;
+    min-width: 148px;
+    padding: 6px;
+    border-radius: 10px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-panel);
+  }
+  .flabel {
+    padding: 6px 8px 3px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .flabel:first-child {
+    padding-top: 2px;
+  }
+  .fitem {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    transition: background-color 0.15s var(--ease), opacity 0.15s var(--ease);
+  }
+  .fitem:hover {
+    background: var(--bg-raised);
+  }
+  .fitem.off {
+    color: var(--ink-faint);
+    opacity: 0.72;
+  }
+  .fled {
+    width: 8px;
+    height: 8px;
     border-radius: 999px;
     flex-shrink: 0;
-    background: var(--ink-faint);
-    transition: background-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+    transition: background-color 0.15s var(--ease);
   }
-  .seg.filt button.on .fdot.wait {
+  .fled.wait {
     background: var(--sage);
     box-shadow: 0 0 6px var(--sage);
   }
-  .seg.filt button.on .fdot.work {
+  .fled.work {
     background: var(--amber);
     box-shadow: 0 0 6px var(--amber);
+  }
+  .fled.src {
+    background: var(--ink-dim);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--ink-dim) 60%, transparent);
+  }
+  .fitem.off .fled {
+    background: color-mix(in srgb, var(--ink-faint) 55%, transparent);
+    box-shadow: none;
   }
 
   .panel-body {
@@ -805,23 +925,41 @@ const sub =
       countEls[id] = g.querySelector(".group-count") as HTMLElement;
     });
 
-    type C = { el: HTMLElement; pct: number; recent: number; group: string };
+    type C = {
+      el: HTMLElement;
+      pct: number;
+      recent: number;
+      group: string;
+      source: string;
+    };
     const cards: C[] = Array.from(root.querySelectorAll<HTMLElement>("[data-card]")).map(
       (el) => ({
         el,
         pct: Number(el.dataset.pct),
         recent: Number(el.dataset.recent),
         group: (el.closest("[data-group]") as HTMLElement).dataset.group!,
+        source: el.dataset.source || "claude",
       }),
     );
 
     let sort: "context" | "recent" = "context";
-    let showWaiting = true;
-    let showWorking = true;
+    const filt: Record<string, boolean> = {
+      waiting: true,
+      working: true,
+      claude: true,
+      codex: true,
+    };
 
     const sortBtns = Array.from(root.querySelectorAll<HTMLElement>("[data-sort]"));
-    const filterBtns = Array.from(root.querySelectorAll<HTMLElement>("[data-filter]"));
     const filteredEmpty = root.querySelector<HTMLElement>(".filtered-empty");
+
+    // filter popover (mirrors the app's FilterButton)
+    const fWrap = root.querySelector<HTMLElement>("[data-filter-wrap]");
+    const fBtn = root.querySelector<HTMLElement>("[data-filter-btn]");
+    const fPop = root.querySelector<HTMLElement>("[data-filter-pop]");
+    const fBadge = root.querySelector<HTMLElement>("[data-filter-badge]");
+    const stateItems = fPop ? Array.from(fPop.querySelectorAll<HTMLElement>("[data-filter]")) : [];
+    const srcItems = fPop ? Array.from(fPop.querySelectorAll<HTMLElement>("[data-source]")) : [];
 
     function apply() {
       const cmp =
@@ -836,21 +974,43 @@ const sub =
         const gcards = cards.filter((c) => c.group === gid).sort(cmp);
         // appendChild moves the node — reorders within, and relocates on approve
         gcards.forEach((c) => gEl.appendChild(c.el));
-        if (countEls[gid]) countEls[gid].textContent = String(gcards.length);
-        let hidden = gcards.length === 0;
-        if (gid === "wait" && !showWaiting) hidden = true;
-        if (gid === "work" && !showWorking) hidden = true;
-        gEl.hidden = hidden;
-        if (!hidden) visible += gcards.length;
+        // per-card visibility: source applies everywhere; the waiting/working
+        // state filters gate only their own groups (crit/perm always show).
+        let shown = 0;
+        for (const c of gcards) {
+          const srcOk = c.source === "codex" ? filt.codex : filt.claude;
+          let vis = srcOk;
+          if (gid === "wait" && !filt.waiting) vis = false;
+          if (gid === "work" && !filt.working) vis = false;
+          c.el.hidden = !vis;
+          if (vis) shown++;
+        }
+        if (countEls[gid]) countEls[gid].textContent = String(shown);
+        gEl.hidden = shown === 0;
+        visible += shown;
       }
 
       sortBtns.forEach((b) => b.classList.toggle("on", b.dataset.sort === sort));
-      filterBtns.forEach((b) =>
-        b.classList.toggle(
-          "on",
-          b.dataset.filter === "waiting" ? showWaiting : showWorking,
-        ),
-      );
+      stateItems.forEach((b) => {
+        const on = filt[b.dataset.filter!];
+        b.classList.toggle("off", !on);
+        b.setAttribute("aria-checked", String(on));
+      });
+      srcItems.forEach((b) => {
+        const on = filt[b.dataset.source!];
+        b.classList.toggle("off", !on);
+        b.setAttribute("aria-checked", String(on));
+      });
+      const hidden =
+        (filt.waiting ? 0 : 1) +
+        (filt.working ? 0 : 1) +
+        (filt.claude ? 0 : 1) +
+        (filt.codex ? 0 : 1);
+      if (fBadge) {
+        fBadge.hidden = hidden === 0;
+        fBadge.textContent = String(hidden);
+      }
+      if (fBtn) fBtn.classList.toggle("on", hidden > 0 || !!(fPop && !fPop.hidden));
       if (filteredEmpty) filteredEmpty.hidden = visible > 0;
     }
 
@@ -860,13 +1020,41 @@ const sub =
         apply();
       }),
     );
-    filterBtns.forEach((b) =>
+    stateItems.forEach((b) =>
       b.addEventListener("click", () => {
-        if (b.dataset.filter === "waiting") showWaiting = !showWaiting;
-        else showWorking = !showWorking;
+        const k = b.dataset.filter!;
+        filt[k] = !filt[k];
         apply();
       }),
     );
+    srcItems.forEach((b) =>
+      b.addEventListener("click", () => {
+        const k = b.dataset.source!;
+        filt[k] = !filt[k];
+        apply();
+      }),
+    );
+
+    // open/close the filter popover; dismiss on outside-click / Esc
+    function setPop(open: boolean) {
+      if (!fPop || !fBtn) return;
+      fPop.hidden = !open;
+      fBtn.setAttribute("aria-expanded", String(open));
+      apply();
+    }
+    fBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setPop(!!fPop?.hidden);
+    });
+    document.addEventListener("click", (e) => {
+      if (fPop && !fPop.hidden && fWrap && !fWrap.contains(e.target as Node)) setPop(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && fPop && !fPop.hidden) {
+        setPop(false);
+        e.stopPropagation();
+      }
+    });
 
     // Approve / Deny: drop the request, un-tint the card, move it to Working.
     function resolve(key: string, decision: "allow" | "deny") {
