@@ -119,6 +119,9 @@
   let panelShortcutEnabled = $derived(snap.panelShortcutEnabled);
   let aerospaceFollow = $derived(snap.aerospaceFollow);
   let aerospaceAvailable = $derived(snap.aerospaceAvailable);
+  // Jump is macOS-only; approvals run everywhere but Windows. Backend echoes both.
+  let jumpSupported = $derived(snap.jumpSupported);
+  let approvalsSupported = $derived(snap.approvalsSupported);
 
   // ---- Phase 4: approvals hook status ----
   let hook = $state<HookStatus | null>(null);
@@ -303,17 +306,17 @@
       <h3>Settings</h3>
 
       <div class="setting-grid">
-        {#if hook}
+        {#if hook && approvalsSupported}
           {@render toggle("Tool approvals", hook.serverUp ? `Intercept ${hook.tools.join(", ")} so you can approve or deny before they run.` : "Approval server not running.", hook.installed, busy, toggleApprovals)}
         {/if}
-        {#if loc}
+        {#if loc && jumpSupported}
           {@render toggle("Jump to Claude session (experimental)", "Focus the terminal window a session lives in (reads its tmux pane / terminal app).", loc.installed, locBusy, toggleLocate)}
         {/if}
       </div>
 
       <div class="setting-grid">
         {@render toggle("Watch Codex", "Show OpenAI Codex CLI sessions (~/.codex) alongside Claude Code.", watchCodex, false, () => setWatchCodex(!watchCodex))}
-        {#if codexLoc && watchCodex}
+        {#if codexLoc && watchCodex && jumpSupported}
           {@render toggle("Jump to Codex session (experimental)", "Focus the terminal a Codex session lives in (installs a hook in ~/.codex/hooks.json — Codex asks you to trust it once).", codexLoc.installed, codexLocBusy, toggleCodexLocate)}
         {/if}
       </div>

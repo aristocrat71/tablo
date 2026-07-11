@@ -107,6 +107,12 @@ pub struct Snapshot {
     /// Whether AeroSpace was detected this run — gates the "Follow AeroSpace"
     /// toggle so it only appears to users actually running AeroSpace.
     pub aerospace_available: bool,
+    /// Whether "jump to session" is supported — macOS only (window-raise is a
+    /// no-op elsewhere). Gates the Jump toggles off Windows/Linux.
+    pub jump_supported: bool,
+    /// Whether tool approvals are supported — the hook is a POSIX sh + curl
+    /// script, so everywhere except Windows. Gates the approvals toggle.
+    pub approvals_supported: bool,
 }
 
 impl Default for Snapshot {
@@ -128,6 +134,8 @@ impl Default for Snapshot {
             panel_shortcut_enabled: true,
             aerospace_follow: true,
             aerospace_available: false,
+            jump_supported: cfg!(target_os = "macos"),
+            approvals_supported: !cfg!(target_os = "windows"),
         }
     }
 }
@@ -1028,6 +1036,8 @@ pub fn scan(
         panel_shortcut_enabled: cfg.panel_shortcut_enabled,
         aerospace_follow: cfg.aerospace_follow,
         aerospace_available: crate::aerospace::available(),
+        jump_supported: cfg!(target_os = "macos"),
+        approvals_supported: !cfg!(target_os = "windows"),
     }
 }
 
