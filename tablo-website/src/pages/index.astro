@@ -224,7 +224,12 @@ try {
       <span>MIT Licensed</span>
     </nav>
     <p class="made-by mono">
-      Dreamy <span class="sep">·</span> Projekt Dreamscape
+      for the community by&nbsp;<a
+        class="unravel-link"
+        href="https://unravel.tech"
+        target="_blank"
+        rel="noopener">unravel.tech</a
+      >
     </p>
   </section>
 </Screen>
@@ -756,15 +761,18 @@ try {
   /* very-bottom maker credit */
   .made-by {
     margin-top: 22px;
-    font-size: var(--fs-mono-xs);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    font-size: calc(var(--fs-lead) / 2);
+    letter-spacing: 0.02em;
     color: var(--ink-faint);
-    opacity: 0.75;
+    opacity: 0.85;
   }
-  .made-by .sep {
-    opacity: 0.5;
-    margin: 0 3px;
+  .unravel-link {
+    color: var(--blue);
+    text-decoration: none;
+    font-weight: 700;
+  }
+  .unravel-link:hover {
+    text-decoration: underline;
   }
 
   /* ===== boot overlay ===== */

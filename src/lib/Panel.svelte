@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import { store } from "./state.svelte";
   import { openDashboard, resolvePermission, jumpToSession, hidePanel } from "./bridge";
   import { tokens, pct } from "./format";
@@ -216,6 +217,15 @@
         {/if}
       {/if}
     </div>
+
+    <div class="panel-credit">
+      Made with
+      <svg class="credit-heart" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+      </svg>
+      by
+      <button class="credit-link" onclick={() => openUrl("https://unravel.tech")}>unravel.tech</button>
+    </div>
   </div>
 </div>
 
@@ -409,6 +419,39 @@
     flex: 1;
     padding: 6px 12px 12px;
     overflow-y: auto;
+  }
+
+  /* very small maker credit pinned at the panel's bottom edge */
+  .panel-credit {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 5px 12px 7px;
+    border-top: 1px solid var(--border-soft, var(--border));
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+    color: var(--ink-faint);
+    opacity: 0.7;
+  }
+  .panel-credit .credit-heart {
+    width: 9px;
+    height: 9px;
+    color: var(--coral);
+  }
+  .panel-credit .credit-link {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: var(--amber);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .panel-credit .credit-link:hover {
+    text-decoration: underline;
   }
 
   .group-head {

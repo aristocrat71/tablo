@@ -37,6 +37,7 @@
 
   const REPO_URL = "https://github.com/aristocrat71/tablo";
   const WEBSITE_URL = "https://tablo-cat.netlify.app/";
+  const UNRAVEL_URL = "https://unravel.tech";
 
   type Card = {
     key: string;
@@ -442,6 +443,14 @@
             <div><dt>License</dt><dd>MIT</dd></div>
           </dl>
           <p class="about-foot">Updates install automatically in the background.</p>
+          <p class="about-credit">
+            Made with
+            <svg class="credit-heart" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>
+            by
+            <button class="about-link" onclick={() => openUrl(UNRAVEL_URL)}>unravel.tech</button>
+          </p>
         </div>
       </div>
     </div>
@@ -761,6 +770,22 @@
     margin: 18px 0 0;
     font-size: 11.5px;
     color: var(--ink-faint);
+  }
+  .about-credit {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 12px 0 0;
+    font-size: 11.5px;
+    color: var(--ink-faint);
+  }
+  .about-credit .credit-heart {
+    width: 12px;
+    height: 12px;
+    color: var(--coral);
+  }
+  .about-credit .about-link {
+    font-size: 11.5px;
   }
   /* back link, settings view */
   .back {
