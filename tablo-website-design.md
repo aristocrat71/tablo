@@ -565,14 +565,14 @@ auto-detected** from `navigator.platform`/UA; that tab preselected. Tabs are
 
 macOS / Linux tab:
 ```
-curl -fsSL https://raw.githubusercontent.com/aristocrat71/tablo/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/unravel-team/tablo/main/install.sh | bash
 ```
 Caption (mono-xs, `--ink-faint`):
 `downloads from GitHub Releases · strips the quarantine flag so Gatekeeper never prompts`
 
 Windows tab:
 ```
-irm https://raw.githubusercontent.com/aristocrat71/tablo/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/unravel-team/tablo/main/install.ps1 | iex
 ```
 Caption: `runs Unblock-File so SmartScreen stays quiet · PowerShell`
 
@@ -585,11 +585,11 @@ Below the tabs, three quiet mono lines (no cards, no icons):
 ```
 free · unsigned · Actions-built    no Apple/MS fee, the install script skips the OS prompt
 mac · win · linux                  one binary per platform, straight from Releases
-open source                        [ github.com/aristocrat71/tablo ]  ·  MIT
+open source                        [ github.com/unravel-team/tablo ]  ·  MIT
 ```
 
 A single secondary bracket-link: `[ view all releases → ]` →
-`github.com/aristocrat71/tablo/releases`. That's the whole install act. No email
+`github.com/unravel-team/tablo/releases`. That's the whole install act. No email
 capture, no "get started free," no tiers.
 
 > Keep the exact install URLs in sync with `install.sh`/`install.ps1` once those

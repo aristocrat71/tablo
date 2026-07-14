@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # tablo installer — macOS & Linux. Pulls the latest build from GitHub Releases.
-#   curl -fsSL https://raw.githubusercontent.com/aristocrat71/tablo/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/unravel-team/tablo/main/install.sh | bash
 # (or run it from a checkout). No build toolchain required.
 set -euo pipefail
 
-REPO="aristocrat71/tablo"
+REPO="unravel-team/tablo"
 API="https://api.github.com/repos/${REPO}/releases/latest"
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$1"; }

@@ -7,7 +7,7 @@ import InstallDeck from "../components/InstallDeck.astro";
 // Boot-screen version, read from the app's updater manifest at BUILD time (no
 // runtime cost — the boot stays fast). Falls back if the fetch fails / times out.
 const LATEST_JSON =
-  "https://github.com/aristocrat71/tablo/releases/latest/download/latest.json";
+  "https://github.com/unravel-team/tablo/releases/latest/download/latest.json";
 let appVersion = "1.0.1";
 try {
   const ctrl = new AbortController();
@@ -97,7 +97,7 @@ try {
         <a class="bkt install-btn" href="#get">install tablo</a>
         <a
           class="cta-github"
-          href="https://github.com/aristocrat71/tablo"
+          href="https://github.com/unravel-team/tablo"
           target="_blank"
           rel="noopener"
           title="GitHub"
@@ -216,7 +216,7 @@ try {
     <nav class="signoff-nav mono">
       <a
         class="bkt"
-        href="https://github.com/aristocrat71/tablo"
+        href="https://github.com/unravel-team/tablo"
         target="_blank"
         rel="noopener">github</a
       >
@@ -224,7 +224,15 @@ try {
       <span>MIT Licensed</span>
     </nav>
     <p class="made-by mono">
-      Dreamy <span class="sep">·</span> Projekt Dreamscape
+      <span>for the community by</span>
+      <a
+        class="unravel-link"
+        href="https://unravel.tech"
+        target="_blank"
+        rel="noopener"
+        aria-label="unravel.tech"
+        ><img class="unravel-logo" src="/unravel-logo.png" alt="unravel" /></a
+      >
     </p>
   </section>
 </Screen>
@@ -755,16 +763,29 @@ try {
   }
   /* very-bottom maker credit */
   .made-by {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
     margin-top: 22px;
-    font-size: var(--fs-mono-xs);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    font-size: calc(var(--fs-lead) / 1.7);
+    letter-spacing: 0.02em;
     color: var(--ink-faint);
-    opacity: 0.75;
+    opacity: 0.85;
   }
-  .made-by .sep {
-    opacity: 0.5;
-    margin: 0 3px;
+  .unravel-link {
+    display: inline-flex;
+    align-items: center;
+    line-height: 0;
+    transition: opacity 0.15s var(--ease);
+  }
+  .unravel-link:hover {
+    opacity: 0.7;
+  }
+  .unravel-logo {
+    height: 1.2em;
+    width: auto;
+    display: block;
   }
 
   /* ===== boot overlay ===== */
