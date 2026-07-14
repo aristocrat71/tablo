@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "node scripts/ensure-root-tsconfig.mjs && astro build",
     "preview": "astro preview",
     "astro": "astro"
   },

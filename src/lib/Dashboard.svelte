@@ -36,7 +36,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
 
   const REPO_URL = "https://github.com/unravel-team/tablo";
-  const WEBSITE_URL = "https://tablo-cat.netlify.app/";
+  const WEBSITE_URL = "https://tablo.unravel.tech/";
   const UNRAVEL_URL = "https://unravel.tech";
 
   type Card = {
@@ -431,7 +431,7 @@
           <div class="about-ver">{version ? `v${version}` : "—"}</div>
           <p class="about-tag">A tiny floating cat that watches your agents work</p>
           <p class="about-web">
-            <button class="about-link" onclick={() => openUrl(WEBSITE_URL)}>https://tablo-cat.netlify.app/</button>
+            <button class="about-link" onclick={() => openUrl(WEBSITE_URL)}>tablo.unravel.tech</button>
           </p>
           <dl class="about-meta">
             <div>

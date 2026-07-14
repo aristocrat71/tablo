@@ -3,7 +3,7 @@ import { defineConfig } from "astro/config";
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://tablo.dev",
+  site: "https://tablo.unravel.tech",
   build: {
     inlineStylesheets: "auto",
   },

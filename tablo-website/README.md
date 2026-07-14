@@ -73,7 +73,22 @@ screen). · `Act 4` get it (install one-liners) · `Act 5` sign-off (cat sleeps)
 - **No emojis** — LED dots, CSS shapes, ASCII, and the pixel sprites only.
 - **Accessibility:** `prefers-reduced-motion` kills the CRT/animations and freezes
   sprites; a manual `[ crt: off ]` toggle (footer) does the same, persisted.
-- **Deploy:** static `dist/` to any CDN. Set the real domain in `astro.config.mjs`
-  (`site`) and confirm the `install.sh` / `install.ps1` URLs once they land.
+- **Deploy — Cloudflare Pages** (live at **https://tablo.unravel.tech**). The site
+  lives in this subdirectory of the Tauri repo, so set in the Pages project:
+  - **Root directory:** `tablo-website`
+  - **Build command:** `bun run build` (npm works too — the package manager is
+    detected from `bun.lock`)
+  - **Build output directory:** `dist`
+  - **Custom domain:** add `tablo.unravel.tech` under the project's *Custom domains*;
+    since `unravel.tech` is on Cloudflare the CNAME is created automatically (else
+    add `CNAME tablo → <project>.pages.dev` at your DNS host).
+
+  The `build` script first runs `scripts/ensure-root-tsconfig.mjs`, which stubs the
+  gitignored `../.svelte-kit/tsconfig.json` on a fresh clone so Astro's bundler
+  doesn't abort reading the repo-root tsconfig. It never clobbers a real generated
+  one, so local `bun run build` is unaffected.
+
+  The canonical URL is set in `astro.config.mjs` (`site`) — used for OG/Twitter
+  image URLs. Confirm the `install.sh` / `install.ps1` URLs once they land.
 
 Easter eggs: konami code, triple-click the cat.
