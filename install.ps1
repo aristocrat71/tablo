@@ -1,8 +1,8 @@
 # tablo installer — Windows. Pulls the latest build from GitHub Releases.
-#   irm https://raw.githubusercontent.com/aristocrat71/tablo/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/unravel-team/tablo/main/install.ps1 | iex
 $ErrorActionPreference = 'Stop'
 
-$repo = 'aristocrat71/tablo'
+$repo = 'unravel-team/tablo'
 $api  = "https://api.github.com/repos/$repo/releases/latest"
 
 function Say($m) { Write-Host "==> $m" -ForegroundColor Green }

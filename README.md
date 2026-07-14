@@ -14,19 +14,19 @@ platform today.
 ## Install
 
 Prebuilt installers for macOS, Windows, and Linux live on the
-[Releases](https://github.com/aristocrat71/tablo/releases) page. These one-liners
+[Releases](https://github.com/unravel-team/tablo/releases) page. These one-liners
 grab the latest build and install it quietly — no Gatekeeper / SmartScreen prompt:
 
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aristocrat71/tablo/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/unravel-team/tablo/main/install.sh | bash
 ```
 
 **Windows** (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/aristocrat71/tablo/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/unravel-team/tablo/main/install.ps1 | iex
 ```
 
 Once installed, tablo keeps itself up to date — it checks for new releases and

@@ -7,7 +7,7 @@ import InstallDeck from "../components/InstallDeck.astro";
 // Boot-screen version, read from the app's updater manifest at BUILD time (no
 // runtime cost — the boot stays fast). Falls back if the fetch fails / times out.
 const LATEST_JSON =
-  "https://github.com/aristocrat71/tablo/releases/latest/download/latest.json";
+  "https://github.com/unravel-team/tablo/releases/latest/download/latest.json";
 let appVersion = "1.0.1";
 try {
   const ctrl = new AbortController();
@@ -97,7 +97,7 @@ try {
         <a class="bkt install-btn" href="#get">install tablo</a>
         <a
           class="cta-github"
-          href="https://github.com/aristocrat71/tablo"
+          href="https://github.com/unravel-team/tablo"
           target="_blank"
           rel="noopener"
           title="GitHub"
@@ -216,7 +216,7 @@ try {
     <nav class="signoff-nav mono">
       <a
         class="bkt"
-        href="https://github.com/aristocrat71/tablo"
+        href="https://github.com/unravel-team/tablo"
         target="_blank"
         rel="noopener">github</a
       >

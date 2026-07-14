@@ -35,7 +35,7 @@
   import { getVersion } from "@tauri-apps/api/app";
   import { openUrl } from "@tauri-apps/plugin-opener";
 
-  const REPO_URL = "https://github.com/aristocrat71/tablo";
+  const REPO_URL = "https://github.com/unravel-team/tablo";
   const WEBSITE_URL = "https://tablo-cat.netlify.app/";
   const UNRAVEL_URL = "https://unravel.tech";
 
@@ -437,7 +437,7 @@
             <div>
               <dt>Open Source</dt>
               <dd>
-                <button class="about-link" onclick={() => openUrl(REPO_URL)}>github.com/aristocrat71/tablo</button>
+                <button class="about-link" onclick={() => openUrl(REPO_URL)}>github.com/unravel-team/tablo</button>
               </dd>
             </div>
             <div><dt>License</dt><dd>MIT</dd></div>
