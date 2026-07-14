@@ -224,11 +224,14 @@ try {
       <span>MIT Licensed</span>
     </nav>
     <p class="made-by mono">
-      for the community by&nbsp;<a
+      <span>for the community by</span>
+      <a
         class="unravel-link"
         href="https://unravel.tech"
         target="_blank"
-        rel="noopener">unravel.tech</a
+        rel="noopener"
+        aria-label="unravel.tech"
+        ><img class="unravel-logo" src="/unravel-logo.png" alt="unravel" /></a
       >
     </p>
   </section>
@@ -760,19 +763,29 @@ try {
   }
   /* very-bottom maker credit */
   .made-by {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
     margin-top: 22px;
-    font-size: calc(var(--fs-lead) / 2);
+    font-size: calc(var(--fs-lead) / 1.7);
     letter-spacing: 0.02em;
     color: var(--ink-faint);
     opacity: 0.85;
   }
   .unravel-link {
-    color: var(--blue);
-    text-decoration: none;
-    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    line-height: 0;
+    transition: opacity 0.15s var(--ease);
   }
   .unravel-link:hover {
-    text-decoration: underline;
+    opacity: 0.7;
+  }
+  .unravel-logo {
+    height: 1.2em;
+    width: auto;
+    display: block;
   }
 
   /* ===== boot overlay ===== */
