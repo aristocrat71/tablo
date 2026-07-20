@@ -28,5 +28,7 @@ notify = "6"
 dirs = "5"
 # Tiny synchronous HTTP server for the PreToolUse approval hook (Phase 4).
 tiny_http = "0.12"
+# OS CSPRNG for the per-run loopback IPC secret (already in the tree via tauri).
+getrandom = "0.2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
