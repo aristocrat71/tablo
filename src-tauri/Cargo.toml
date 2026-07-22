@@ -30,3 +30,7 @@ dirs = "5"
 tiny_http = "0.12"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-aptabase = "1"
+# The Aptabase plugin spawns its dispatcher with raw `tokio::spawn` from its setup
+# hook, so the app must run inside a Tokio runtime (provided in main.rs).
+tokio = { version = "1", features = ["rt-multi-thread"] }

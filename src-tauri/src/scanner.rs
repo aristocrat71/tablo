@@ -104,6 +104,8 @@ pub struct Snapshot {
     pub panel_shortcut_enabled: bool,
     /// Whether Tablo follows the focused AeroSpace workspace, echoed for the Settings toggle.
     pub aerospace_follow: bool,
+    /// Whether anonymous usage pings are enabled, echoed for the Settings toggle.
+    pub telemetry_enabled: bool,
     /// Whether AeroSpace was detected this run — gates the "Follow AeroSpace"
     /// toggle so it only appears to users actually running AeroSpace.
     pub aerospace_available: bool,
@@ -133,6 +135,7 @@ impl Default for Snapshot {
             watch_codex: true,
             panel_shortcut_enabled: true,
             aerospace_follow: true,
+            telemetry_enabled: true,
             aerospace_available: false,
             jump_supported: cfg!(target_os = "macos"),
             approvals_supported: !cfg!(target_os = "windows"),
@@ -1035,6 +1038,7 @@ pub fn scan(
         watch_codex: cfg.watch_codex,
         panel_shortcut_enabled: cfg.panel_shortcut_enabled,
         aerospace_follow: cfg.aerospace_follow,
+        telemetry_enabled: cfg.telemetry_enabled,
         aerospace_available: crate::aerospace::available(),
         jump_supported: cfg!(target_os = "macos"),
         approvals_supported: !cfg!(target_os = "windows"),
