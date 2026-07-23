@@ -16,9 +16,10 @@ platform today.
 Prebuilt installers for macOS, Windows, and Linux live on the
 [Releases](https://github.com/unravel-team/tablo/releases) page. The one-liners
 below download the latest build, **verify its published SHA-256 checksum**, and
-install it — aborting if the checksum is missing or doesn't match. The URLs are
-pinned to a release tag (not a moving branch); if you'd rather read the script
-first, open that raw URL or grab `install.sh` / `install.ps1` and run it locally.
+install it quietly — aborting if the checksum is missing or doesn't match. The
+URLs are pinned to a release tag (not a moving branch); if you'd rather read the
+script first, open that raw URL or grab `install.sh` / `install.ps1` and run it
+locally.
 
 **macOS / Linux**
 
@@ -32,15 +33,10 @@ curl -fsSL https://raw.githubusercontent.com/unravel-team/tablo/tablo-v1.0.1/ins
 irm https://raw.githubusercontent.com/unravel-team/tablo/tablo-v1.0.1/install.ps1 | iex
 ```
 
-tablo isn't code-signed / notarized yet, so the OS warns on first launch — this
-is expected, and the installer no longer suppresses it:
-
-- **macOS** — right-click tablo in `/Applications` → **Open**, then confirm (or
-  System Settings → Privacy & Security → **Open Anyway**).
-- **Windows** — on the SmartScreen prompt, choose **More info → Run anyway**.
-
-Once installed, tablo keeps itself up to date — it checks for new releases and
-updates in the background.
+tablo isn't code-signed / notarized yet, so after verifying the download the
+installer clears the OS quarantine flag (macOS) / mark-of-the-web (Windows) so it
+opens without a Gatekeeper / SmartScreen prompt. Once installed, tablo keeps
+itself up to date — it checks for new releases and updates in the background.
 
 ## The four surfaces
 

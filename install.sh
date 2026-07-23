@@ -67,8 +67,12 @@ case "$os" in
     say "Installing to /Applications…"
     rm -rf "/Applications/$(basename "$app")"
     cp -R "$app" /Applications/
-    say "Done. tablo isn't notarized yet, so on first launch right-click it in"
-    say "/Applications → Open, then confirm (or Privacy & Security → Open Anyway)."
+    # tablo isn't notarized yet; strip the quarantine flag so it opens without the
+    # Gatekeeper prompt. The download was already checksum-verified above — the
+    # Gatekeeper prompt on an unsigned app is only a click-through, not an
+    # integrity check, so this trades a speed bump we've already covered.
+    xattr -dr com.apple.quarantine "/Applications/$(basename "$app")" 2>/dev/null || true
+    say "Done — launch tablo from /Applications or Spotlight."
     ;;
   Linux)
     say "Fetching the tablo release…"

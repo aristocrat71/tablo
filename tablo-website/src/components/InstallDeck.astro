@@ -13,7 +13,7 @@ const tabs = [
     id: "macos",
     label: "macos",
     cmd: `curl -fsSL ${RAW}/install.sh | bash`,
-    note: "downloads from GitHub Releases · verifies the SHA-256 · first launch: right-click → Open (unsigned)",
+    note: "downloads from GitHub Releases · verifies the SHA-256 · strips the quarantine flag so Gatekeeper never prompts",
   },
   {
     id: "linux",
@@ -25,7 +25,7 @@ const tabs = [
     id: "windows",
     label: "windows",
     cmd: `irm ${RAW}/install.ps1 | iex`,
-    note: "verifies the SHA-256 · SmartScreen may warn (unsigned): More info → Run anyway · PowerShell",
+    note: "verifies the SHA-256 · clears mark-of-the-web so SmartScreen stays quiet · PowerShell",
   },
 ];
 ---

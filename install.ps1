@@ -42,6 +42,12 @@ if (-not $expected -or $expected -ne $actual) {
   throw "checksum mismatch for $($asset.name) (expected '$expected', got '$actual') - aborting"
 }
 
+# Clear the "mark of the web" so SmartScreen doesn't prompt. The download was
+# already checksum-verified above; on an unsigned installer the SmartScreen prompt
+# is only a click-through, not an integrity check, so this removes a speed bump
+# we've already covered.
+Unblock-File -Path $out
+
 Say "Launching the installer..."
 Start-Process -FilePath $out -Wait
-Say "Done. tablo isn't signed yet, so if SmartScreen warns, choose More info -> Run anyway. It updates itself from here on."
+Say "Done. tablo updates itself automatically from here on."
