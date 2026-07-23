@@ -1,29 +1,31 @@
 ---
 /**
  * InstallDeck — Act 4. A faux terminal window. OS auto-detected and
- * preselected. Copy buttons with phosphor feedback. Commands per
- * release-plan.md (GitHub Releases, quiet install, unsigned).
+ * preselected. Copy buttons with phosphor feedback. Commands download from
+ * GitHub Releases and verify the published SHA-256 before installing. The RAW
+ * URL is pinned to a release tag — bump it when cutting a new release.
  */
 const REPO = "https://github.com/unravel-team/tablo";
-const RAW = "https://raw.githubusercontent.com/unravel-team/tablo/main";
+const TAG = "tablo-v1.0.1";
+const RAW = `https://raw.githubusercontent.com/unravel-team/tablo/${TAG}`;
 const tabs = [
   {
     id: "macos",
     label: "macos",
     cmd: `curl -fsSL ${RAW}/install.sh | bash`,
-    note: "downloads from GitHub Releases · strips the quarantine flag so Gatekeeper never prompts",
+    note: "downloads from GitHub Releases · verifies the SHA-256 · first launch: right-click → Open (unsigned)",
   },
   {
     id: "linux",
     label: "linux",
     cmd: `curl -fsSL ${RAW}/install.sh | bash`,
-    note: "drops the AppImage / .deb straight from Releases · no signing prompt",
+    note: "drops the AppImage straight from Releases · verifies the SHA-256 before install",
   },
   {
     id: "windows",
     label: "windows",
     cmd: `irm ${RAW}/install.ps1 | iex`,
-    note: "runs Unblock-File so SmartScreen stays quiet · PowerShell",
+    note: "verifies the SHA-256 · SmartScreen may warn (unsigned): More info → Run anyway · PowerShell",
   },
 ];
 ---

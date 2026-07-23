@@ -83,6 +83,7 @@ jobs:
         run: bun install
 
       - name: Build and release
+        id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -102,3 +103,23 @@ jobs:
           # tauri-action generates + merges latest.json across the matrix jobs
           # when the signing key is present.
           args: ${{ matrix.args }}
+
+      # Publish a "<file>.sha256" next to each installer so install.sh / install.ps1
+      # can verify the download and fail closed on a mismatch. Each matrix job
+      # signs only its own artifacts; filenames don't collide across platforms.
+      - name: Publish SHA-256 checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi; }
+          echo '${{ steps.tauri.outputs.artifactPaths }}' | jq -r '.[]' | while read -r f; do
+            case "$f" in
+              *.dmg|*.AppImage|*.deb|*.rpm|*.exe|*.msi)
+                [ -f "$f" ] || continue
+                ( cd "$(dirname "$f")" && sha "$(basename "$f")" ) > "${f}.sha256"
+                gh release upload "${{ github.ref_name }}" "${f}.sha256" --clobber
+                ;;
+            esac
+          done
