@@ -3690,6 +3690,7 @@ name = "tablo"
 version = "1.0.1"
 dependencies = [
  "dirs 5.0.1",
+ "getrandom 0.2.17",
  "notify",
  "serde",
  "serde_json",

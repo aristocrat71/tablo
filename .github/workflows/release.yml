@@ -12,6 +12,10 @@ on:
     tags:
       - "tablo-v*"
 
+# Least privilege by default: every job is read-only unless it opts into more.
+permissions:
+  contents: read
+
 jobs:
   # Guardrail: a tag can only release if its commit is actually on `main`. Tags
   # aren't branch-bound, so pushing `tablo-v*` from a feature branch would
@@ -19,7 +23,9 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # All actions pinned to a full commit SHA (not a movable tag) so a hijacked
+      # or repointed tag can't inject code — the version is in the trailing comment.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
         with:
           fetch-depth: 0 # full history so --contains can see origin/main
       - name: Refuse to release a tag that isn't on main
@@ -31,8 +37,16 @@ jobs:
 
   release:
     needs: guard
+    # The only job that touches the signing key + publishes. Gate it behind a
+    # protected environment — add yourself as a required reviewer in repo
+    # Settings → Environments → "release" so a release pauses for approval before
+    # the key is exposed. (An unconfigured environment is auto-created with no
+    # gate, so this never blocks a release until you set the rules.)
+    environment: release
     permissions:
-      contents: write
+      contents: write # create the release + upload assets
+      id-token: write # OIDC token used to sign the provenance attestation
+      attestations: write # write the build-provenance attestation
     strategy:
       fail-fast: false
       matrix:
@@ -51,18 +65,19 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      # All actions pinned to a full commit SHA (version in the trailing comment).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - name: Install bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           targets: ${{ matrix.rust-targets }}
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           workspaces: "./src-tauri -> target"
 
@@ -80,10 +95,11 @@ jobs:
             libxdo-dev
 
       - name: Install frontend dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+        id: tauri
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Update-integrity signing (NOT OS code-signing). Generated once with
@@ -102,3 +118,42 @@ jobs:
           # tauri-action generates + merges latest.json across the matrix jobs
           # when the signing key is present.
           args: ${{ matrix.args }}
+
+      # Publish a "<file>.sha256" next to each installer so install.sh / install.ps1
+      # can verify the download and fail closed on a mismatch. Each matrix job
+      # signs only its own artifacts; filenames don't collide across platforms.
+      - name: Publish SHA-256 checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi; }
+          echo '${{ steps.tauri.outputs.artifactPaths }}' | jq -r '.[]' | while read -r f; do
+            case "$f" in
+              *.dmg|*.AppImage|*.deb|*.rpm|*.exe|*.msi)
+                [ -f "$f" ] || continue
+                ( cd "$(dirname "$f")" && sha "$(basename "$f")" ) > "${f}.sha256"
+                gh release upload "${{ github.ref_name }}" "${f}.sha256" --clobber
+                ;;
+            esac
+          done
+
+      # Cryptographic build provenance: a signed attestation tying each artifact
+      # to this repo + workflow run, verifiable with
+      # `gh attestation verify <file> --repo unravel-team/tablo`. Independent of
+      # the release assets, so it holds even if a release is later tampered.
+      - name: Collect artifact paths
+        id: artifacts
+        shell: bash
+        run: |
+          {
+            echo 'paths<<EOF'
+            echo '${{ steps.tauri.outputs.artifactPaths }}' | jq -r '.[]'
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: ${{ steps.artifacts.outputs.paths }}

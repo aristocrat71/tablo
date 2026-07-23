@@ -10,6 +10,7 @@
 //! Nothing here modifies the user's `~/.claude/settings.json` unless they
 //! explicitly enable approvals from the UI (`set_hook_enabled`).
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::time::Duration;
@@ -25,6 +26,45 @@ use crate::AppState;
 /// Seconds shaved off the hook timeout so the server always answers (with a
 /// defer) before Claude Code would kill the hook. Non-domain timing constant.
 const RESPONSE_MARGIN_SECS: u64 = 5;
+
+/// Header the generated hooks carry the per-run secret in; requests without a
+/// matching value are rejected before the body is read.
+const SECRET_HEADER: &str = "X-Tablo-Secret";
+/// Hard cap on a request body. Bounds memory per request against a flood of
+/// oversized POSTs. A `/decide` body carries the tool input (a Write can be a
+/// whole file), so the cap is generous; `/locate` bodies are tiny.
+const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
+/// Most `/decide` requests held (blocked) at once. Past this we defer instead of
+/// parking another thread for the ~10-minute window — bounds thread/queue growth.
+const MAX_PENDING: usize = 64;
+
+/// A fresh per-run secret (48 hex chars from the OS CSPRNG), baked into the
+/// generated hook scripts and required on every request. Rotates each launch, so
+/// a stale script from a previous run can't drive the current server.
+pub(crate) fn new_secret() -> String {
+    let mut buf = [0u8; 24];
+    // The OS RNG only fails in exotic sandboxes; fall back to a still-unique
+    // (if lower-entropy) seed rather than crashing the app on launch.
+    if getrandom::getrandom(&mut buf).is_err() {
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let mix = t ^ (std::process::id() as u128) << 17;
+        buf.copy_from_slice(&mix.to_le_bytes()[..8].repeat(3));
+    }
+    buf.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Constant-time-ish equality so a wrong secret can't be recovered by timing the
+/// reply. Length mismatch short-circuits (the length isn't secret).
+fn secret_matches(got: &str, want: &str) -> bool {
+    let (g, w) = (got.as_bytes(), want.as_bytes());
+    if g.len() != w.len() {
+        return false;
+    }
+    g.iter().zip(w).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
+}
 
 /// A tool call awaiting a human decision. The serialized view pushed to the UI;
 /// the matching responder channel lives in `AppState.responders`, keyed by `id`.
@@ -84,49 +124,94 @@ fn hook_output(decision: &str, reason: &str) -> String {
 
 // ============================ server ============================
 
-/// Bind the loopback approval server and serve it on a background thread. On a
-/// bind failure (port busy) approvals are simply unavailable — the hook then
-/// defers every call — so this never panics.
-pub fn spawn_server(app: AppHandle) {
+/// Bind the loopback approval server and serve it on a background thread. Binds
+/// **synchronously** and returns whether it took the port: a busy port means
+/// another process owns it, so the caller must not point hooks at it. Never
+/// panics; on failure approvals are simply unavailable and the caller skips
+/// wiring hooks.
+pub fn spawn_server(app: AppHandle) -> bool {
     let port = app.state::<AppState>().config.lock().unwrap().permission_port;
+    let server = match Server::http(("127.0.0.1", port)) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    app.state::<AppState>()
+        .perm_server_up
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     std::thread::spawn(move || {
-        let server = match Server::http(("127.0.0.1", port)) {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        app.state::<AppState>()
-            .perm_server_up
-            .store(true, std::sync::atomic::Ordering::Relaxed);
         for request in server.incoming_requests() {
             let app = app.clone();
             // One thread per request: each blocks until the user decides.
             std::thread::spawn(move || handle_request(&app, request));
         }
     });
+    true
+}
+
+/// Read the named request header (case-insensitive), if present.
+fn header_value(request: &tiny_http::Request, name: &'static str) -> Option<String> {
+    request
+        .headers()
+        .iter()
+        .find(|h| h.field.equiv(name))
+        .map(|h| h.value.as_str().to_string())
+}
+
+/// Read at most `MAX_BODY_BYTES` of the request body. `None` if the declared
+/// length already exceeds the cap (rejected before reading a single byte).
+fn read_bounded_body(request: &mut tiny_http::Request) -> Option<String> {
+    if request.body_length().is_some_and(|n| n > MAX_BODY_BYTES) {
+        return None;
+    }
+    let mut body = String::new();
+    request
+        .as_reader()
+        .take(MAX_BODY_BYTES as u64)
+        .read_to_string(&mut body)
+        .ok()
+        .map(|_| body)
 }
 
 fn handle_request(app: &AppHandle, mut request: tiny_http::Request) {
+    // Reject anything a browser could originate: our hooks never set Origin, so a
+    // cross-site fetch (DNS-rebind / drive-by) is refused before it can act.
+    if header_value(&request, "Origin").is_some() {
+        let _ = request.respond(Response::from_string("").with_status_code(403));
+        return;
+    }
+    // Authenticate before touching the body or any state. A request without the
+    // per-run secret (another local process, a webpage) gets nothing done.
+    let secret = app.state::<AppState>().ipc_secret.clone();
+    let authed = header_value(&request, SECRET_HEADER)
+        .is_some_and(|got| secret_matches(&got, &secret));
+    if !authed {
+        let _ = request.respond(Response::from_string("").with_status_code(401));
+        return;
+    }
+
     let is_post = request.method() == &Method::Post;
     let url = request.url().to_string();
-    // Passive session-locator report (window-render "jump to session"): cache it
-    // and answer immediately — never blocks, unlike /decide.
-    if is_post && url.starts_with("/locate") {
-        let mut body = String::new();
-        let _ = request.as_reader().read_to_string(&mut body);
+    // Exact paths only — no prefix matching.
+    if is_post && url == "/locate" {
+        // Passive session-locator report ("jump to session"): cache it and answer
+        // immediately — never blocks, unlike /decide.
+        let body = read_bounded_body(&mut request).unwrap_or_default();
         crate::locate::store_location(app, &body);
         let _ = request.respond(Response::from_string("ok"));
         return;
     }
-    let is_decide = is_post && url.starts_with("/decide");
-    if !is_decide {
+    if !(is_post && url == "/decide") {
         let _ = request.respond(Response::from_string("tablo"));
         return;
     }
-    let mut body = String::new();
-    if request.as_reader().read_to_string(&mut body).is_err() {
-        let _ = request.respond(Response::from_string(PermDecision::Ask.hook_json()));
-        return;
-    }
+    let body = match read_bounded_body(&mut request) {
+        Some(b) => b,
+        // Oversized/unreadable body — defer to Claude Code's normal flow.
+        None => {
+            let _ = request.respond(Response::from_string(PermDecision::Ask.hook_json()));
+            return;
+        }
+    };
     let decision = wait_for_decision(app, &body);
     let ct = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
         .expect("static header");
@@ -160,6 +245,13 @@ fn wait_for_decision(app: &AppHandle, body: &str) -> PermDecision {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         format!("p{n}")
     };
+    // Bound how many hook requests we hold open at once. Past the cap, defer
+    // rather than park another thread for the full (~10-minute) window — a flood
+    // of /decide POSTs can't exhaust threads or grow the queue without limit.
+    if state.pending.lock().unwrap().len() >= MAX_PENDING {
+        return PermDecision::Ask;
+    }
+
     let (tx, rx) = channel::<PermDecision>();
     let wait = {
         let secs = state
@@ -269,7 +361,7 @@ pub fn set_hook_enabled(
 ) -> Result<HookStatus, String> {
     let cfg = state.config.lock().unwrap().clone();
     if enabled {
-        install_hook(&cfg)?;
+        install_hook(&cfg, &state.ipc_secret)?;
     } else {
         uninstall_hook()?;
     }
@@ -294,7 +386,7 @@ const HOOK_TEMPLATE: &str = r#"#!/bin/sh
 # permission flow — the session never hangs.
 PORT=__PORT__
 resp=$(cat | curl -s -m __TIMEOUT__ -X POST \
-  -H 'Content-Type: application/json' --data-binary @- \
+  -H 'Content-Type: application/json' -H 'X-Tablo-Secret: __SECRET__' --data-binary @- \
   "http://127.0.0.1:${PORT}/decide" 2>/dev/null)
 if [ -n "$resp" ]; then
   printf '%s' "$resp"
@@ -304,21 +396,23 @@ fi
 exit 0
 "#;
 
-/// Write (or refresh) the hook script with the current port/timeout baked in.
-/// Idempotent and safe to call on every launch — it's Tablo's own file.
-pub fn write_hook_script(port: u16, timeout: u64) -> std::io::Result<PathBuf> {
+/// Write (or refresh) the hook script with the current port/timeout/secret baked
+/// in. Idempotent and safe to call on every launch — it's Tablo's own file.
+/// Written `0o700` so only the owner can read the embedded secret.
+pub fn write_hook_script(port: u16, timeout: u64, secret: &str) -> std::io::Result<PathBuf> {
     let dir = hook_dir()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir"))?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("hook.sh");
     let script = HOOK_TEMPLATE
         .replace("__PORT__", &port.to_string())
-        .replace("__TIMEOUT__", &timeout.to_string());
+        .replace("__TIMEOUT__", &timeout.to_string())
+        .replace("__SECRET__", secret);
     std::fs::write(&path, script)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))?;
     }
     Ok(path)
 }
@@ -446,8 +540,8 @@ fn apply_uninstall(root: &mut Value, script: &str) {
     apply_uninstall_event(root, "PreToolUse", script);
 }
 
-pub fn install_hook(cfg: &Config) -> Result<(), String> {
-    let script = write_hook_script(cfg.permission_port, cfg.hook_timeout_secs)
+pub fn install_hook(cfg: &Config, secret: &str) -> Result<(), String> {
+    let script = write_hook_script(cfg.permission_port, cfg.hook_timeout_secs, secret)
         .map_err(|e| e.to_string())?;
     let script_str = script.to_string_lossy().to_string();
     let matcher = if cfg.intercept_tools.is_empty() {
@@ -606,6 +700,31 @@ mod tests {
         apply_uninstall_event(&mut root, "SessionStart", SCRIPT);
         apply_uninstall_event(&mut root, "UserPromptSubmit", SCRIPT);
         assert!(root.get("hooks").is_none(), "empty hooks pruned");
+    }
+
+    #[test]
+    fn secret_matches_is_exact() {
+        let s = new_secret();
+        assert!(secret_matches(&s, &s));
+        assert!(!secret_matches("", &s));
+        assert!(!secret_matches(&s[..s.len() - 1], &s), "length mismatch rejected");
+        let mut wrong = s.clone();
+        wrong.replace_range(0..1, if s.starts_with('a') { "b" } else { "a" });
+        assert!(!secret_matches(&wrong, &s), "one-byte difference rejected");
+    }
+
+    #[test]
+    fn new_secret_is_hex_and_fresh() {
+        let a = new_secret();
+        assert_eq!(a.len(), 48);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, new_secret(), "each call yields a fresh secret");
+    }
+
+    #[test]
+    fn hook_script_embeds_secret_header() {
+        // The template must carry the auth header + a secret slot the writer fills.
+        assert!(HOOK_TEMPLATE.contains("X-Tablo-Secret: __SECRET__"));
     }
 
     #[test]

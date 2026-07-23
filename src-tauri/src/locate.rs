@@ -857,7 +857,7 @@ while [ -n "$p" ] && [ "$p" -gt 1 ] && [ "$n" -lt 12 ]; do
   p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d '[:space:]')
   n=$((n + 1))
 done
-curl -s -m 2 -X POST -H 'Content-Type: application/json' \
+curl -s -m 2 -X POST -H 'Content-Type: application/json' -H 'X-Tablo-Secret: __SECRET__' \
   "http://127.0.0.1:${PORT}/locate" --data-binary @- >/dev/null 2>&1 <<JSON
 {"sessionId":"$sid","tmux":"$TMUX","tmuxPane":"$TMUX_PANE","termProgram":"$TERM_PROGRAM","termSessionId":"$TERM_SESSION_ID","zedTerm":"$ZED_TERM","windowId":"$WINDOWID","tty":"$tty"}
 JSON
@@ -866,16 +866,20 @@ exit 0
 
 /// Write (or refresh) the locate hook script. Idempotent, safe every launch —
 /// it's Tablo's own file; wiring it into settings.json is the gated step.
-pub fn write_locate_script(port: u16) -> std::io::Result<PathBuf> {
+/// Written `0o700` so only the owner can read the embedded secret.
+pub fn write_locate_script(port: u16, secret: &str) -> std::io::Result<PathBuf> {
     let dir = permission::hook_dir()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir"))?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("locate.sh");
-    std::fs::write(&path, LOCATE_TEMPLATE.replace("__PORT__", &port.to_string()))?;
+    let script = LOCATE_TEMPLATE
+        .replace("__PORT__", &port.to_string())
+        .replace("__SECRET__", secret);
+    std::fs::write(&path, script)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))?;
     }
     Ok(path)
 }
@@ -884,8 +888,8 @@ pub fn write_locate_script(port: u16) -> std::io::Result<PathBuf> {
 /// immediately; UserPromptSubmit refreshes and catches already-running ones.
 const LOCATE_EVENTS: [&str; 2] = ["SessionStart", "UserPromptSubmit"];
 
-pub fn install(cfg: &Config) -> Result<(), String> {
-    let script = write_locate_script(cfg.permission_port).map_err(|e| e.to_string())?;
+pub fn install(cfg: &Config, secret: &str) -> Result<(), String> {
+    let script = write_locate_script(cfg.permission_port, secret).map_err(|e| e.to_string())?;
     let s = script.to_string_lossy().to_string();
     let mut root = permission::read_settings();
     for ev in LOCATE_EVENTS {
@@ -940,7 +944,7 @@ pub fn is_installed() -> bool {
 pub fn set_locate_enabled(state: State<'_, AppState>, enabled: bool) -> Result<LocateStatus, String> {
     let cfg = state.config.lock().unwrap().clone();
     if enabled {
-        install(&cfg)?;
+        install(&cfg, &state.ipc_secret)?;
     } else {
         uninstall()?;
     }

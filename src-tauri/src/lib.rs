@@ -87,6 +87,9 @@ pub(crate) struct AppState {
     pub(crate) perm_seq: AtomicU64,
     /// Whether the loopback approval server bound this run.
     pub(crate) perm_server_up: AtomicBool,
+    /// Per-run secret required on every loopback request and baked into the
+    /// generated hook scripts. Rotates each launch; never persisted.
+    pub(crate) ipc_secret: String,
     /// Pending ids already notified, so each approval notifies once.
     prev_pending: Mutex<HashSet<String>>,
     /// Window-render — session id → where it lives, self-reported by the locate
@@ -894,11 +897,17 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .unwrap_or_else(|_| std::env::temp_dir().join("tablo"));
-            let mut cfg = Config::load(&config_dir);
+            let cfg = Config::load(&config_dir);
             // Capture hook params before `cfg` is moved into managed state.
             let (hook_port, hook_timeout) = (cfg.permission_port, cfg.hook_timeout_secs);
             let panel_shortcut = cfg.panel_shortcut.clone();
             let panel_shortcut_enabled = cfg.panel_shortcut_enabled;
+            // Fresh per-run secret for the loopback IPC; baked into the hook
+            // scripts and required on every request.
+            let ipc_secret = permission::new_secret();
+            let install_locate_default = !cfg.locate_default_applied;
+            // Keep a copy for the bind-gated first-launch locate wiring below.
+            let cfg_for_hooks = cfg.clone();
 
             if let Some(avatar) = app.get_webview_window("avatar") {
                 let _ = avatar.set_ignore_cursor_events(true);
@@ -929,15 +938,6 @@ pub fn run() {
                 install_dashboard_close(&handle, &dash);
             }
 
-            // "Jump to session" is on by default: wire the locate hook into
-            // ~/.claude/settings.json on the first launch only. The guard flag
-            // means a later user-disable sticks — we never re-enable behind them.
-            if !cfg.locate_default_applied {
-                let _ = locate::install(&cfg);
-                cfg.locate_default_applied = true;
-                cfg.save(&config_dir);
-            }
-
             app.manage(AppState {
                 config: Mutex::new(cfg),
                 config_dir,
@@ -953,20 +953,50 @@ pub fn run() {
                 responders: Mutex::new(HashMap::new()),
                 perm_seq: AtomicU64::new(0),
                 perm_server_up: AtomicBool::new(false),
+                ipc_secret: ipc_secret.clone(),
                 prev_pending: Mutex::new(HashSet::new()),
                 session_locations: Mutex::new(HashMap::new()),
             });
 
-            // Keep the hook script in sync with the current port/timeout (safe,
-            // idempotent — it's Tablo's own file). Enabling approvals, which
-            // edits ~/.claude/settings.json, stays an explicit UI action.
-            let _ = permission::write_hook_script(hook_port, hook_timeout);
-            // Locate hook scripts are written too (harmless, Tablo's own files);
-            // wiring them into the agents' hook configs stays an explicit UI
-            // action. Claude → ~/.claude/settings.json; Codex → ~/.codex/hooks.json.
-            let _ = locate::write_locate_script(hook_port);
-            let _ = codex_locate::write_locate_script(hook_port);
-            permission::spawn_server(handle.clone());
+            // Bind the loopback server FIRST. Only if we actually own the port do
+            // we write the hook scripts (which embed the per-run secret) or wire
+            // any hooks — otherwise another process squatting on the port would
+            // receive the secret and session metadata. On a bind failure approvals
+            // and jump are simply unavailable this run (dashboard shows server_up).
+            if permission::spawn_server(handle.clone()) {
+                // Keep the hook scripts in sync with the current port/timeout/secret
+                // (safe, idempotent — Tablo's own files). Enabling approvals, which
+                // edits ~/.claude/settings.json, stays an explicit UI action.
+                let _ = permission::write_hook_script(hook_port, hook_timeout, &ipc_secret);
+                // Locate scripts written too; wiring them into the agents' hook
+                // configs stays an explicit UI action. Claude → settings.json;
+                // Codex → ~/.codex/hooks.json.
+                let _ = locate::write_locate_script(hook_port, &ipc_secret);
+                let _ = codex_locate::write_locate_script(hook_port, &ipc_secret);
+
+                // "Jump to session" is on by default: wire the Claude locate hook
+                // on the first launch only. The guard flag (set once the install
+                // lands) means a later user-disable sticks — we never re-enable
+                // behind them, and a bind failure won't burn the one-time chance.
+                if install_locate_default && locate::install(&cfg_for_hooks, &ipc_secret).is_ok() {
+                    {
+                        let st = handle.state::<AppState>();
+                        let mut c = st.config.lock().unwrap();
+                        c.locate_default_applied = true;
+                        c.save(&st.config_dir);
+                    }
+                    // We just added a hook to the user's ~/.claude/settings.json on
+                    // their behalf — so don't do it silently. One-time heads-up
+                    // (this branch runs once), pointing at the off switch.
+                    use tauri_plugin_notification::NotificationExt;
+                    let _ = handle
+                        .notification()
+                        .builder()
+                        .title("tablo enabled Jump to session")
+                        .body("Added a locator hook to Claude Code so tablo can focus a session's terminal window. Turn it off anytime in Settings → Jump to Claude session.")
+                        .show();
+                }
+            }
 
             build_tray(&handle)?;
 
