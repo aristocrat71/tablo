@@ -979,10 +979,22 @@ pub fn run() {
                 // lands) means a later user-disable sticks — we never re-enable
                 // behind them, and a bind failure won't burn the one-time chance.
                 if install_locate_default && locate::install(&cfg_for_hooks, &ipc_secret).is_ok() {
-                    let st = handle.state::<AppState>();
-                    let mut c = st.config.lock().unwrap();
-                    c.locate_default_applied = true;
-                    c.save(&st.config_dir);
+                    {
+                        let st = handle.state::<AppState>();
+                        let mut c = st.config.lock().unwrap();
+                        c.locate_default_applied = true;
+                        c.save(&st.config_dir);
+                    }
+                    // We just added a hook to the user's ~/.claude/settings.json on
+                    // their behalf — so don't do it silently. One-time heads-up
+                    // (this branch runs once), pointing at the off switch.
+                    use tauri_plugin_notification::NotificationExt;
+                    let _ = handle
+                        .notification()
+                        .builder()
+                        .title("tablo enabled Jump to session")
+                        .body("Added a locator hook to Claude Code so tablo can focus a session's terminal window. Turn it off anytime in Settings → Jump to Claude session.")
+                        .show();
                 }
             }
 
