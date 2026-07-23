@@ -71,16 +71,19 @@ pub fn locate_script_path() -> Option<PathBuf> {
 /// Write (or refresh) the Codex locate hook script — byte-identical to the Claude
 /// locator (same reporting logic), just a separate file. Idempotent and harmless:
 /// it's Tablo's own file; wiring it into `hooks.json` is the gated step.
-pub fn write_locate_script(port: u16) -> std::io::Result<PathBuf> {
+pub fn write_locate_script(port: u16, secret: &str) -> std::io::Result<PathBuf> {
     let dir = permission::hook_dir()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir"))?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("codex-locate.sh");
-    std::fs::write(&path, LOCATE_TEMPLATE.replace("__PORT__", &port.to_string()))?;
+    let script = LOCATE_TEMPLATE
+        .replace("__PORT__", &port.to_string())
+        .replace("__SECRET__", secret);
+    std::fs::write(&path, script)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))?;
     }
     Ok(path)
 }
@@ -100,8 +103,8 @@ fn is_event_installed(event: &str, script: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn install(cfg: &Config) -> Result<(), String> {
-    let script = write_locate_script(cfg.permission_port).map_err(|e| e.to_string())?;
+pub fn install(cfg: &Config, secret: &str) -> Result<(), String> {
+    let script = write_locate_script(cfg.permission_port, secret).map_err(|e| e.to_string())?;
     let s = script.to_string_lossy().to_string();
     let mut root = read_hooks();
     // `apply_install_event` appends after any existing entries (e.g. a Wel hook)
@@ -154,7 +157,7 @@ pub fn set_codex_locate_enabled(
 ) -> Result<LocateStatus, String> {
     let cfg = state.config.lock().unwrap().clone();
     if enabled {
-        install(&cfg)?;
+        install(&cfg, &state.ipc_secret)?;
     } else {
         uninstall()?;
     }

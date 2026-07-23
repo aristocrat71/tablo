@@ -1,3 +1,21 @@
+/* ============ Self-hosted fonts ============ */
+/* Bundled locally (static/fonts) so tablo never fetches from Google at runtime.
+   Both are variable fonts (one file spans weights 400–700). */
+@font-face {
+  font-family: "Quicksand";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/quicksand.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono.woff2") format("woff2");
+}
+
 /* ============ Tablo design tokens (ported from tablo-mockups-v3.html) ============ */
 :root {
   --font-round: "Quicksand", system-ui, sans-serif;
