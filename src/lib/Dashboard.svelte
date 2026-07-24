@@ -26,6 +26,7 @@
     setClearWaitingMins,
     setWatchCodex,
     setAerospaceFollow,
+    setTelemetryEnabled,
     setPanelShortcutEnabled,
     codexLocateStatus,
     setCodexLocateEnabled,
@@ -119,6 +120,7 @@
   let watchCodex = $derived(snap.watchCodex);
   let panelShortcutEnabled = $derived(snap.panelShortcutEnabled);
   let aerospaceFollow = $derived(snap.aerospaceFollow);
+  let telemetryEnabled = $derived(snap.telemetryEnabled);
   let aerospaceAvailable = $derived(snap.aerospaceAvailable);
   // Jump is macOS-only; approvals run everywhere but Windows. Backend echoes both.
   let jumpSupported = $derived(snap.jumpSupported);
@@ -401,6 +403,8 @@
           </div>
         </div>
       {/if}
+
+      {@render toggle("Anonymous usage stats", "Send an anonymous ping so we can count active users. Never any session data, paths, prompts, or tokens — only that tablo ran, plus your OS and app version.", telemetryEnabled, false, () => setTelemetryEnabled(!telemetryEnabled))}
 
       <div class="setting">
         <div class="setting-main">

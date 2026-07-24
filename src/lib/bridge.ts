@@ -26,6 +26,8 @@ export const setClearWaitingMins = (mins: number) => invoke("set_clear_waiting_m
 export const setWatchCodex = (enabled: boolean) => invoke("set_watch_codex", { enabled });
 export const setAerospaceFollow = (enabled: boolean) =>
   invoke("set_aerospace_follow", { enabled });
+export const setTelemetryEnabled = (enabled: boolean) =>
+  invoke("set_telemetry_enabled", { enabled });
 export const setPanelShortcutEnabled = (enabled: boolean) =>
   invoke("set_panel_shortcut_enabled", { enabled });
 export const togglePanel = () => invoke("toggle_panel");

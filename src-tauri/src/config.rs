@@ -96,6 +96,8 @@ pub struct Config {
     pub notify_on_warn: bool,
     /// Fire an OS notification when a new tool approval is requested (Phase 4).
     pub notify_on_permission: bool,
+    /// Send anonymous usage pings (Aptabase) so active users can be counted. Only
+    pub telemetry_enabled: bool,
     /// "dark" (hero) or "light".
     pub theme: String,
     /// Global hotkey (Tauri accelerator syntax, e.g. "Control+Command+P") that
@@ -139,6 +141,7 @@ impl Default for Config {
             hook_timeout_secs: 600,
             notify_on_warn: false,
             notify_on_permission: true,
+            telemetry_enabled: true,
             theme: "dark".into(),
             panel_shortcut: "Control+Command+P".into(),
             panel_shortcut_enabled: true,

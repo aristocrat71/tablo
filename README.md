@@ -192,6 +192,8 @@ projects*. A gear opens an in-window **Settings** pane:
 - **Clear waiting sessions** — how long a finished session lingers in the panel
   before it clears (minutes); it returns the moment you prompt it again.
 - **Waiting notifications** — toggle the toast and set its on-screen time.
+- **Anonymous usage stats** — send an anonymous ping so active users can be
+  counted (on by default; opt out here). No session data — see **Privacy** below.
 - **Theme** — dark / light.
 
 ## Themes
@@ -206,6 +208,15 @@ a small **menu-bar icon** to show/hide the widget, open the dashboard, or quit. 
 surfaces in Cmd+Tab only while the dashboard is open, then drops back to the
 corner. No emoji anywhere; status is shown with the cat, colored glows, and
 LED-style dots.
+
+## Privacy
+
+Tablo reads your local Claude Code / Codex transcripts and never sends their
+contents anywhere. The one thing it reports off your machine is **anonymous usage
+stats** (via [Aptabase](https://aptabase.com)) — a launch/heartbeat ping so active
+users can be counted. No session content, file paths, prompts, or tokens; only
+that Tablo ran, plus your OS and app version. It's on by default and opts out with
+one toggle in **Settings**.
 
 ## AeroSpace
 

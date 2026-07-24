@@ -58,6 +58,10 @@ const EVENT_DEBOUNCE: Duration = Duration::from_millis(150);
 /// A tap arriving within this of a blur-hide is treated as the close, not a reopen.
 const PANEL_DISMISS_GUARD: Duration = Duration::from_millis(250);
 
+/// Aptabase app key — a *public* client key (ships in every build, not a secret),
+const APTABASE_KEY: &str = "A-EU-7463942289";
+const TELEMETRY_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+
 /// Shared, thread-safe application state.
 pub(crate) struct AppState {
     pub(crate) config: Mutex<Config>,
@@ -194,12 +198,31 @@ fn set_aerospace_follow(app: AppHandle, state: State<'_, AppState>, enabled: boo
     recompute_and_emit(&app);
 }
 
+/// Enable/disable anonymous usage pings (Aptabase active-user counts). Persists
+/// and re-emits so the Settings toggle reflects it.
+#[tauri::command]
+fn set_telemetry_enabled(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.telemetry_enabled = enabled;
+        cfg.save(&state.config_dir);
+    }
+    if enabled {
+        use tauri_plugin_aptabase::EventTracker;
+        let _ = app.track_event("app_started", None);
+    }
+    recompute_and_emit(&app);
+}
+
 /// Bundle id of the frontmost app, via `lsappinfo` (in /usr/bin, no permission
 /// needed). None off-macOS or on failure. Lets the panel remember who to hand
 /// focus back to when it closes.
 #[cfg(target_os = "macos")]
 fn frontmost_bundle_id() -> Option<String> {
-    let asn = std::process::Command::new("lsappinfo").arg("front").output().ok()?;
+    let asn = std::process::Command::new("lsappinfo")
+        .arg("front")
+        .output()
+        .ok()?;
     let asn = String::from_utf8_lossy(&asn.stdout).trim().to_string();
     if asn.is_empty() {
         return None;
@@ -244,7 +267,9 @@ fn spawn_frontmost_tracker(app: AppHandle) {
 
 /// Bring the app with `bundle_id` to the front (best-effort, no permission).
 fn activate_bundle(bundle_id: &str) {
-    let _ = std::process::Command::new("open").args(["-b", bundle_id]).output();
+    let _ = std::process::Command::new("open")
+        .args(["-b", bundle_id])
+        .output();
 }
 
 /// Hide the panel and hand focus back to whatever app had it when the panel
@@ -388,16 +413,17 @@ fn open_dashboard(app: AppHandle) -> Result<(), String> {
     let dash = match app.get_webview_window("dashboard") {
         Some(w) => w,
         None => {
-            let w = tauri::WebviewWindowBuilder::new(&app, "dashboard", tauri::WebviewUrl::default())
-                // Distinct from the widget windows so the AeroSpace follow loop
-                // can leave the dashboard under normal tiling (see `aerospace`).
-                .title("tablo dashboard")
-                .inner_size(980.0, 720.0)
-                .min_inner_size(640.0, 480.0)
-                .resizable(true)
-                .visible(false)
-                .build()
-                .map_err(|e| e.to_string())?;
+            let w =
+                tauri::WebviewWindowBuilder::new(&app, "dashboard", tauri::WebviewUrl::default())
+                    // Distinct from the widget windows so the AeroSpace follow loop
+                    // can leave the dashboard under normal tiling (see `aerospace`).
+                    .title("tablo dashboard")
+                    .inner_size(980.0, 720.0)
+                    .min_inner_size(640.0, 480.0)
+                    .resizable(true)
+                    .visible(false)
+                    .build()
+                    .map_err(|e| e.to_string())?;
             install_dashboard_close(&app, &w);
             w
         }
@@ -461,7 +487,9 @@ fn position_avatar(avatar: &WebviewWindow, cfg: &Config) {
         let sf = mon.scale_factor();
         let msz = mon.size();
         let mpos = mon.position();
-        let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(126, 134));
+        let asz = avatar
+            .outer_size()
+            .unwrap_or(tauri::PhysicalSize::new(126, 134));
         let margin = (24.0 * sf) as i32;
         let x = mpos.x + msz.width as i32 - asz.width as i32 - margin;
         let y = mpos.y + msz.height as i32 - asz.height as i32 - margin * 2;
@@ -472,12 +500,19 @@ fn position_avatar(avatar: &WebviewWindow, cfg: &Config) {
 /// Anchor the panel just left of (or right of, if clipped) the avatar, bottoms
 /// aligned, clamped to the monitor.
 fn place_panel(app: &AppHandle) {
-    let (avatar, panel) = match (app.get_webview_window("avatar"), app.get_webview_window("panel")) {
+    let (avatar, panel) = match (
+        app.get_webview_window("avatar"),
+        app.get_webview_window("panel"),
+    ) {
         (Some(a), Some(p)) => (a, p),
         _ => return,
     };
-    let ap = avatar.outer_position().unwrap_or(PhysicalPosition::new(0, 0));
-    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(126, 134));
+    let ap = avatar
+        .outer_position()
+        .unwrap_or(PhysicalPosition::new(0, 0));
+    let asz = avatar
+        .outer_size()
+        .unwrap_or(tauri::PhysicalSize::new(126, 134));
     let sf = avatar.scale_factor().unwrap_or(1.0);
     let mut psz = panel.outer_size().unwrap_or(tauri::PhysicalSize::new(0, 0));
     if psz.width == 0 || psz.height == 0 {
@@ -505,12 +540,19 @@ fn place_panel(app: &AppHandle) {
 /// Anchor the toast just left of (or right of, if clipped) the avatar, vertically
 /// centered on it, clamped to the monitor. Mirrors `place_panel`.
 fn place_toast(app: &AppHandle) {
-    let (avatar, toast) = match (app.get_webview_window("avatar"), app.get_webview_window("toast")) {
+    let (avatar, toast) = match (
+        app.get_webview_window("avatar"),
+        app.get_webview_window("toast"),
+    ) {
         (Some(a), Some(t)) => (a, t),
         _ => return,
     };
-    let ap = avatar.outer_position().unwrap_or(PhysicalPosition::new(0, 0));
-    let asz = avatar.outer_size().unwrap_or(tauri::PhysicalSize::new(126, 134));
+    let ap = avatar
+        .outer_position()
+        .unwrap_or(PhysicalPosition::new(0, 0));
+    let asz = avatar
+        .outer_size()
+        .unwrap_or(tauri::PhysicalSize::new(126, 134));
     let sf = avatar.scale_factor().unwrap_or(1.0);
     let mut tsz = toast.outer_size().unwrap_or(tauri::PhysicalSize::new(0, 0));
     if tsz.width == 0 || tsz.height == 0 {
@@ -597,7 +639,11 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
         let codex_on = codex_locate::is_installed();
         let locs = state.session_locations.lock().unwrap();
         for s in &mut snap.sessions {
-            let on = if s.source == "codex" { codex_on } else { claude_on };
+            let on = if s.source == "codex" {
+                codex_on
+            } else {
+                claude_on
+            };
             s.can_jump = on && locs.contains_key(&s.id);
         }
     }
@@ -820,11 +866,17 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 /// Toggle the avatar (tucking away the panel/toast when hiding), keeping the tray
 /// label in sync with the result.
 fn toggle_widget(app: &AppHandle, item: &tauri::menu::MenuItem<tauri::Wry>) {
-    let Some(avatar) = app.get_webview_window("avatar") else { return };
+    let Some(avatar) = app.get_webview_window("avatar") else {
+        return;
+    };
     if avatar.is_visible().unwrap_or(true) {
         let _ = avatar.hide();
-        if let Some(p) = app.get_webview_window("panel") { let _ = p.hide(); }
-        if let Some(t) = app.get_webview_window("toast") { let _ = t.hide(); }
+        if let Some(p) = app.get_webview_window("panel") {
+            let _ = p.hide();
+        }
+        if let Some(t) = app.get_webview_window("toast") {
+            let _ = t.hide();
+        }
         let _ = item.set_text("Show widget");
     } else {
         let _ = avatar.show();
@@ -865,6 +917,36 @@ async fn try_update(app: AppHandle) {
     }
 }
 
+// ============================ telemetry ============================
+
+/// True while the user leaves anonymous usage pings on (read live each tick, so
+/// a Settings toggle stops future heartbeats without a restart).
+fn telemetry_on(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .map(|s| s.config.lock().unwrap().telemetry_enabled)
+        .unwrap_or(false)
+}
+
+/// Send anonymous usage pings so active users can be counted. The SDK attaches
+/// only anonymous system context (OS, app version) — we send no custom properties,
+/// so no session data, paths, prompts, or tokens ever leave the machine. tablo runs
+/// all day, so besides the launch event we re-ping on a long interval; otherwise an
+/// instance opened once and left running would never count as active again.
+fn spawn_telemetry(app: AppHandle) {
+    use tauri_plugin_aptabase::EventTracker;
+    std::thread::spawn(move || {
+        if telemetry_on(&app) {
+            let _ = app.track_event("app_started", None);
+        }
+        loop {
+            std::thread::sleep(TELEMETRY_INTERVAL);
+            if telemetry_on(&app) {
+                let _ = app.track_event("app_heartbeat", None);
+            }
+        }
+    });
+}
+
 /// Poll for updates: once shortly after launch, then on a long interval.
 fn spawn_updater(app: AppHandle) {
     std::thread::spawn(move || {
@@ -885,6 +967,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Inert until `track_event` is called (see spawn_telemetry), so registering
+        // it unconditionally sends nothing while telemetry is off.
+        .plugin(tauri_plugin_aptabase::Builder::new(APTABASE_KEY).build())
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -913,7 +998,6 @@ pub fn run() {
                 let _ = avatar.set_ignore_cursor_events(true);
                 position_avatar(&avatar, &cfg);
             }
-
 
             // Panel dismisses itself when it loses focus (tap-away).
             if let Some(panel) = app.get_webview_window("panel") {
@@ -1007,6 +1091,9 @@ pub fn run() {
             // Poll GitHub Releases for updates and self-install them.
             spawn_updater(handle.clone());
 
+            // Anonymous usage pings (opt-out) so active users can be counted.
+            spawn_telemetry(handle.clone());
+
             // Track the frontmost app so closing the panel can restore focus to it.
             #[cfg(target_os = "macos")]
             spawn_frontmost_tracker(handle.clone());
@@ -1030,6 +1117,7 @@ pub fn run() {
             set_clear_waiting_mins,
             set_watch_codex,
             set_aerospace_follow,
+            set_telemetry_enabled,
             set_panel_shortcut_enabled,
             toggle_panel,
             hide_panel,
