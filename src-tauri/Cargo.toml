@@ -1,6 +1,6 @@
 [package]
 name = "tablo"
-version = "1.0.1"
+version = "2.0.0"
 description = "A tiny floating cat that watches your Claude Code agents"
 authors = ["you"]
 edition = "2021"
