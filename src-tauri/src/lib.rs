@@ -99,6 +99,10 @@ pub(crate) struct AppState {
     /// Window-render — session id → where it lives, self-reported by the locate
     /// hook, for "jump to session".
     pub(crate) session_locations: Mutex<HashMap<String, locate::SessionLocation>>,
+    /// Version of a release found while auto-update is off, awaiting a manual
+    /// install. Doubles as the notified-once marker: the checker only notifies
+    /// when the version it finds differs from what's parked here.
+    available_update: Mutex<Option<String>>,
 }
 
 #[derive(Serialize)]
@@ -212,6 +216,41 @@ fn set_telemetry_enabled(app: AppHandle, state: State<'_, AppState>, enabled: bo
         let _ = app.track_event("app_started", None);
     }
     recompute_and_emit(&app);
+}
+
+/// Enable/disable automatic install of new releases. Persists and re-emits so
+/// the Settings toggle reflects it. Turning it off leaves any already-found
+/// update parked for a manual install; turning it on lets the next check apply
+/// it (or the user can still press Install now).
+#[tauri::command]
+fn set_auto_update(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.auto_update = enabled;
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
+/// Install the release the checker found, on the user's say-so (the dashboard's
+/// Install button). Re-checks rather than holding a stale handle from the
+/// background poll, then downloads, installs, and restarts. Only returns on
+/// failure — a success restarts the app.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("already up to date")?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
 }
 
 /// Bundle id of the frontmost app, via `lsappinfo` (in /usr/bin, no permission
@@ -649,6 +688,15 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
         }
     }
 
+    // Overlay a release found while auto-update is off, so the dashboard can
+    // offer the install. Cleared once auto-update is back on — the next check
+    // applies it, so there's nothing left to ask the user about.
+    snap.update_available = if cfg.auto_update {
+        None
+    } else {
+        state.available_update.lock().unwrap().clone()
+    };
+
     fire_notifications(app, &state, &cfg, &snap);
     fire_permission_notifications(app, &state, &cfg, &snap);
     fire_waiting_events(app, &state, &snap);
@@ -890,13 +938,21 @@ fn toggle_widget(app: &AppHandle, item: &tauri::menu::MenuItem<tauri::Wry>) {
 /// How often to poll for a new release after the initial post-launch check.
 const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
-/// Check GitHub for a newer release; if one exists, download, install, and
-/// relaunch. Silent + best-effort — offline, no release yet, or a signature
-/// mismatch all just no-op. Skipped while an approval is pending so an update
-/// never interrupts a decision in flight.
+/// Check GitHub for a newer release. Best-effort and silent about failure —
+/// offline, no release yet, or a signature mismatch all just no-op. Skipped
+/// while an approval is pending so an update never interrupts a decision in
+/// flight.
+///
+/// What happens on a hit depends on `auto_update`. On (the default), it
+/// downloads, installs, and relaunches as before. Off, nothing is applied: the
+/// version is parked on `AppState` so the dashboard can offer a one-tap
+/// install, and a single notification announces it. Parking it also marks it
+/// notified — the 6-hourly re-check finds the same version and stays quiet.
 async fn try_update(app: AppHandle) {
+    use tauri_plugin_notification::NotificationExt;
     use tauri_plugin_updater::UpdaterExt;
-    if !app.state::<AppState>().pending.lock().unwrap().is_empty() {
+    let state = app.state::<AppState>();
+    if !state.pending.lock().unwrap().is_empty() {
         return;
     }
     let update = match app.updater() {
@@ -906,7 +962,32 @@ async fn try_update(app: AppHandle) {
         },
         Err(_) => return,
     };
-    use tauri_plugin_notification::NotificationExt;
+
+    // Bound to a local so the config guard is unambiguously dropped before
+    // `recompute_and_emit` below re-locks it (std mutexes aren't reentrant).
+    let auto_update = state.config.lock().unwrap().auto_update;
+    if !auto_update {
+        let fresh = {
+            let mut parked = state.available_update.lock().unwrap();
+            let fresh = parked.as_deref() != Some(update.version.as_str());
+            *parked = Some(update.version.clone());
+            fresh
+        };
+        if fresh {
+            let _ = app
+                .notification()
+                .builder()
+                .title("tablo update available")
+                .body(format!(
+                    "v{} is ready — open the dashboard to install it.",
+                    update.version
+                ))
+                .show();
+            recompute_and_emit(&app);
+        }
+        return;
+    }
+
     let _ = app
         .notification()
         .builder()
@@ -1041,6 +1122,7 @@ pub fn run() {
                 ipc_secret: ipc_secret.clone(),
                 prev_pending: Mutex::new(HashSet::new()),
                 session_locations: Mutex::new(HashMap::new()),
+                available_update: Mutex::new(None),
             });
 
             // Bind the loopback server FIRST. Only if we actually own the port do
@@ -1119,6 +1201,8 @@ pub fn run() {
             set_watch_codex,
             set_aerospace_follow,
             set_telemetry_enabled,
+            set_auto_update,
+            install_update,
             set_panel_shortcut_enabled,
             toggle_panel,
             hide_panel,

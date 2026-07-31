@@ -28,6 +28,8 @@
     setWatchCodex,
     setAerospaceFollow,
     setTelemetryEnabled,
+    setAutoUpdate,
+    installUpdate,
     setPanelShortcutEnabled,
     codexLocateStatus,
     setCodexLocateEnabled,
@@ -122,6 +124,9 @@
   let panelShortcutEnabled = $derived(snap.panelShortcutEnabled);
   let aerospaceFollow = $derived(snap.aerospaceFollow);
   let telemetryEnabled = $derived(snap.telemetryEnabled);
+  let autoUpdate = $derived(snap.autoUpdate);
+  // Only set while auto-update is off and the background check found something.
+  let updateAvailable = $derived(snap.updateAvailable);
   let aerospaceAvailable = $derived(snap.aerospaceAvailable);
   // Jump is macOS-only; approvals run everywhere but Windows. Backend echoes both.
   let jumpSupported = $derived(snap.jumpSupported);
@@ -192,6 +197,23 @@
     }
   }
 
+  // Install the update the background check parked. A success never returns —
+  // the backend restarts the app — so only the failure path lands back here.
+  let updateBusy = $state(false);
+  let updateError = $state("");
+  async function runInstallUpdate() {
+    if (updateBusy) return;
+    updateBusy = true;
+    updateError = "";
+    try {
+      await installUpdate();
+    } catch (e) {
+      updateError = `Update failed: ${e}. Try again, or grab the release manually.`;
+    } finally {
+      updateBusy = false;
+    }
+  }
+
   function decide(id: string, decision: PermDecision) {
     resolvePermission(id, decision);
   }
@@ -237,6 +259,19 @@
       </div>
     {/if}
   </div>
+
+  {#if updateAvailable}
+    <div class="update-bar">
+      <span class="update-led"></span>
+      <span class="update-txt">tablo <b>v{updateAvailable}</b> is available</span>
+      <button class="update-act" disabled={updateBusy} onclick={runInstallUpdate}>
+        {updateBusy ? "installing…" : "Install & restart"}
+      </button>
+    </div>
+    {#if updateError}
+      <p class="update-err">{updateError}</p>
+    {/if}
+  {/if}
 
   {#if view === "dashboard"}
   <div class="dash-grid">
@@ -406,6 +441,8 @@
       {/if}
 
       {@render toggle("Anonymous usage stats", "Send an anonymous ping so we can count active users. Never any session data, paths, prompts, or tokens — only that tablo ran, plus your OS and app version.", telemetryEnabled, false, () => setTelemetryEnabled(!telemetryEnabled))}
+
+      {@render toggle("Automatic updates", "Install new releases in the background and restart. Off still checks for them — you'll get a notification and an Install button here instead.", autoUpdate, false, () => setAutoUpdate(!autoUpdate))}
 
       {@render toggle("Cat animations", "Let the cat sleep, trot and startle. Off holds it on a still pose with a steady glow — the state colour still tells you what's happening.", prefs.animations, false, () => setAnimations(!prefs.animations))}
 
@@ -1043,6 +1080,65 @@
     background: var(--sage);
     color: var(--bg-surface);
   }
+  /* update banner — only rendered while auto-update is off and the background
+     check found a release. Amber (the "something is happening" colour), not
+     coral: an available update is news, not an alarm. */
+  .update-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 11px 14px;
+    border: 1px solid color-mix(in srgb, var(--amber) 40%, var(--border));
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--amber) 8%, var(--bg-raised));
+  }
+  .update-led {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+    flex-shrink: 0;
+  }
+  .update-txt {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--ink-dim);
+  }
+  .update-txt b {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .update-act {
+    flex-shrink: 0;
+    padding: 7px 16px;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: var(--amber);
+    color: var(--bg-surface);
+    font-family: var(--font-round);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.12s var(--ease);
+  }
+  .update-act:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+  .update-act:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .update-err {
+    margin: -10px 0 18px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--coral);
+  }
+
   .dash-grid {
     display: grid;
     grid-template-columns: 1fr;

@@ -71,6 +71,8 @@ export interface Snapshot {
   panelShortcutEnabled: boolean; // whether the global panel hotkey is on, echoed for Settings
   aerospaceFollow: boolean; // whether Tablo follows the focused AeroSpace workspace, echoed for Settings
   telemetryEnabled: boolean; // whether anonymous usage pings are on, echoed for Settings
+  autoUpdate: boolean; // whether new releases install themselves, echoed for Settings
+  updateAvailable: string | null; // version found but not installed (auto-update off) — offer a one-tap install
   aerospaceAvailable: boolean; // whether AeroSpace was detected (gates the follow toggle)
   jumpSupported: boolean; // whether "jump to session" works here (macOS only) — gates the Jump toggles
   approvalsSupported: boolean; // whether the approvals hook can run here (not Windows) — gates the approvals toggle
@@ -142,6 +144,8 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   panelShortcutEnabled: true,
   aerospaceFollow: true,
   telemetryEnabled: true,
+  autoUpdate: true,
+  updateAvailable: null,
   aerospaceAvailable: false,
   // Hide-until-confirmed (like aerospaceAvailable); the real snapshot sets the true platform value.
   jumpSupported: false,
