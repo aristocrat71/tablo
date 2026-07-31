@@ -9,6 +9,7 @@
     toggleCollapse,
     setNotifyOnWaiting,
     setWaitingToastSecs,
+    setNotifySound,
     setAnimations,
     TOAST_SECS_MIN,
     TOAST_SECS_MAX,
@@ -421,6 +422,8 @@
       {@render toggle("Waiting notifications", "A gentle nudge from the widget when a session finishes and starts waiting on you.", prefs.notifyOnWaiting, false, () => setNotifyOnWaiting(!prefs.notifyOnWaiting))}
 
       {#if prefs.notifyOnWaiting}
+        {@render toggle("Notification sound", "Play a soft chime with the waiting toast.", prefs.notifySound, false, () => setNotifySound(!prefs.notifySound))}
+
         <div class="setting">
           <div class="setting-main">
             <div class="setting-title">Notification hover time</div>

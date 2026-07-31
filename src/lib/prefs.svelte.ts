@@ -29,6 +29,9 @@ interface Prefs {
   notifyOnWaiting: boolean;
   // How long that toast stays on screen, in seconds. Default 4.
   waitingToastSecs: number;
+  // Play a chime with that toast. Default on, so the nudge is audible without
+  // having to find the setting
+  notifySound: boolean;
   // Animate the cat (frame loops, breathing glow, sleep/wake transitions).
   // Default on; off holds each state on a still pose with a steady glow.
   animations: boolean;
@@ -55,6 +58,7 @@ const DEFAULTS: Prefs = {
   showCodex: true,
   notifyOnWaiting: true,
   waitingToastSecs: 4,
+  notifySound: true,
   animations: true,
   collapseWorking: false,
   collapseWaiting: false,
@@ -70,6 +74,7 @@ function coerce(raw: unknown): Prefs {
     showCodex: p.showCodex !== false,
     notifyOnWaiting: p.notifyOnWaiting !== false,
     waitingToastSecs: p.waitingToastSecs == null ? 4 : clampSecs(p.waitingToastSecs),
+    notifySound: p.notifySound !== false,
     animations: p.animations !== false,
     collapseWorking: p.collapseWorking === true,
     collapseWaiting: p.collapseWaiting === true,
@@ -101,6 +106,7 @@ function persist() {
         showCodex: prefs.showCodex,
         notifyOnWaiting: prefs.notifyOnWaiting,
         waitingToastSecs: prefs.waitingToastSecs,
+        notifySound: prefs.notifySound,
         animations: prefs.animations,
         collapseWorking: prefs.collapseWorking,
         collapseWaiting: prefs.collapseWaiting,
@@ -144,6 +150,11 @@ export function setWaitingToastSecs(secs: number) {
   persist();
 }
 
+export function setNotifySound(on: boolean) {
+  prefs.notifySound = on;
+  persist();
+}
+
 export function setAnimations(on: boolean) {
   prefs.animations = on;
   persist();
@@ -164,6 +175,7 @@ if (browser) {
       prefs.showCodex = next.showCodex;
       prefs.notifyOnWaiting = next.notifyOnWaiting;
       prefs.waitingToastSecs = next.waitingToastSecs;
+      prefs.notifySound = next.notifySound;
       prefs.animations = next.animations;
       prefs.collapseWorking = next.collapseWorking;
       prefs.collapseWaiting = next.collapseWaiting;
