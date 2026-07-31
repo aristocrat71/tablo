@@ -29,6 +29,9 @@ interface Prefs {
   notifyOnWaiting: boolean;
   // How long that toast stays on screen, in seconds. Default 4.
   waitingToastSecs: number;
+  // Animate the cat (frame loops, breathing glow, sleep/wake transitions).
+  // Default on; off holds each state on a still pose with a steady glow.
+  animations: boolean;
   // Fold the Working / Waiting groups closed; both expanded by default, shared live across panel + dashboard.
   collapseWorking: boolean;
   collapseWaiting: boolean;
@@ -52,6 +55,7 @@ const DEFAULTS: Prefs = {
   showCodex: true,
   notifyOnWaiting: true,
   waitingToastSecs: 4,
+  animations: true,
   collapseWorking: false,
   collapseWaiting: false,
 };
@@ -66,6 +70,7 @@ function coerce(raw: unknown): Prefs {
     showCodex: p.showCodex !== false,
     notifyOnWaiting: p.notifyOnWaiting !== false,
     waitingToastSecs: p.waitingToastSecs == null ? 4 : clampSecs(p.waitingToastSecs),
+    animations: p.animations !== false,
     collapseWorking: p.collapseWorking === true,
     collapseWaiting: p.collapseWaiting === true,
   };
@@ -96,6 +101,7 @@ function persist() {
         showCodex: prefs.showCodex,
         notifyOnWaiting: prefs.notifyOnWaiting,
         waitingToastSecs: prefs.waitingToastSecs,
+        animations: prefs.animations,
         collapseWorking: prefs.collapseWorking,
         collapseWaiting: prefs.collapseWaiting,
       })
@@ -138,6 +144,11 @@ export function setWaitingToastSecs(secs: number) {
   persist();
 }
 
+export function setAnimations(on: boolean) {
+  prefs.animations = on;
+  persist();
+}
+
 // Live-sync when another window (panel <-> dashboard) changes the preference.
 // The `storage` event only fires in *other* windows, so the writer isn't
 // double-applied.
@@ -153,6 +164,7 @@ if (browser) {
       prefs.showCodex = next.showCodex;
       prefs.notifyOnWaiting = next.notifyOnWaiting;
       prefs.waitingToastSecs = next.waitingToastSecs;
+      prefs.animations = next.animations;
       prefs.collapseWorking = next.collapseWorking;
       prefs.collapseWaiting = next.collapseWaiting;
     } catch {

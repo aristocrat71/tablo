@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store } from "./state.svelte";
   import { beginDrag, moveAvatar, endDrag, togglePanel } from "./bridge";
+  import { prefs } from "./prefs.svelte";
   import type { AvatarState } from "./types";
 
   let s = $derived(store.snap.state);
@@ -23,16 +24,18 @@
   // Sleep/wake transitions between the sleeping and running loops, both driven
   // off the one curl-down sheet (the wake-up just plays it in reverse). prevState
   // is plain bookkeeping (not reactive) so this effect only re-runs when the
-  // avatar state actually changes.
+  // avatar state actually changes — or when `animations` flips (read below), which
+  // takes the reset branch and clears any transition that was in flight.
   let prevState: AvatarState | null = null;
   let transitioning = $state(false); // running → idle: curl down to sleep
   let waking = $state(false); // idle → running: uncurl and get up
   $effect(() => {
     const cur = s;
-    if (prevState === "running" && cur === "idle") {
+    const animate = prefs.animations;
+    if (animate && prevState === "running" && cur === "idle") {
       transitioning = true;
       waking = false;
-    } else if (prevState === "idle" && cur === "running") {
+    } else if (animate && prevState === "idle" && cur === "running") {
       waking = true;
       transitioning = false;
     } else {
@@ -120,7 +123,7 @@
   onpointermove={onMove}
   onpointerup={onUp}
 >
-  <div class="tablo-wrap" class:needs-input={needsInput}>
+  <div class="tablo-wrap" class:needs-input={needsInput} class:still={!prefs.animations}>
     {#if s === "idle" && transitioning}
       <!-- running → sleeping: one-shot curl-down, then the sleeping loop -->
       <div
@@ -321,6 +324,32 @@
     to {
       background-position-x: var(--size);
     }
+  }
+
+  /* Animations off (Settings → Cat animations): every state holds its first
+     frame with a steady glow instead of a breathing one, so the cat still reads
+     as sage/amber/coral at a glance — only the motion goes. Each static glow is
+     the midpoint of the pulse it replaces. The sleep/wake curl sheets never
+     render in this mode — the effect above doesn't start a transition — so the
+     cat cuts straight between the sleeping and trotting poses.
+
+     The second selector re-states the `.needs-input .sprite.shocked` override
+     above, which is otherwise more specific and would keep animating. */
+  .tablo-wrap.still .sprite,
+  .tablo-wrap.still.needs-input .sprite.shocked {
+    animation: none;
+  }
+  .tablo-wrap.still .sprite.sleeping {
+    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--sage) 38%, transparent));
+  }
+  .tablo-wrap.still .sprite.running {
+    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--amber) 42%, transparent));
+  }
+  .tablo-wrap.still .sprite.shocked {
+    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--coral) 62%, transparent));
+  }
+  .tablo-wrap.still.needs-input .sprite.shocked {
+    filter: drop-shadow(0 0 16px color-mix(in srgb, var(--coral) 78%, transparent));
   }
 
   /* count pips — float off the top-right edge, stacked: permission (red),

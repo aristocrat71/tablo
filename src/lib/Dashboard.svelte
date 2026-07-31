@@ -9,6 +9,7 @@
     toggleCollapse,
     setNotifyOnWaiting,
     setWaitingToastSecs,
+    setAnimations,
     TOAST_SECS_MIN,
     TOAST_SECS_MAX,
   } from "./prefs.svelte";
@@ -405,6 +406,8 @@
       {/if}
 
       {@render toggle("Anonymous usage stats", "Send an anonymous ping so we can count active users. Never any session data, paths, prompts, or tokens — only that tablo ran, plus your OS and app version.", telemetryEnabled, false, () => setTelemetryEnabled(!telemetryEnabled))}
+
+      {@render toggle("Cat animations", "Let the cat sleep, trot and startle. Off holds it on a still pose with a steady glow — the state colour still tells you what's happening.", prefs.animations, false, () => setAnimations(!prefs.animations))}
 
       <div class="setting">
         <div class="setting-main">
