@@ -1,9 +1,12 @@
 //! Tablo — a tiny floating cat that watches Claude Code agents.
 //!
-//! Three windows share one webview bundle and select their surface by label:
+//! Four windows share one webview bundle and select their surface by label:
 //!   - `avatar`    transparent, always-on-top, click-through-except-on-the-cat
 //!   - `panel`     toggled open on tap, dismissed on blur / second tap
-//!   - `dashboard` the deep view, opened from the panel
+//!   - `toast`     a brief nudge when a session starts waiting on you
+//!   - `dashboard` the deep view, opened from the panel — the one window that is
+//!                 built on demand and destroyed on close, so it costs nothing
+//!                 until it's opened (see `open_dashboard`)
 //!
 //! A background thread tails the transcripts (see `scanner`) and pushes a
 //! `state-update` event to every window; a second thread polls the cursor to
@@ -422,22 +425,28 @@ fn set_switcher_visible(app: &AppHandle, visible: bool) {
     let _ = (app, visible);
 }
 
-/// Hide the dashboard (kept alive so it can reopen) and drop Tablo back to a
-/// switcher-hidden widget. Shared by the Esc command and the OS close button.
-fn hide_dashboard_impl(app: &AppHandle) {
+/// Close the dashboard — actually destroying it, freeing its ~50–70 MB webview —
+/// and drop Tablo back to a switcher-hidden widget. `open_dashboard` rebuilds it
+/// on demand, and every window self-hydrates from `get_snapshot` on mount, so a
+/// rebuilt dashboard paints current state without needing a live emit.
+///
+/// `destroy()` deliberately emits no events, so this does *not* run the
+/// `CloseRequested` handler below — each path resets the switcher itself.
+fn close_dashboard_impl(app: &AppHandle) {
     if let Some(dash) = app.get_webview_window("dashboard") {
-        let _ = dash.hide();
+        let _ = dash.destroy();
     }
     set_switcher_visible(app, false);
 }
 
-/// Route the dashboard's OS close button to a hide (not destroy) + switcher reset.
+/// Let the dashboard's OS close button destroy the window (Tauri's default when
+/// the request isn't prevented) and reset the switcher on the way out.
 fn install_dashboard_close(app: &AppHandle, window: &WebviewWindow) {
     let h = app.clone();
     window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-            hide_dashboard_impl(&h);
+        if let WindowEvent::CloseRequested { .. } = event {
+            // No `prevent_close()` — the window closes and frees its webview.
+            set_switcher_visible(&h, false);
         }
     });
 }
@@ -445,10 +454,11 @@ fn install_dashboard_close(app: &AppHandle, window: &WebviewWindow) {
 #[tauri::command]
 fn open_dashboard(app: AppHandle) -> Result<(), String> {
     // Becoming a Regular app puts Tablo in the Dock + Cmd+Tab while the dashboard
-    // is up; hiding it (Esc / close button) flips back to Accessory.
+    // is up; closing it (Esc / close button) flips back to Accessory.
     set_switcher_visible(&app, true);
-    // Recreate the window if it was ever destroyed (belt-and-suspenders — the
-    // close handler normally hides it instead).
+    // Build the window on first open and after every close — it's deliberately
+    // absent from `tauri.conf.json`, so a user who never opens the dashboard
+    // never pays for its webview. Costs ~200 ms to build and load the route.
     let dash = match app.get_webview_window("dashboard") {
         Some(w) => w,
         None => {
@@ -473,11 +483,11 @@ fn open_dashboard(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Hide the dashboard from the frontend (Esc). Also returns Tablo to a
+/// Close the dashboard from the frontend (Esc). Also returns Tablo to a
 /// switcher-hidden widget.
 #[tauri::command]
 fn hide_dashboard(app: AppHandle) {
-    hide_dashboard_impl(&app);
+    close_dashboard_impl(&app);
 }
 
 /// Begin an avatar drag: pin it interactive and report its current logical
@@ -1096,12 +1106,6 @@ pub fn run() {
                         }
                     }
                 });
-            }
-
-            // Dashboard hides (not destroys) on close so it can reopen, and
-            // resets Tablo to a switcher-hidden widget.
-            if let Some(dash) = app.get_webview_window("dashboard") {
-                install_dashboard_close(&handle, &dash);
             }
 
             app.manage(AppState {
