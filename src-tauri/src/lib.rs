@@ -1,9 +1,12 @@
 //! Tablo — a tiny floating cat that watches Claude Code agents.
 //!
-//! Three windows share one webview bundle and select their surface by label:
+//! Four windows share one webview bundle and select their surface by label:
 //!   - `avatar`    transparent, always-on-top, click-through-except-on-the-cat
 //!   - `panel`     toggled open on tap, dismissed on blur / second tap
-//!   - `dashboard` the deep view, opened from the panel
+//!   - `toast`     a brief nudge when a session starts waiting on you
+//!   - `dashboard` the deep view, opened from the panel — the one window that is
+//!                 built on demand and destroyed on close, so it costs nothing
+//!                 until it's opened (see `open_dashboard`)
 //!
 //! A background thread tails the transcripts (see `scanner`) and pushes a
 //! `state-update` event to every window; a second thread polls the cursor to
@@ -99,6 +102,10 @@ pub(crate) struct AppState {
     /// Window-render — session id → where it lives, self-reported by the locate
     /// hook, for "jump to session".
     pub(crate) session_locations: Mutex<HashMap<String, locate::SessionLocation>>,
+    /// Version of a release found while auto-update is off, awaiting a manual
+    /// install. Doubles as the notified-once marker: the checker only notifies
+    /// when the version it finds differs from what's parked here.
+    available_update: Mutex<Option<String>>,
 }
 
 #[derive(Serialize)]
@@ -212,6 +219,41 @@ fn set_telemetry_enabled(app: AppHandle, state: State<'_, AppState>, enabled: bo
         let _ = app.track_event("app_started", None);
     }
     recompute_and_emit(&app);
+}
+
+/// Enable/disable automatic install of new releases. Persists and re-emits so
+/// the Settings toggle reflects it. Turning it off leaves any already-found
+/// update parked for a manual install; turning it on lets the next check apply
+/// it (or the user can still press Install now).
+#[tauri::command]
+fn set_auto_update(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.auto_update = enabled;
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
+/// Install the release the checker found, on the user's say-so (the dashboard's
+/// Install button). Re-checks rather than holding a stale handle from the
+/// background poll, then downloads, installs, and restarts. Only returns on
+/// failure — a success restarts the app.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("already up to date")?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
 }
 
 /// Bundle id of the frontmost app, via `lsappinfo` (in /usr/bin, no permission
@@ -383,22 +425,28 @@ fn set_switcher_visible(app: &AppHandle, visible: bool) {
     let _ = (app, visible);
 }
 
-/// Hide the dashboard (kept alive so it can reopen) and drop Tablo back to a
-/// switcher-hidden widget. Shared by the Esc command and the OS close button.
-fn hide_dashboard_impl(app: &AppHandle) {
+/// Close the dashboard — actually destroying it, freeing its ~50–70 MB webview —
+/// and drop Tablo back to a switcher-hidden widget. `open_dashboard` rebuilds it
+/// on demand, and every window self-hydrates from `get_snapshot` on mount, so a
+/// rebuilt dashboard paints current state without needing a live emit.
+///
+/// `destroy()` deliberately emits no events, so this does *not* run the
+/// `CloseRequested` handler below — each path resets the switcher itself.
+fn close_dashboard_impl(app: &AppHandle) {
     if let Some(dash) = app.get_webview_window("dashboard") {
-        let _ = dash.hide();
+        let _ = dash.destroy();
     }
     set_switcher_visible(app, false);
 }
 
-/// Route the dashboard's OS close button to a hide (not destroy) + switcher reset.
+/// Let the dashboard's OS close button destroy the window (Tauri's default when
+/// the request isn't prevented) and reset the switcher on the way out.
 fn install_dashboard_close(app: &AppHandle, window: &WebviewWindow) {
     let h = app.clone();
     window.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-            hide_dashboard_impl(&h);
+        if let WindowEvent::CloseRequested { .. } = event {
+            // No `prevent_close()` — the window closes and frees its webview.
+            set_switcher_visible(&h, false);
         }
     });
 }
@@ -406,10 +454,11 @@ fn install_dashboard_close(app: &AppHandle, window: &WebviewWindow) {
 #[tauri::command]
 fn open_dashboard(app: AppHandle) -> Result<(), String> {
     // Becoming a Regular app puts Tablo in the Dock + Cmd+Tab while the dashboard
-    // is up; hiding it (Esc / close button) flips back to Accessory.
+    // is up; closing it (Esc / close button) flips back to Accessory.
     set_switcher_visible(&app, true);
-    // Recreate the window if it was ever destroyed (belt-and-suspenders — the
-    // close handler normally hides it instead).
+    // Build the window on first open and after every close — it's deliberately
+    // absent from `tauri.conf.json`, so a user who never opens the dashboard
+    // never pays for its webview. Costs ~200 ms to build and load the route.
     let dash = match app.get_webview_window("dashboard") {
         Some(w) => w,
         None => {
@@ -434,11 +483,11 @@ fn open_dashboard(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Hide the dashboard from the frontend (Esc). Also returns Tablo to a
+/// Close the dashboard from the frontend (Esc). Also returns Tablo to a
 /// switcher-hidden widget.
 #[tauri::command]
 fn hide_dashboard(app: AppHandle) {
-    hide_dashboard_impl(&app);
+    close_dashboard_impl(&app);
 }
 
 /// Begin an avatar drag: pin it interactive and report its current logical
@@ -477,28 +526,33 @@ fn end_drag(app: AppHandle, state: State<'_, AppState>, x: i32, y: i32) -> Resul
 
 // ============================ window placement ============================
 
+///Allows the rect to not overlap with MacOS dock area
+fn work_area(window: &WebviewWindow) -> Option<(PhysicalPosition<i32>, tauri::PhysicalSize<u32>)> {
+    let mon = window.current_monitor().ok().flatten()?;
+    let wa = mon.work_area();
+    Some((wa.position, wa.size))
+}
+
 fn position_avatar(avatar: &WebviewWindow, cfg: &Config) {
     if let (Some(x), Some(y)) = (cfg.avatar_x, cfg.avatar_y) {
         let _ = avatar.set_position(LogicalPosition::new(x as f64, y as f64));
         return;
     }
-    // Default: tucked into the bottom-right of the current monitor.
-    if let Ok(Some(mon)) = avatar.current_monitor() {
-        let sf = mon.scale_factor();
-        let msz = mon.size();
-        let mpos = mon.position();
+    // Default: tucked into the bottom-right of the current monitor's work area,
+    if let Some((wpos, wsz)) = work_area(avatar) {
+        let sf = avatar.scale_factor().unwrap_or(1.0);
         let asz = avatar
             .outer_size()
             .unwrap_or(tauri::PhysicalSize::new(126, 134));
         let margin = (24.0 * sf) as i32;
-        let x = mpos.x + msz.width as i32 - asz.width as i32 - margin;
-        let y = mpos.y + msz.height as i32 - asz.height as i32 - margin * 2;
+        let x = wpos.x + wsz.width as i32 - asz.width as i32 - margin;
+        let y = wpos.y + wsz.height as i32 - asz.height as i32 - margin;
         let _ = avatar.set_position(PhysicalPosition::new(x, y));
     }
 }
 
 /// Anchor the panel just left of (or right of, if clipped) the avatar, bottoms
-/// aligned, clamped to the monitor.
+/// aligned, clamped to the monitor's work area (never under the Dock).
 fn place_panel(app: &AppHandle) {
     let (avatar, panel) = match (
         app.get_webview_window("avatar"),
@@ -523,22 +577,20 @@ fn place_panel(app: &AppHandle) {
     let mut px = ap.x - gap - psz.width as i32;
     let mut py = ap.y + asz.height as i32 - psz.height as i32;
 
-    if let Ok(Some(mon)) = avatar.current_monitor() {
-        let mpos = mon.position();
-        let msz = mon.size();
-        if px < mpos.x {
+    if let Some((wpos, wsz)) = work_area(&avatar) {
+        if px < wpos.x {
             px = ap.x + asz.width as i32 + gap; // flip to the right
         }
-        let max_x = (mpos.x + msz.width as i32 - psz.width as i32).max(mpos.x);
-        let max_y = (mpos.y + msz.height as i32 - psz.height as i32).max(mpos.y);
-        px = px.clamp(mpos.x, max_x);
-        py = py.clamp(mpos.y, max_y);
+        let max_x = (wpos.x + wsz.width as i32 - psz.width as i32).max(wpos.x);
+        let max_y = (wpos.y + wsz.height as i32 - psz.height as i32).max(wpos.y);
+        px = px.clamp(wpos.x, max_x);
+        py = py.clamp(wpos.y, max_y);
     }
     let _ = panel.set_position(PhysicalPosition::new(px, py));
 }
 
 /// Anchor the toast just left of (or right of, if clipped) the avatar, vertically
-/// centered on it, clamped to the monitor. Mirrors `place_panel`.
+/// centered on it, clamped to the work area. Mirrors `place_panel`.
 fn place_toast(app: &AppHandle) {
     let (avatar, toast) = match (
         app.get_webview_window("avatar"),
@@ -572,16 +624,14 @@ fn place_toast(app: &AppHandle) {
     let mut tx = cx - r - clearance - tsz.width as i32; // toast right edge left of the steal-zone
     let mut ty = ap.y + (asz.height as i32 - tsz.height as i32) / 2;
 
-    if let Ok(Some(mon)) = avatar.current_monitor() {
-        let mpos = mon.position();
-        let msz = mon.size();
-        if tx < mpos.x {
+    if let Some((wpos, wsz)) = work_area(&avatar) {
+        if tx < wpos.x {
             tx = cx + r + clearance; // flip to the right, just past the steal-zone
         }
-        let max_x = (mpos.x + msz.width as i32 - tsz.width as i32).max(mpos.x);
-        let max_y = (mpos.y + msz.height as i32 - tsz.height as i32).max(mpos.y);
-        tx = tx.clamp(mpos.x, max_x);
-        ty = ty.clamp(mpos.y, max_y);
+        let max_x = (wpos.x + wsz.width as i32 - tsz.width as i32).max(wpos.x);
+        let max_y = (wpos.y + wsz.height as i32 - tsz.height as i32).max(wpos.y);
+        tx = tx.clamp(wpos.x, max_x);
+        ty = ty.clamp(wpos.y, max_y);
     }
     let _ = toast.set_position(PhysicalPosition::new(tx, ty));
 }
@@ -647,6 +697,15 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
             s.can_jump = on && locs.contains_key(&s.id);
         }
     }
+
+    // Overlay a release found while auto-update is off, so the dashboard can
+    // offer the install. Cleared once auto-update is back on — the next check
+    // applies it, so there's nothing left to ask the user about.
+    snap.update_available = if cfg.auto_update {
+        None
+    } else {
+        state.available_update.lock().unwrap().clone()
+    };
 
     fire_notifications(app, &state, &cfg, &snap);
     fire_permission_notifications(app, &state, &cfg, &snap);
@@ -889,13 +948,21 @@ fn toggle_widget(app: &AppHandle, item: &tauri::menu::MenuItem<tauri::Wry>) {
 /// How often to poll for a new release after the initial post-launch check.
 const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 
-/// Check GitHub for a newer release; if one exists, download, install, and
-/// relaunch. Silent + best-effort — offline, no release yet, or a signature
-/// mismatch all just no-op. Skipped while an approval is pending so an update
-/// never interrupts a decision in flight.
+/// Check GitHub for a newer release. Best-effort and silent about failure —
+/// offline, no release yet, or a signature mismatch all just no-op. Skipped
+/// while an approval is pending so an update never interrupts a decision in
+/// flight.
+///
+/// What happens on a hit depends on `auto_update`. On (the default), it
+/// downloads, installs, and relaunches as before. Off, nothing is applied: the
+/// version is parked on `AppState` so the dashboard can offer a one-tap
+/// install, and a single notification announces it. Parking it also marks it
+/// notified — the 6-hourly re-check finds the same version and stays quiet.
 async fn try_update(app: AppHandle) {
+    use tauri_plugin_notification::NotificationExt;
     use tauri_plugin_updater::UpdaterExt;
-    if !app.state::<AppState>().pending.lock().unwrap().is_empty() {
+    let state = app.state::<AppState>();
+    if !state.pending.lock().unwrap().is_empty() {
         return;
     }
     let update = match app.updater() {
@@ -905,7 +972,32 @@ async fn try_update(app: AppHandle) {
         },
         Err(_) => return,
     };
-    use tauri_plugin_notification::NotificationExt;
+
+    // Bound to a local so the config guard is unambiguously dropped before
+    // `recompute_and_emit` below re-locks it (std mutexes aren't reentrant).
+    let auto_update = state.config.lock().unwrap().auto_update;
+    if !auto_update {
+        let fresh = {
+            let mut parked = state.available_update.lock().unwrap();
+            let fresh = parked.as_deref() != Some(update.version.as_str());
+            *parked = Some(update.version.clone());
+            fresh
+        };
+        if fresh {
+            let _ = app
+                .notification()
+                .builder()
+                .title("tablo update available")
+                .body(format!(
+                    "v{} is ready — open the dashboard to install it.",
+                    update.version
+                ))
+                .show();
+            recompute_and_emit(&app);
+        }
+        return;
+    }
+
     let _ = app
         .notification()
         .builder()
@@ -1016,12 +1108,6 @@ pub fn run() {
                 });
             }
 
-            // Dashboard hides (not destroys) on close so it can reopen, and
-            // resets Tablo to a switcher-hidden widget.
-            if let Some(dash) = app.get_webview_window("dashboard") {
-                install_dashboard_close(&handle, &dash);
-            }
-
             app.manage(AppState {
                 config: Mutex::new(cfg),
                 config_dir,
@@ -1040,6 +1126,7 @@ pub fn run() {
                 ipc_secret: ipc_secret.clone(),
                 prev_pending: Mutex::new(HashSet::new()),
                 session_locations: Mutex::new(HashMap::new()),
+                available_update: Mutex::new(None),
             });
 
             // Bind the loopback server FIRST. Only if we actually own the port do
@@ -1118,6 +1205,8 @@ pub fn run() {
             set_watch_codex,
             set_aerospace_follow,
             set_telemetry_enabled,
+            set_auto_update,
+            install_update,
             set_panel_shortcut_enabled,
             toggle_panel,
             hide_panel,

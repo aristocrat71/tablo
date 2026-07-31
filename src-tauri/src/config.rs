@@ -98,6 +98,11 @@ pub struct Config {
     pub notify_on_permission: bool,
     /// Send anonymous usage pings (Aptabase) so active users can be counted. Only
     pub telemetry_enabled: bool,
+    /// Install new releases automatically in the background. On by default.
+    /// Turning it off doesn't stop Tablo *looking* for releases — it stops it
+    /// applying them: a found update is surfaced for a one-tap install instead
+    /// of downloaded, installed, and restarted behind the user's back.
+    pub auto_update: bool,
     /// "dark" (hero) or "light".
     pub theme: String,
     /// Global hotkey (Tauri accelerator syntax, e.g. "Control+Command+P") that
@@ -142,6 +147,7 @@ impl Default for Config {
             notify_on_warn: false,
             notify_on_permission: true,
             telemetry_enabled: true,
+            auto_update: true,
             theme: "dark".into(),
             panel_shortcut: "Control+Command+P".into(),
             panel_shortcut_enabled: true,

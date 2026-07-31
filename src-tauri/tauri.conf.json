@@ -43,18 +43,6 @@
         "visible": false
       },
       {
-        "label": "dashboard",
-        "title": "tablo dashboard",
-        "width": 980,
-        "height": 720,
-        "minWidth": 640,
-        "minHeight": 480,
-        "resizable": true,
-        "decorations": true,
-        "transparent": false,
-        "visible": false
-      },
-      {
         "label": "toast",
         "title": "tablo",
         "width": 300,

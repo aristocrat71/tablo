@@ -25,7 +25,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::AppState;
 
-/// The dashboard window's title (see `tauri.conf.json` / `open_dashboard`).
+/// The dashboard window's title (set by `open_dashboard`, which builds it).
 /// Excluded from following so AeroSpace keeps tiling it like any normal window.
 const DASHBOARD_TITLE: &str = "tablo dashboard";
 

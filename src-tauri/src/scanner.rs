@@ -106,6 +106,12 @@ pub struct Snapshot {
     pub aerospace_follow: bool,
     /// Whether anonymous usage pings are enabled, echoed for the Settings toggle.
     pub telemetry_enabled: bool,
+    /// Whether new releases install themselves, echoed for the Settings toggle.
+    pub auto_update: bool,
+    /// Version of a release that was found but *not* installed (auto-update off),
+    /// so the dashboard can offer a one-tap install. Populated in the emit path,
+    /// not by the scan itself — `scan` always leaves it None.
+    pub update_available: Option<String>,
     /// Whether AeroSpace was detected this run — gates the "Follow AeroSpace"
     /// toggle so it only appears to users actually running AeroSpace.
     pub aerospace_available: bool,
@@ -136,6 +142,8 @@ impl Default for Snapshot {
             panel_shortcut_enabled: true,
             aerospace_follow: true,
             telemetry_enabled: true,
+            auto_update: true,
+            update_available: None,
             aerospace_available: false,
             jump_supported: cfg!(target_os = "macos"),
             approvals_supported: !cfg!(target_os = "windows"),
@@ -856,6 +864,7 @@ pub fn scan(
             watch_codex: cfg.watch_codex,
             panel_shortcut_enabled: cfg.panel_shortcut_enabled,
             aerospace_follow: cfg.aerospace_follow,
+            auto_update: cfg.auto_update,
             aerospace_available: crate::aerospace::available(),
             ..Default::default()
         };
@@ -1039,6 +1048,8 @@ pub fn scan(
         panel_shortcut_enabled: cfg.panel_shortcut_enabled,
         aerospace_follow: cfg.aerospace_follow,
         telemetry_enabled: cfg.telemetry_enabled,
+        auto_update: cfg.auto_update,
+        update_available: None,
         aerospace_available: crate::aerospace::available(),
         jump_supported: cfg!(target_os = "macos"),
         approvals_supported: !cfg!(target_os = "windows"),

@@ -129,15 +129,30 @@ jobs:
         run: |
           set -euo pipefail
           sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi; }
-          echo '${{ steps.tauri.outputs.artifactPaths }}' | jq -r '.[]' | while read -r f; do
+          n=0
+          # Read from a redirect, not a pipe, so the loop runs in this shell and an
+          # `exit 1` below actually fails the step.
+          while read -r f; do
+            # Windows hands back backslash paths, which neither the case-match nor
+            # `-f` below resolves — v2.0.0 shipped with no Windows checksums because
+            # of it. Normalize separators (and any stray CR) before matching.
+            f="${f%$'\r'}"
+            f="${f//\\//}"
             case "$f" in
-              *.dmg|*.AppImage|*.deb|*.rpm|*.exe|*.msi)
-                [ -f "$f" ] || continue
-                ( cd "$(dirname "$f")" && sha "$(basename "$f")" ) > "${f}.sha256"
-                gh release upload "${{ github.ref_name }}" "${f}.sha256" --clobber
-                ;;
+              *.dmg|*.AppImage|*.deb|*.rpm|*.exe|*.msi) ;;
+              *) continue ;;
             esac
-          done
+            # Fail loud. Skipping here silently publishes a release whose installers
+            # can't be verified, which fails install.sh / install.ps1 closed.
+            [ -f "$f" ] || { echo "::error::installer not found on disk: $f"; exit 1; }
+            ( cd "$(dirname "$f")" && sha "$(basename "$f")" ) > "${f}.sha256"
+            gh release upload "${{ github.ref_name }}" "${f}.sha256" --clobber
+            n=$((n + 1))
+          done < <(echo '${{ steps.tauri.outputs.artifactPaths }}' | jq -r '.[]')
+          # Every platform in the matrix produces at least one installer, so zero
+          # checksums means the matching itself broke — don't let that pass green.
+          [ "$n" -gt 0 ] || { echo "::error::no installer checksums published"; exit 1; }
+          echo "published $n checksum(s)"
 
       # Cryptographic build provenance: a signed attestation tying each artifact
       # to this repo + workflow run, verifiable with
