@@ -13,10 +13,21 @@
 
   const OUTRO_MS = 320;
 
+  // Built on mount (not at module scope — the prerender pass has no `Audio`) so
+  // the file is decoded and ready before the first nudge. No user gesture is
+  // needed: wry enables media autoplay on every platform.
+  let chime: HTMLAudioElement | undefined;
+  function playChime() {
+    if (!prefs.notifySound || !chime) return;
+    chime.currentTime = 0; // restart if a previous nudge is still ringing
+    chime.play().catch(() => {}); // audio is a nicety — never break the toast
+  }
+
   function fire(t: { id: string; project: string; title: string | null; canJump: boolean }) {
     clearTimeout(clearT);
     clearTimeout(hideT);
     toast = t;
+    playChime();
     showToast().catch(() => {});
     const visible = prefs.waitingToastSecs * 1000;
     clearT = setTimeout(() => (toast = null), visible);
@@ -24,6 +35,7 @@
   }
 
   onMount(() => {
+    chime = new Audio("/sounds/notify.wav");
     const un = onSessionWaiting((sessions: WaitingSession[]) => {
       if (!prefs.notifyOnWaiting || sessions.length === 0) return;
       // Multiple at once → a count (no title / jump); otherwise a single session.
