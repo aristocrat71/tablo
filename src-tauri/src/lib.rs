@@ -679,22 +679,22 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
     }
     snap.pending = pending;
 
-    // Overlay "jump to session" availability from the location cache — but only
-    // while the relevant locate hook is enabled, so a disabled jump setting hides
-    // every jump affordance (even for sessions that reported before it was turned
-    // off). Gated per source: Claude sessions on the Claude locate hook, Codex
-    // sessions on the Codex one — each is independent.
+    // Overlay "jump to session" availability — a session is jumpable when the
+    // locate hook has reported it, or (Claude only) when Claude Code's own
+    // session registry (~/.claude/sessions) maps it to a process, which needs no
+    // hook and survives Tablo restarts. Both stay gated on the per-source jump
+    // setting, so a disabled setting hides every jump affordance.
     {
         let claude_on = locate::is_installed();
         let codex_on = codex_locate::is_installed();
+        let registry = locate::registry_session_ids();
         let locs = state.session_locations.lock().unwrap();
         for s in &mut snap.sessions {
-            let on = if s.source == "codex" {
-                codex_on
+            s.can_jump = if s.source == "codex" {
+                codex_on && locs.contains_key(&s.id)
             } else {
-                claude_on
+                claude_on && (locs.contains_key(&s.id) || registry.contains(&s.id))
             };
-            s.can_jump = on && locs.contains_key(&s.id);
         }
     }
 

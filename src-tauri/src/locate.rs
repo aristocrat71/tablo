@@ -1,13 +1,24 @@
 //! "Jump to session" (window-render).
 //!
-//! A session can't be mapped to its OS window from the transcript alone (no PID,
-//! and Claude Code doesn't hold the transcript open; tmux/editors hide the
-//! window). So each session *self-reports* where it lives: a passive
-//! `SessionStart` + `UserPromptSubmit` hook (`locate.sh`) reads the env vars
-//! available inside the session — `$TMUX_PANE`, `$TERM_PROGRAM`, `$ZED_TERM`,
-//! tty — and POSTs them to the loopback server, keyed by session id. Tablo
-//! caches that, and `jump_to_session` focuses the exact window: `tmux
-//! select-pane` for the pane, then `open -a` to activate the host app.
+//! The transcript alone can't map a session to its OS window (no pid or tty in
+//! the JSONL, and claude doesn't hold the file open). Two sources fill the gap:
+//!
+//! - **Claude Code's own session registry** (`~/.claude/sessions/<pid>.json`,
+//!   v2.1+): pid + sessionId + startedAt per running claude process, maintained
+//!   by claude itself. Primary — needs no hook, survives Tablo restarts, and
+//!   covers sessions started while Tablo was down.
+//! - **The locate hook** (`locate.sh`, `SessionStart` + `UserPromptSubmit`):
+//!   POSTs the session's env locators (`$TMUX_PANE`, `$TERM_PROGRAM`, tty) plus
+//!   the agent pid (`$CLAUDE_PID`, or the first tty-owning ancestor) to the
+//!   loopback server. Fallback for older Claude Code, and the only source for
+//!   Codex, which has no registry.
+//!
+//! From the pid, `jump_to_session` re-derives everything **live at click time**:
+//! controlling tty via `ps`, tty → tmux pane via `list-panes`, host app via the
+//! process tree. Cached env fields are only the no-pid fallback — they decay
+//! (pty reuse) and lie (a tmux server leaks its first client's `TERM_PROGRAM` /
+//! `ZED_TERM` into every pane). Focus lands via `tmux select-pane` +
+//! `switch-client`, then a macOS raise of the host app.
 //!
 //! Unlike approvals this never blocks a tool — it only reports location.
 
@@ -25,6 +36,9 @@ use crate::AppState;
 /// Where a session lives, as reported by the locate hook (all best-effort).
 #[derive(Clone, Debug, Default)]
 pub struct SessionLocation {
+    /// The agent process (claude/codex) — the durable key everything else is
+    /// re-derived from at click time. Cleared when the process proves dead.
+    pub pid: Option<i32>,
     /// `$TMUX` = "<socket>,<pid>,<session>"; the socket is what we target.
     pub tmux: String,
     /// `$TMUX_PANE`, e.g. "%22" — the exact pane, unambiguous across windows.
@@ -49,6 +63,8 @@ pub struct SessionLocation {
 struct LocatePayload {
     #[serde(default)]
     session_id: String,
+    #[serde(default)]
+    pid: String,
     #[serde(default)]
     tmux: String,
     #[serde(default)]
@@ -77,6 +93,7 @@ pub fn store_location(app: &AppHandle, body: &str) {
         return;
     }
     let loc = SessionLocation {
+        pid: p.pid.trim().parse().ok(),
         tmux: p.tmux,
         tmux_pane: p.tmux_pane,
         term_program: p.term_program,
@@ -95,6 +112,209 @@ pub fn store_location(app: &AppHandle, body: &str) {
     }
 }
 
+// ============================ claude session registry ============================
+
+/// A row of Claude Code's live session registry: `~/.claude/sessions/<pid>.json`,
+/// one file per running claude process, written by claude itself and removed on
+/// clean exit. `startedAt` (epoch ms) lets a click validate the pid against the
+/// process's real start time, so a recycled pid can't be mis-focused.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegistryRow {
+    pid: i32,
+    session_id: String,
+    #[serde(default)]
+    started_at: i64,
+    #[serde(default)]
+    kind: String,
+}
+
+fn read_registry() -> Vec<RegistryRow> {
+    let Some(dir) = dirs::home_dir().map(|h| h.join(".claude").join("sessions")) else {
+        return Vec::new();
+    };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    rd.filter_map(|e| {
+        let p = e.ok()?.path();
+        if p.extension()? != "json" {
+            return None;
+        }
+        serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()
+    })
+    .collect()
+}
+
+/// Session ids the registry can map to a terminal window ("interactive" kind —
+/// bg/daemon sessions have no window to focus). Existence-only: pid liveness is
+/// validated at click, not here, since this runs on every recompute.
+pub fn registry_session_ids() -> std::collections::HashSet<String> {
+    read_registry()
+        .into_iter()
+        .filter(|r| r.kind == "interactive")
+        .map(|r| r.session_id)
+        .collect()
+}
+
+/// `(pid, startedAt ms)` for a session, from the registry.
+fn registry_entry_for(session_id: &str) -> Option<(i32, i64)> {
+    read_registry()
+        .into_iter()
+        .find(|r| r.session_id == session_id && r.kind == "interactive")
+        .map(|r| (r.pid, r.started_at))
+}
+
+// ============================ live pid resolution ============================
+
+/// One `ps` probe of a pid: controlling tty (None when headless), elapsed run
+/// time in seconds, and the executable. None ⇒ the process is gone.
+struct PsProbe {
+    tty: Option<String>,
+    etime_secs: i64,
+    comm: String,
+}
+
+fn ps_probe(pid: i32) -> Option<PsProbe> {
+    let out = Command::new("ps")
+        .args(["-o", "tty=,etime=,comm=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let binding = String::from_utf8_lossy(&out.stdout);
+    let line = binding.trim();
+    let mut it = line.split_whitespace();
+    let tty_raw = it.next()?;
+    let etime_secs = parse_etime(it.next()?)?;
+    let comm = it.collect::<Vec<_>>().join(" ");
+    let tty = match tty_raw {
+        "??" | "?" | "-" => None,
+        t if t.starts_with("/dev/") => Some(t.to_string()),
+        t => Some(format!("/dev/{t}")),
+    };
+    Some(PsProbe { tty, etime_secs, comm })
+}
+
+/// Parse `ps -o etime` — `[[dd-]hh:]mm:ss` — into seconds.
+fn parse_etime(s: &str) -> Option<i64> {
+    let (days, rest) = match s.split_once('-') {
+        Some((d, r)) => (d.parse::<i64>().ok()?, r),
+        None => (0, s),
+    };
+    let parts: Vec<i64> = rest
+        .split(':')
+        .map(|p| p.trim().parse::<i64>().ok())
+        .collect::<Option<_>>()?;
+    let hms = match parts[..] {
+        [s] => s,
+        [m, s] => m * 60 + s,
+        [h, m, s] => h * 3600 + m * 60 + s,
+        _ => return None,
+    };
+    Some(days * 86400 + hms)
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Whether a live process can be the one we recorded. A registry pid must have
+/// started within tolerance of the registry's own `startedAt` (pid-reuse guard,
+/// compared via etime so timezone rendering never matters); a hook pid carries
+/// no start time, so it only gets an executable-name sanity check.
+fn pid_plausible(probe: &PsProbe, expected_start_ms: Option<i64>) -> bool {
+    match expected_start_ms {
+        Some(ms) if ms > 0 => (now_ms() - probe.etime_secs * 1000 - ms).abs() <= 120_000,
+        _ => {
+            let c = probe.comm.to_ascii_lowercase();
+            ["claude", "codex", "node"].iter().any(|k| c.contains(k))
+        }
+    }
+}
+
+/// Candidate tmux sockets to search for a pane: the hook-reported one first,
+/// then every socket under `/tmp/tmux-*/` (where default servers live), then the
+/// bare default (`None` ⇒ run tmux without `-S`).
+fn socket_candidates(cached_tmux: &str) -> Vec<Option<String>> {
+    let mut out: Vec<Option<String>> = Vec::new();
+    if let Some(s) = tmux_socket(cached_tmux) {
+        out.push(Some(s));
+    }
+    if let Ok(rd) = std::fs::read_dir("/tmp") {
+        for e in rd.flatten() {
+            if e.file_name().to_string_lossy().starts_with("tmux-") {
+                for s in std::fs::read_dir(e.path()).into_iter().flatten().flatten() {
+                    let p = Some(s.path().to_string_lossy().to_string());
+                    if !out.contains(&p) {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+    }
+    out.push(None);
+    out
+}
+
+/// pane-id whose `pane_tty` equals `tty`, from `list-panes -a` output. Pure.
+fn match_pane(output: &str, tty: &str) -> Option<String> {
+    output.lines().find_map(|l| {
+        let (id, ptty) = l.split_once('\t')?;
+        (ptty.trim() == tty).then(|| id.trim().to_string())
+    })
+}
+
+/// Search every known tmux server for the pane hosting `tty`.
+fn find_pane_by_tty(cached_tmux: &str, tty: &str) -> Option<(Option<String>, String)> {
+    for sock in socket_candidates(cached_tmux) {
+        if let Ok(out) = run_tmux(&sock, &["list-panes", "-a", "-F", "#{pane_id}\t#{pane_tty}"]) {
+            if let Some(pane) = match_pane(&out, tty) {
+                return Some((sock, pane));
+            }
+        }
+    }
+    None
+}
+
+/// Re-derive a session's location from its live process at click time. The pid
+/// is the durable key; tty and pane are looked up fresh, so pty reuse, moved
+/// panes, and Tablo restarts can't leave the jump pointing at a stale window. A
+/// dead or implausible pid clears itself and the cached hook fields stand.
+fn resolve_live(loc: &mut SessionLocation, expected_start_ms: Option<i64>) {
+    let Some(pid) = loc.pid else { return };
+    let probe = match ps_probe(pid) {
+        Some(p) if pid_plausible(&p, expected_start_ms) => p,
+        _ => {
+            loc.pid = None;
+            return;
+        }
+    };
+    match probe.tty {
+        Some(tty) => {
+            match find_pane_by_tty(&loc.tmux, &tty) {
+                Some((sock, pane)) => {
+                    loc.tmux = sock.unwrap_or_default();
+                    loc.tmux_pane = pane;
+                }
+                // The live tty is on no local tmux server ⇒ a direct tab pty;
+                // drop any stale cached pane rather than switch to it.
+                None => loc.tmux_pane.clear(),
+            }
+            loc.tty = tty;
+        }
+        // Headless (bg/daemon relaunch): nothing tty-bound to focus.
+        None => {
+            loc.tty.clear();
+            loc.tmux_pane.clear();
+        }
+    }
+}
+
 // ============================ jump ============================
 
 /// Focus the window a session lives in. Best-effort: brings the tmux pane to the
@@ -102,13 +322,20 @@ pub fn store_location(app: &AppHandle, body: &str) {
 /// it did, or an error if nothing was locatable.
 #[tauri::command]
 pub fn jump_to_session(state: State<'_, AppState>, session_id: String) -> Result<String, String> {
-    let loc = state
-        .session_locations
-        .lock()
-        .unwrap()
-        .get(&session_id)
-        .cloned()
-        .ok_or_else(|| "no known location for this session yet".to_string())?;
+    let cached = state.session_locations.lock().unwrap().get(&session_id).cloned();
+    let registry = registry_entry_for(&session_id);
+    let (mut loc, expected_start) = match (cached, registry) {
+        (None, None) => return Err("no known location for this session yet".to_string()),
+        // Claude's own registry beats any hook report — same pid when both exist,
+        // and the registry adds the start-time pid-reuse guard.
+        (cached, Some((pid, started))) => {
+            let mut l = cached.unwrap_or_default();
+            l.pid = Some(pid);
+            (l, Some(started))
+        }
+        (Some(l), None) => (l, None),
+    };
+    resolve_live(&mut loc, expected_start);
     // Match hints from the live snapshot: this session's cwd + aiTitle, plus the
     // *other* sessions' titles so Ghostty can skip a surface a different session
     // owns (Codex doesn't title its tab, so its cwd can collide with a Claude one).
@@ -167,7 +394,8 @@ fn dash(s: &str) -> &str {
 fn focus(loc: &SessionLocation, hint: &GhosttyHint) -> Result<String, String> {
     let mut trace: Vec<String> = Vec::new();
     trace.push(format!(
-        "loc tty={} term={} pane={} zed={}",
+        "loc pid={} tty={} term={} pane={} zed={}",
+        loc.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".into()),
         dash(&loc.tty),
         dash(&loc.term_program),
         dash(&loc.tmux_pane),
@@ -339,12 +567,16 @@ fn raise_window(
     client: Option<&(String, i32)>,
     hint: &GhosttyHint,
 ) -> Raise {
-    // Resolve the TRUE host app from the client's process tree first — env-var
-    // proof, and it's authoritative (both mirrored clients of a Zed-hosted tmux
-    // session resolve to Zed). We trust this over tty-tab matching, which can
-    // false-hit a stale Terminal tab that still reports a now-reused pty.
+    // Resolve the TRUE host app from a process tree first — env-var proof, and
+    // authoritative (both mirrored clients of a Zed-hosted tmux session resolve
+    // to Zed). We trust this over tty-tab matching, which can false-hit a stale
+    // Terminal tab that still reports a now-reused pty. Order: the tmux client's
+    // tree (the outer tab), then the agent's own tree (non-tmux: claude → shell
+    // → host app; under tmux it dead-ends at the server and yields nothing),
+    // then the env-var guess as last resort.
     let host = client
         .and_then(|(_, pid)| walk_to_app(*pid))
+        .or_else(|| loc.pid.and_then(walk_to_app))
         .or_else(|| gui_app(loc));
 
     // Only if the host itself is a tab-scriptable terminal, focus the EXACT tab by
@@ -841,25 +1073,28 @@ sid=$(printf '%s' "$in" | sed -n 's/.*"session_id"[^"]*"\([^"]*\)".*/\1/p')
 # The session's controlling terminal — read from the process, NOT `tty` (stdin
 # here is the piped payload). Claude Code often runs the hook itself WITHOUT a
 # controlling tty ($$ reports "??"), so walk up the ancestry to the first process
-# that has one: the session's shell / claude, whose controlling tty is the tab's
-# own pty. That exact pty is what lets Tablo focus the right terminal tab
-# (Terminal.app / iTerm). Inside tmux the nearest tty is the pane pty.
+# that has one: the agent (claude/codex), whose controlling tty is the tab's own
+# pty (inside tmux: the pane pty). That ancestor is also the agent's pid — the
+# durable key Tablo re-resolves live at jump time. Claude Code ≥2.1 hands the
+# pid over directly in $CLAUDE_PID; the walk covers Codex and older versions.
 tty=''
+owner=''
 p=$$
 n=0
 while [ -n "$p" ] && [ "$p" -gt 1 ] && [ "$n" -lt 12 ]; do
   raw=$(ps -o tty= -p "$p" 2>/dev/null | tr -d '[:space:]')
   case "$raw" in
     ''|'??') ;;
-    /dev/*) tty="$raw"; break ;;
-    *) tty="/dev/$raw"; break ;;
+    /dev/*) tty="$raw"; owner="$p"; break ;;
+    *) tty="/dev/$raw"; owner="$p"; break ;;
   esac
   p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d '[:space:]')
   n=$((n + 1))
 done
+pid="${CLAUDE_PID:-$owner}"
 curl -s -m 2 -X POST -H 'Content-Type: application/json' -H 'X-Tablo-Secret: __SECRET__' \
   "http://127.0.0.1:${PORT}/locate" --data-binary @- >/dev/null 2>&1 <<JSON
-{"sessionId":"$sid","tmux":"$TMUX","tmuxPane":"$TMUX_PANE","termProgram":"$TERM_PROGRAM","termSessionId":"$TERM_SESSION_ID","zedTerm":"$ZED_TERM","windowId":"$WINDOWID","tty":"$tty"}
+{"sessionId":"$sid","pid":"$pid","tmux":"$TMUX","tmuxPane":"$TMUX_PANE","termProgram":"$TERM_PROGRAM","termSessionId":"$TERM_SESSION_ID","zedTerm":"$ZED_TERM","windowId":"$WINDOWID","tty":"$tty"}
 JSON
 exit 0
 "#;
@@ -953,7 +1188,67 @@ pub fn set_locate_enabled(state: State<'_, AppState>, enabled: bool) -> Result<L
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{pick_client, pick_ghostty_surface, GhosttyHint};
+    use super::{
+        match_pane, now_ms, parse_etime, pick_client, pick_ghostty_surface, pid_plausible,
+        GhosttyHint, PsProbe, RegistryRow,
+    };
+
+    #[test]
+    fn etime_parses_all_ps_shapes() {
+        assert_eq!(parse_etime("05"), Some(5));
+        assert_eq!(parse_etime("03:21"), Some(3 * 60 + 21));
+        assert_eq!(parse_etime("02:03:04"), Some(2 * 3600 + 3 * 60 + 4));
+        assert_eq!(parse_etime("1-02:03:04"), Some(86400 + 2 * 3600 + 3 * 60 + 4));
+        assert_eq!(parse_etime(""), None);
+        assert_eq!(parse_etime("junk"), None);
+    }
+
+    #[test]
+    fn pane_matched_by_exact_tty() {
+        let out = "%22\t/dev/ttys006\n%34\t/dev/ttys018\n";
+        assert_eq!(match_pane(out, "/dev/ttys018").as_deref(), Some("%34"));
+        // ttys018 must not prefix-match ttys01.
+        assert_eq!(match_pane(out, "/dev/ttys01"), None);
+        assert_eq!(match_pane("", "/dev/ttys018"), None);
+    }
+
+    #[test]
+    fn registry_row_parses_claude_session_file() {
+        // Field shapes exactly as Claude Code 2.1.x writes them.
+        let row: RegistryRow = serde_json::from_str(
+            r#"{"pid":96814,"sessionId":"9b0b005c-a62d","cwd":"/Users/m/p","startedAt":1785476254251,
+                "procStart":"Fri Jul 31 05:37:33 2026","version":"2.1.219","kind":"interactive",
+                "entrypoint":"cli","status":"busy"}"#,
+        )
+        .unwrap();
+        assert_eq!(row.pid, 96814);
+        assert_eq!(row.session_id, "9b0b005c-a62d");
+        assert_eq!(row.started_at, 1785476254251);
+        assert_eq!(row.kind, "interactive");
+    }
+
+    #[test]
+    fn pid_reuse_guarded_by_start_time() {
+        let probe = |etime: i64| PsProbe {
+            tty: None,
+            etime_secs: etime,
+            comm: "claude".into(),
+        };
+        // Process started ~1h ago, registry says the same → plausible.
+        let hour_ago = now_ms() - 3_600_000;
+        assert!(pid_plausible(&probe(3600), Some(hour_ago)));
+        // Registry pid recycled: a process only 5s old can't be the session
+        // that the registry recorded an hour ago.
+        assert!(!pid_plausible(&probe(5), Some(hour_ago)));
+        // No start time (hook-reported pid) → executable sanity check only.
+        assert!(pid_plausible(&probe(5), None));
+        let stranger = PsProbe {
+            tty: None,
+            etime_secs: 5,
+            comm: "/usr/bin/vim".into(),
+        };
+        assert!(!pid_plausible(&stranger, None));
+    }
 
     #[test]
     fn client_prefers_session_then_recency() {
