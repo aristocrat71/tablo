@@ -477,28 +477,33 @@ fn end_drag(app: AppHandle, state: State<'_, AppState>, x: i32, y: i32) -> Resul
 
 // ============================ window placement ============================
 
+///Allows the rect to not overlap with MacOS dock area
+fn work_area(window: &WebviewWindow) -> Option<(PhysicalPosition<i32>, tauri::PhysicalSize<u32>)> {
+    let mon = window.current_monitor().ok().flatten()?;
+    let wa = mon.work_area();
+    Some((wa.position, wa.size))
+}
+
 fn position_avatar(avatar: &WebviewWindow, cfg: &Config) {
     if let (Some(x), Some(y)) = (cfg.avatar_x, cfg.avatar_y) {
         let _ = avatar.set_position(LogicalPosition::new(x as f64, y as f64));
         return;
     }
-    // Default: tucked into the bottom-right of the current monitor.
-    if let Ok(Some(mon)) = avatar.current_monitor() {
-        let sf = mon.scale_factor();
-        let msz = mon.size();
-        let mpos = mon.position();
+    // Default: tucked into the bottom-right of the current monitor's work area,
+    if let Some((wpos, wsz)) = work_area(avatar) {
+        let sf = avatar.scale_factor().unwrap_or(1.0);
         let asz = avatar
             .outer_size()
             .unwrap_or(tauri::PhysicalSize::new(126, 134));
         let margin = (24.0 * sf) as i32;
-        let x = mpos.x + msz.width as i32 - asz.width as i32 - margin;
-        let y = mpos.y + msz.height as i32 - asz.height as i32 - margin * 2;
+        let x = wpos.x + wsz.width as i32 - asz.width as i32 - margin;
+        let y = wpos.y + wsz.height as i32 - asz.height as i32 - margin;
         let _ = avatar.set_position(PhysicalPosition::new(x, y));
     }
 }
 
 /// Anchor the panel just left of (or right of, if clipped) the avatar, bottoms
-/// aligned, clamped to the monitor.
+/// aligned, clamped to the monitor's work area (never under the Dock).
 fn place_panel(app: &AppHandle) {
     let (avatar, panel) = match (
         app.get_webview_window("avatar"),
@@ -523,22 +528,20 @@ fn place_panel(app: &AppHandle) {
     let mut px = ap.x - gap - psz.width as i32;
     let mut py = ap.y + asz.height as i32 - psz.height as i32;
 
-    if let Ok(Some(mon)) = avatar.current_monitor() {
-        let mpos = mon.position();
-        let msz = mon.size();
-        if px < mpos.x {
+    if let Some((wpos, wsz)) = work_area(&avatar) {
+        if px < wpos.x {
             px = ap.x + asz.width as i32 + gap; // flip to the right
         }
-        let max_x = (mpos.x + msz.width as i32 - psz.width as i32).max(mpos.x);
-        let max_y = (mpos.y + msz.height as i32 - psz.height as i32).max(mpos.y);
-        px = px.clamp(mpos.x, max_x);
-        py = py.clamp(mpos.y, max_y);
+        let max_x = (wpos.x + wsz.width as i32 - psz.width as i32).max(wpos.x);
+        let max_y = (wpos.y + wsz.height as i32 - psz.height as i32).max(wpos.y);
+        px = px.clamp(wpos.x, max_x);
+        py = py.clamp(wpos.y, max_y);
     }
     let _ = panel.set_position(PhysicalPosition::new(px, py));
 }
 
 /// Anchor the toast just left of (or right of, if clipped) the avatar, vertically
-/// centered on it, clamped to the monitor. Mirrors `place_panel`.
+/// centered on it, clamped to the work area. Mirrors `place_panel`.
 fn place_toast(app: &AppHandle) {
     let (avatar, toast) = match (
         app.get_webview_window("avatar"),
@@ -572,16 +575,14 @@ fn place_toast(app: &AppHandle) {
     let mut tx = cx - r - clearance - tsz.width as i32; // toast right edge left of the steal-zone
     let mut ty = ap.y + (asz.height as i32 - tsz.height as i32) / 2;
 
-    if let Ok(Some(mon)) = avatar.current_monitor() {
-        let mpos = mon.position();
-        let msz = mon.size();
-        if tx < mpos.x {
+    if let Some((wpos, wsz)) = work_area(&avatar) {
+        if tx < wpos.x {
             tx = cx + r + clearance; // flip to the right, just past the steal-zone
         }
-        let max_x = (mpos.x + msz.width as i32 - tsz.width as i32).max(mpos.x);
-        let max_y = (mpos.y + msz.height as i32 - tsz.height as i32).max(mpos.y);
-        tx = tx.clamp(mpos.x, max_x);
-        ty = ty.clamp(mpos.y, max_y);
+        let max_x = (wpos.x + wsz.width as i32 - tsz.width as i32).max(wpos.x);
+        let max_y = (wpos.y + wsz.height as i32 - tsz.height as i32).max(wpos.y);
+        tx = tx.clamp(wpos.x, max_x);
+        ty = ty.clamp(wpos.y, max_y);
     }
     let _ = toast.set_position(PhysicalPosition::new(tx, ty));
 }
