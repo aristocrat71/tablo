@@ -16,6 +16,9 @@ not at tag time.
 
 ### Added
 
+- **What's new after an update.** Auto-update used to restart tablo without
+  saying anything. It now announces itself once, and the dashboard shows this
+  release's notes until you dismiss them.
 - **Notification sound.** The waiting toast now plays a soft chime. **On by
   default** — existing installs will start making a sound after updating. Turn
   it off under Settings → Notification sound.

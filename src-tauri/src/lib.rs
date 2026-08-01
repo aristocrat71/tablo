@@ -29,6 +29,7 @@ mod config;
 mod locate;
 mod permission;
 mod scanner;
+mod whatsnew;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -106,6 +107,8 @@ pub(crate) struct AppState {
     /// install. Doubles as the notified-once marker: the checker only notifies
     /// when the version it finds differs from what's parked here.
     available_update: Mutex<Option<String>>,
+    /// Release notes for the running build, set at launch and cleared on dismiss.
+    whats_new: Mutex<Option<whatsnew::ReleaseNotes>>,
 }
 
 #[derive(Serialize)]
@@ -230,6 +233,18 @@ fn set_auto_update(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
     {
         let mut cfg = state.config.lock().unwrap();
         cfg.auto_update = enabled;
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
+/// Mark the running build's notes as read; they don't come back for this version.
+#[tauri::command]
+fn dismiss_whats_new(app: AppHandle, state: State<'_, AppState>) {
+    *state.whats_new.lock().unwrap() = None;
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.last_seen_version = app.package_info().version.to_string();
         cfg.save(&state.config_dir);
     }
     recompute_and_emit(&app);
@@ -706,6 +721,7 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
     } else {
         state.available_update.lock().unwrap().clone()
     };
+    snap.whats_new = state.whats_new.lock().unwrap().clone();
 
     fire_notifications(app, &state, &cfg, &snap);
     fire_permission_notifications(app, &state, &cfg, &snap);
@@ -1074,7 +1090,20 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .unwrap_or_else(|_| std::env::temp_dir().join("tablo"));
-            let cfg = Config::load(&config_dir);
+            let mut cfg = Config::load(&config_dir);
+
+            // Auto-update restarts the app silently, so surface what changed.
+            let running = app.package_info().version.to_string();
+            let whats_new = match cfg.last_seen_version.as_str() {
+                "" => {
+                    cfg.last_seen_version = running.clone();
+                    cfg.save(&config_dir);
+                    None
+                }
+                seen if seen != running => whatsnew::notes_for(&running),
+                _ => None,
+            };
+
             // Capture hook params before `cfg` is moved into managed state.
             let (hook_port, hook_timeout) = (cfg.permission_port, cfg.hook_timeout_secs);
             let panel_shortcut = cfg.panel_shortcut.clone();
@@ -1127,6 +1156,7 @@ pub fn run() {
                 prev_pending: Mutex::new(HashSet::new()),
                 session_locations: Mutex::new(HashMap::new()),
                 available_update: Mutex::new(None),
+                whats_new: Mutex::new(whats_new),
             });
 
             // Bind the loopback server FIRST. Only if we actually own the port do
@@ -1207,6 +1237,7 @@ pub fn run() {
             set_telemetry_enabled,
             set_auto_update,
             install_update,
+            dismiss_whats_new,
             set_panel_shortcut_enabled,
             toggle_panel,
             hide_panel,

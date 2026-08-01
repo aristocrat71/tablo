@@ -2,12 +2,17 @@
   import { onMount } from "svelte";
   import { fly } from "svelte/transition";
   import { prefs } from "./prefs.svelte";
-  import { showToast, hideToast, onSessionWaiting, jumpToSession, type WaitingSession } from "./bridge";
+  import { store } from "./state.svelte";
+  import { showToast, hideToast, onSessionWaiting, jumpToSession, openDashboard, type WaitingSession } from "./bridge";
 
   // Surface a gentle toast when Rust reports a session finished working and is now
   // waiting on the user. Detection lives in the backend (`session-waiting`); here
   // we just present it, for the configured hover time.
-  let toast = $state<{ id: string; project: string; title: string | null; canJump: boolean } | null>(null);
+  type Toast =
+    | { kind: "waiting"; id: string; project: string; title: string | null; canJump: boolean }
+    | { kind: "updated"; version: string };
+
+  let toast = $state<Toast | null>(null);
   let clearT: ReturnType<typeof setTimeout> | undefined;
   let hideT: ReturnType<typeof setTimeout> | undefined;
 
@@ -23,24 +28,35 @@
     chime.play().catch(() => {}); // audio is a nicety — never break the toast
   }
 
-  function fire(t: { id: string; project: string; title: string | null; canJump: boolean }) {
+  function fire(t: Toast, secs = prefs.waitingToastSecs) {
     clearTimeout(clearT);
     clearTimeout(hideT);
     toast = t;
-    playChime();
+    if (t.kind === "waiting") playChime();
     showToast().catch(() => {});
-    const visible = prefs.waitingToastSecs * 1000;
+    const visible = secs * 1000;
     clearT = setTimeout(() => (toast = null), visible);
     hideT = setTimeout(() => hideToast().catch(() => {}), visible + OUTRO_MS + 60);
   }
+
+  // Announce an update once per run. The notes live in the dashboard card; this
+  // just points at them, since auto-update restarts without saying anything.
+  let announced = false;
+  $effect(() => {
+    const wn = store.snap.whatsNew;
+    if (!wn || announced) return;
+    announced = true;
+    fire({ kind: "updated", version: wn.version }, Math.max(prefs.waitingToastSecs, 8));
+  });
 
   onMount(() => {
     chime = new Audio("/sounds/notify.wav");
     const un = onSessionWaiting((sessions: WaitingSession[]) => {
       if (!prefs.notifyOnWaiting || sessions.length === 0) return;
       // Multiple at once → a count (no title / jump); otherwise a single session.
-      if (sessions.length > 1) fire({ id: "", project: `${sessions.length} sessions`, title: null, canJump: false });
-      else fire(sessions[0]);
+      if (sessions.length > 1)
+        fire({ kind: "waiting", id: "", project: `${sessions.length} sessions`, title: null, canJump: false });
+      else fire({ kind: "waiting", ...sessions[0] });
     });
     return () => un.then((u) => u()).catch(() => {});
   });
@@ -48,18 +64,29 @@
 
 {#if toast}
   <div class="toast" transition:fly={{ x: 16, duration: OUTRO_MS }}>
-    <div class="txt">
-      <div class="head">
-        <span class="proj">{toast.project}</span>
-        {#if toast.title}
-          <span class="sep">·</span>
-          <span class="ttl">{toast.title}</span>
-        {/if}
+    {#if toast.kind === "updated"}
+      <div class="txt">
+        <div class="head">
+          <span class="proj">tablo updated</span>
+        </div>
+        <div class="sub">v{toast.version}</div>
       </div>
-      <div class="sub">waiting for you</div>
-    </div>
-    {#if toast.canJump}
-      <button class="jump" onclick={() => jumpToSession(toast!.id).catch(() => {})}>jump &rarr;</button>
+      <button class="jump" onclick={() => openDashboard().catch(() => {})}>what&rsquo;s new &rarr;</button>
+    {:else}
+      {@const w = toast}
+      <div class="txt">
+        <div class="head">
+          <span class="proj">{toast.project}</span>
+          {#if toast.title}
+            <span class="sep">·</span>
+            <span class="ttl">{toast.title}</span>
+          {/if}
+        </div>
+        <div class="sub">waiting for you</div>
+      </div>
+      {#if w.canJump}
+        <button class="jump" onclick={() => jumpToSession(w.id).catch(() => {})}>jump &rarr;</button>
+      {/if}
     {/if}
   </div>
 {/if}
