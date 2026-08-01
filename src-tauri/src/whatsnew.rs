@@ -27,6 +27,16 @@ pub fn notes_for(version: &str) -> Option<ReleaseNotes> {
     parse(CHANGELOG, version)
 }
 
+/// Whether to surface the running build's notes at launch. An empty
+/// `last_seen` alongside an existing config file means an upgrade from a build
+/// that predates the field — only a missing file is a genuine first run.
+pub fn should_show(last_seen: &str, running: &str, had_config: bool) -> bool {
+    if last_seen.is_empty() && !had_config {
+        return false;
+    }
+    last_seen != running
+}
+
 fn clean(s: &str) -> String {
     s.replace("**", "").replace('`', "")
 }
@@ -161,6 +171,16 @@ First public release.
     fn version_match_is_exact_not_a_prefix() {
         assert!(parse(DOC, "2.1").is_none());
         assert!(parse(DOC, "2").is_none());
+    }
+
+    #[test]
+    fn first_run_is_silent_but_an_upgrade_is_not() {
+        // No config file at all — a genuinely new user.
+        assert!(!should_show("", "2.1.0", false));
+        // Config exists but predates the field: upgraded from 2.0.0 or earlier.
+        assert!(should_show("", "2.1.0", true));
+        assert!(should_show("2.0.0", "2.1.0", true));
+        assert!(!should_show("2.1.0", "2.1.0", true));
     }
 
     /// Guards against bumping the version without writing the changelog entry.
