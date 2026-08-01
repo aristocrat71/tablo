@@ -277,7 +277,7 @@ fn refresh_claude_config(cache: &mut ClaudeConfigCache) {
                 }
                 let extended = usage.keys().any(|k| {
                     let kl = k.to_lowercase();
-                    kl.contains("[1m]") || kl.contains("-1m")
+                    kl.contains("[1m]") || kl.contains("-1m") || native_extended(&kl)
                 });
                 windows.insert(cwd.clone(), extended);
             }
@@ -346,10 +346,22 @@ fn usage_total(usage: &serde_json::Value) -> u64 {
         + g("output_tokens")
 }
 
+/// Models whose context window is natively extended: Claude Code writes NO
+/// `[1m]` marker for them — the suffix only exists where 1M is an opt-in
+/// variant of a standard model. For these the model name itself is the certain
+/// signal. Lowercase substring match against the model string, like the config
+/// markers; kept as a built-in list (not a config default) because the marker
+/// list is persisted in existing configs and a new default would never load.
+const NATIVE_EXTENDED_MODELS: &[&str] = &["fable", "mythos"];
+
+fn native_extended(model_lower: &str) -> bool {
+    NATIVE_EXTENDED_MODELS.iter().any(|m| model_lower.contains(m))
+}
+
 /// Pick the context denominator (Open Question #4). Priority:
 /// 1. **Certain** extended signals — already-sticky, a `[1m]` marker in the
-///    model string, or usage past the standard window (a standard session
-///    compacts before it could get there).
+///    model string, a natively-extended model name, or usage past the standard
+///    window (a standard session compacts before it could get there).
 /// 2. A `window_hint` from `~/.claude.json` — the project's last-used model, or
 ///    the user's global lean — the reliable on-disk answer for the ambiguous
 ///    sub-standard case.
@@ -367,7 +379,7 @@ fn resolve_limit(
         .extended_window_markers
         .iter()
         .any(|mk| !mk.is_empty() && m.contains(&mk.to_lowercase()));
-    let certain_ext = sticky_ext || marker || used > cfg.standard_context_limit;
+    let certain_ext = sticky_ext || marker || native_extended(&m) || used > cfg.standard_context_limit;
     let is_ext = certain_ext || window_hint == Some(true);
     let limit = if is_ext {
         cfg.extended_context_limit
@@ -1122,6 +1134,26 @@ mod tests {
             assert!(s.limit > 0, "codex session must have a positive window");
             assert!(s.pct >= 0.0 && s.pct <= 100.0);
         }
+    }
+
+    #[test]
+    fn natively_extended_models_get_the_big_window() {
+        let cfg = Config::default();
+        // Fable writes no [1m] marker and ~/.claude.json therefore hints
+        // "standard" for its project — with usage still under 200k, the model
+        // name alone must pick the 1M window.
+        let (limit, ext) = resolve_limit("claude-fable-5", 170_000, false, Some(false), &cfg);
+        assert_eq!(limit, cfg.extended_context_limit);
+        assert!(ext);
+        // A marker-less opt-in model with the same hint stays on the standard
+        // window (its 1M variant would carry [1m]).
+        let (limit, ext) = resolve_limit("claude-opus-5", 100_000, false, Some(false), &cfg);
+        assert_eq!(limit, cfg.standard_context_limit);
+        assert!(!ext);
+        // The marker path is untouched.
+        let (limit, ext) = resolve_limit("claude-opus-5[1m]", 100_000, false, Some(false), &cfg);
+        assert_eq!(limit, cfg.extended_context_limit);
+        assert!(ext);
     }
 
     #[test]
