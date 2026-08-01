@@ -12,7 +12,7 @@ copy of tablo sees when it checks for updates. A tag with no matching section
 here fails the release before anything is built. Write the entry as you merge,
 not at tag time.
 
-## [2.1.0] - Unreleased
+## [2.1.0] - 2026-08-01
 
 ### Added
 
