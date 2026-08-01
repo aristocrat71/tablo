@@ -238,15 +238,11 @@ fn set_auto_update(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
     recompute_and_emit(&app);
 }
 
-/// Mark the running build's notes as read; they don't come back for this version.
+/// Close the card. The version was already recorded at launch, so this only
+/// dismisses it early — it wouldn't have come back either way.
 #[tauri::command]
 fn dismiss_whats_new(app: AppHandle, state: State<'_, AppState>) {
     *state.whats_new.lock().unwrap() = None;
-    {
-        let mut cfg = state.config.lock().unwrap();
-        cfg.last_seen_version = app.package_info().version.to_string();
-        cfg.save(&state.config_dir);
-    }
     recompute_and_emit(&app);
 }
 
@@ -1090,18 +1086,22 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .unwrap_or_else(|_| std::env::temp_dir().join("tablo"));
+            let had_config = Config::path(&config_dir).exists();
             let mut cfg = Config::load(&config_dir);
 
             // Auto-update restarts the app silently, so surface what changed.
+            // Recorded here rather than on dismiss, so the notes belong to the
+            // launch that followed the update and don't return on every restart.
             let running = app.package_info().version.to_string();
-            let whats_new = match cfg.last_seen_version.as_str() {
-                "" => {
-                    cfg.last_seen_version = running.clone();
-                    cfg.save(&config_dir);
-                    None
-                }
-                seen if seen != running => whatsnew::notes_for(&running),
-                _ => None,
+            let show_notes = whatsnew::should_show(&cfg.last_seen_version, &running, had_config);
+            if cfg.last_seen_version != running {
+                cfg.last_seen_version = running.clone();
+                cfg.save(&config_dir);
+            }
+            let whats_new = if show_notes {
+                whatsnew::notes_for(&running)
+            } else {
+                None
             };
 
             // Capture hook params before `cfg` is moved into managed state.
