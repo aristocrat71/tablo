@@ -111,6 +111,10 @@ pub struct Config {
     /// Whether the global panel hotkey is registered. On by default; the Settings
     /// toggle flips it live (register / unregister) without losing the keystroke.
     pub panel_shortcut_enabled: bool,
+    /// App version whose release notes the user has seen. Empty on a fresh
+    /// install — recorded silently, so a new user isn't shown notes for a build
+    /// they never ran.
+    pub last_seen_version: String,
     /// One-time guard: whether "jump to session" has been auto-enabled once. Set
     /// true after the first launch wires it in, so a later user-disable sticks
     /// and we never silently re-enable it behind their back.
@@ -151,6 +155,7 @@ impl Default for Config {
             theme: "dark".into(),
             panel_shortcut: "Control+Command+P".into(),
             panel_shortcut_enabled: true,
+            last_seen_version: String::new(),
             locate_default_applied: false,
         }
     }

@@ -54,6 +54,17 @@ export interface PendingRequest {
 
 export type PermDecision = "allow" | "deny" | "ask";
 
+// Mirrors Rust `whatsnew::ReleaseNotes` — this build's changelog section.
+export interface NoteGroup {
+  heading: string; // "Added" / "Changed" / "Fixed", or "" if unlabelled
+  items: string[];
+}
+
+export interface ReleaseNotes {
+  version: string;
+  groups: NoteGroup[];
+}
+
 export interface Snapshot {
   state: AvatarState;
   agentCount: number;
@@ -73,6 +84,7 @@ export interface Snapshot {
   telemetryEnabled: boolean; // whether anonymous usage pings are on, echoed for Settings
   autoUpdate: boolean; // whether new releases install themselves, echoed for Settings
   updateAvailable: string | null; // version found but not installed (auto-update off) — offer a one-tap install
+  whatsNew: ReleaseNotes | null; // this build's notes, until dismissed
   aerospaceAvailable: boolean; // whether AeroSpace was detected (gates the follow toggle)
   jumpSupported: boolean; // whether "jump to session" works here (macOS only) — gates the Jump toggles
   approvalsSupported: boolean; // whether the approvals hook can run here (not Windows) — gates the approvals toggle
@@ -146,6 +158,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   telemetryEnabled: true,
   autoUpdate: true,
   updateAvailable: null,
+  whatsNew: null,
   aerospaceAvailable: false,
   // Hide-until-confirmed (like aerospaceAvailable); the real snapshot sets the true platform value.
   jumpSupported: false,

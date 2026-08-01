@@ -22,6 +22,10 @@ jobs:
   # otherwise ship un-merged code. This cheap job runs first and blocks the build.
   guard:
     runs-on: ubuntu-latest
+    # Read-only, un-gated, and ahead of `release` — so both pre-flight checks
+    # fail before the environment asks you to approve anything.
+    outputs:
+      notes: ${{ steps.notes.outputs.body }}
     steps:
       # All actions pinned to a full commit SHA (not a movable tag) so a hijacked
       # or repointed tag can't inject code — the version is in the trailing comment.
@@ -34,6 +38,43 @@ jobs:
             echo "::error::${{ github.ref_name }} points at a commit that is not on main — refusing to release."
             exit 1
           fi
+
+      # The release body comes from CHANGELOG.md.
+      - name: Extract release notes
+        id: notes
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#tablo-v}"
+          # Print the body of the "## [<version>]" section, stopping at the next
+          # one. Blank lines top and bottom are trimmed; the heading itself (and
+          # so its date) never reaches the release page. `\r` is stripped because
+          # checkout on the Windows runner can hand us CRLF.
+          body=$(awk -v v="$version" '
+            { sub(/\r$/, "") }
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { lines[++n] = $0; if (NF) { if (!first) first = n; last = n } }
+            END { if (first) for (i = first; i <= last; i++) print lines[i] }
+          ' CHANGELOG.md)
+          if [ -z "$body" ]; then
+            echo "::error::CHANGELOG.md has no '## [$version]' section — add one before tagging."
+            exit 1
+          fi
+          # A line equal to the delimiter would close the value early and let the
+          # rest of the file forge step outputs.
+          if printf '%s\n' "$body" | grep -qx 'CHANGELOG_EOF'; then
+            echo "::error::CHANGELOG.md contains the output delimiter CHANGELOG_EOF"
+            exit 1
+          fi
+          {
+            echo 'body<<CHANGELOG_EOF'
+            printf '%s\n' "$body"
+            echo
+            echo '---'
+            echo
+            echo 'Download the installer for your platform below. Once installed, tablo updates itself automatically.'
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
 
   release:
     needs: guard
@@ -109,7 +150,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
-          releaseBody: "Download the installer for your platform below. Once installed, tablo updates itself automatically."
+          releaseBody: ${{ needs.guard.outputs.notes }}
           releaseDraft: false
           # Must NOT be a prerelease: the updater endpoint reads
           # releases/latest/download/latest.json, which only points at the latest

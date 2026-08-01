@@ -112,6 +112,9 @@ pub struct Snapshot {
     /// so the dashboard can offer a one-tap install. Populated in the emit path,
     /// not by the scan itself — `scan` always leaves it None.
     pub update_available: Option<String>,
+    /// Release notes for the running build, unless already seen. Set in the emit
+    /// path — `scan` always leaves it None.
+    pub whats_new: Option<crate::whatsnew::ReleaseNotes>,
     /// Whether AeroSpace was detected this run — gates the "Follow AeroSpace"
     /// toggle so it only appears to users actually running AeroSpace.
     pub aerospace_available: bool,
@@ -144,6 +147,7 @@ impl Default for Snapshot {
             telemetry_enabled: true,
             auto_update: true,
             update_available: None,
+            whats_new: None,
             aerospace_available: false,
             jump_supported: cfg!(target_os = "macos"),
             approvals_supported: !cfg!(target_os = "windows"),
@@ -1050,6 +1054,7 @@ pub fn scan(
         telemetry_enabled: cfg.telemetry_enabled,
         auto_update: cfg.auto_update,
         update_available: None,
+        whats_new: None,
         aerospace_available: crate::aerospace::available(),
         jump_supported: cfg!(target_os = "macos"),
         approvals_supported: !cfg!(target_os = "windows"),

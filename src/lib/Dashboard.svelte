@@ -31,6 +31,7 @@
     setTelemetryEnabled,
     setAutoUpdate,
     installUpdate,
+    dismissWhatsNew,
     setPanelShortcutEnabled,
     codexLocateStatus,
     setCodexLocateEnabled,
@@ -126,6 +127,7 @@
   let aerospaceFollow = $derived(snap.aerospaceFollow);
   let telemetryEnabled = $derived(snap.telemetryEnabled);
   let autoUpdate = $derived(snap.autoUpdate);
+  let whatsNew = $derived(snap.whatsNew);
   // Only set while auto-update is off and the background check found something.
   let updateAvailable = $derived(snap.updateAvailable);
   let aerospaceAvailable = $derived(snap.aerospaceAvailable);
@@ -272,6 +274,29 @@
     {#if updateError}
       <p class="update-err">{updateError}</p>
     {/if}
+  {/if}
+
+  {#if whatsNew}
+    <div class="wn" transition:fade={{ duration: 140 }}>
+      <div class="wn-head">
+        <span class="wn-led"></span>
+        <span class="wn-txt">Updated to <b>v{whatsNew.version}</b></span>
+        <button class="wn-close" title="Dismiss" aria-label="Dismiss release notes" onclick={() => dismissWhatsNew().catch(() => {})}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+      {#each whatsNew.groups as g}
+        {#if g.heading}<div class="wn-h">{g.heading}</div>{/if}
+        <ul class="wn-list">
+          {#each g.items as item}
+            <li>{item}</li>
+          {/each}
+        </ul>
+      {/each}
+    </div>
   {/if}
 
   {#if view === "dashboard"}
@@ -1134,6 +1159,81 @@
   .update-act:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+  /* what's new — sage, not amber: the update already happened, nothing to act on. */
+  .wn {
+    margin-bottom: 18px;
+    padding: 12px 14px 14px;
+    border: 1px solid color-mix(in srgb, var(--sage) 34%, var(--border));
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--sage) 7%, var(--bg-raised));
+  }
+  .wn-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .wn-led {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--sage);
+    box-shadow: 0 0 8px var(--sage);
+    flex-shrink: 0;
+  }
+  .wn-txt {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--ink-dim);
+  }
+  .wn-txt b {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .wn-close {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+  }
+  .wn-close:hover {
+    color: var(--ink);
+    background: var(--bg-inset);
+  }
+  .wn-close svg {
+    width: 13px;
+    height: 13px;
+  }
+  .wn-h {
+    margin: 12px 0 4px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--sage);
+  }
+  .wn-list {
+    margin: 0;
+    padding-left: 17px;
+    list-style: disc;
+  }
+  .wn-list li {
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+  }
+  .wn-list li::marker {
+    color: color-mix(in srgb, var(--sage) 70%, transparent);
   }
   .update-err {
     margin: -10px 0 18px;

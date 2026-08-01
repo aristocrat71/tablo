@@ -31,6 +31,7 @@ export const setTelemetryEnabled = (enabled: boolean) =>
 export const setAutoUpdate = (enabled: boolean) => invoke("set_auto_update", { enabled });
 // Resolves only on failure — a successful install restarts the app.
 export const installUpdate = () => invoke<void>("install_update");
+export const dismissWhatsNew = () => invoke("dismiss_whats_new");
 export const setPanelShortcutEnabled = (enabled: boolean) =>
   invoke("set_panel_shortcut_enabled", { enabled });
 export const togglePanel = () => invoke("toggle_panel");
