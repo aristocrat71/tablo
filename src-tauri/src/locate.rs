@@ -579,6 +579,15 @@ fn raise_window(
         .or_else(|| loc.pid.and_then(walk_to_app))
         .or_else(|| gui_app(loc));
 
+    // A live session's host app is by definition already running, so a resolved
+    // name that ISN'T running is a stale guess — and everything below (`open -a`,
+    // and any AppleScript `tell application`) cold-LAUNCHES a closed app rather
+    // than no-oping. Refuse here instead of launching the wrong app.
+    let host = match host {
+        Some(h) if !app_running(&h) => return Raise::Missed(format!("{h} is not running (stale location)")),
+        h => h,
+    };
+
     // Only if the host itself is a tab-scriptable terminal, focus the EXACT tab by
     // tty (so multiple tabs in that app don't all match). Never match a *different*
     // running terminal — that's what hijacked us to a dead Terminal tab.
@@ -774,6 +783,27 @@ fn activate_app(name: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Whether an app with this name is running. Matched two ways because host
+/// names come from two sources: the bundle path ("<name>.app/" in some
+/// process's argv — covers apps whose process name differs, e.g. Zed's "zed"),
+/// and the exact process name case-insensitively (covers non-bundle installs,
+/// e.g. a Homebrew kitty at /opt/homebrew/bin/kitty).
+#[cfg(target_os = "macos")]
+fn app_running(name: &str) -> bool {
+    let by_bundle = Command::new("pgrep")
+        .arg("-f")
+        .arg(format!("{name}.app/"))
+        .output()
+        .map(|o| !o.stdout.is_empty())
+        .unwrap_or(false);
+    by_bundle
+        || Command::new("pgrep")
+            .args(["-xi", name])
+            .output()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(false)
 }
 
 /// Whether a scriptable terminal is running (so we don't launch it by scripting).
@@ -992,10 +1022,14 @@ fn tmux_socket(tmux: &str) -> Option<String> {
 /// vars (`ZED_TERM`, `TERM_PROGRAM`) are inherited from the tmux server — a
 /// server first started under Zed marks every later pane `ZED_TERM=true`, even
 /// panes opened from Terminal — so they can't identify the host; there we fall
-/// straight to the running-terminal heuristic. Outside tmux they're reliable.
+/// straight to the running-terminal heuristic. Only a session that was never in
+/// tmux gets the env mapping: the cached `$TMUX` must be empty too, because a
+/// pane that merely failed to *resolve* at click time (dead pid, closed pane)
+/// still carries the server's leaked env naming the app the server was born
+/// under, not the terminal in front of the user.
 #[cfg(target_os = "macos")]
 fn gui_app(loc: &SessionLocation) -> Option<String> {
-    if loc.tmux_pane.is_empty() {
+    if loc.tmux.is_empty() && loc.tmux_pane.is_empty() {
         if loc.zed_term == "true" {
             return Some("Zed".into());
         }
