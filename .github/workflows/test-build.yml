@@ -1,0 +1,45 @@
+name: test-build
+
+# Manually-triggered test build: produces an unsigned Windows installer from any
+# branch and uploads it as a run artifact — no tag, no release, no updater
+# signature. For verifying fixes on a real machine before cutting a release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      # Actions pinned to full commit SHAs, matching release.yml.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # Updater artifacts are skipped: their signing key lives in the gated
+      # `release` environment and a sideload test doesn't need them. NSIS only —
+      # the -setup.exe is the quickest to sideload and what install.ps1 prefers.
+      - name: Build NSIS installer
+        shell: bash
+        run: bun run tauri build --config '{"bundle":{"targets":["nsis"],"createUpdaterArtifacts":false}}'
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tablo-windows-setup
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

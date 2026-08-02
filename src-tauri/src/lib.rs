@@ -462,8 +462,11 @@ fn install_dashboard_close(app: &AppHandle, window: &WebviewWindow) {
     });
 }
 
+// async so it runs off the main thread: on Windows, building a webview window
+// from a sync command (main thread) deadlocks the event loop — window creation
+// dispatches to that same thread and blocks on it (wry#583).
 #[tauri::command]
-fn open_dashboard(app: AppHandle) -> Result<(), String> {
+async fn open_dashboard(app: AppHandle) -> Result<(), String> {
     // Becoming a Regular app puts Tablo in the Dock + Cmd+Tab while the dashboard
     // is up; closing it (Esc / close button) flips back to Accessory.
     set_switcher_visible(&app, true);
@@ -922,7 +925,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "toggle_widget" => toggle_widget(app, &toggle_item),
             "dashboard" => {
-                let _ = open_dashboard(app.clone());
+                // Tray handlers run on the main thread too — same deadlock risk.
+                tauri::async_runtime::spawn(open_dashboard(app.clone()));
             }
             "quit" => app.exit(0),
             _ => {}
