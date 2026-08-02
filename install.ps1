@@ -30,10 +30,17 @@ Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $out -UseBasicParsin
 # "<file>.sha256" is published next to each release asset.
 Say "Verifying checksum..."
 try {
-  $sumText = (Invoke-WebRequest -Uri "$($asset.browser_download_url).sha256" -UseBasicParsing).Content
+  $resp = Invoke-WebRequest -Uri "$($asset.browser_download_url).sha256" -UseBasicParsing
 } catch {
   Remove-Item $out -Force -ErrorAction SilentlyContinue
   throw "no published checksum for $($asset.name) - refusing to install"
+}
+# GitHub serves the .sha256 as octet-stream, so .Content arrives as byte[] —
+# decode it, or .Trim() explodes on System.Byte.
+$sumText = if ($resp.Content -is [byte[]]) {
+  [System.Text.Encoding]::ASCII.GetString($resp.Content)
+} else {
+  [string]$resp.Content
 }
 $expected = ($sumText.Trim() -split '\s+')[0].ToLower()
 $actual   = (Get-FileHash -Path $out -Algorithm SHA256).Hash.ToLower()

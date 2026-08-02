@@ -58,7 +58,7 @@ case "$os" in
     tmp="$(mktemp -d)"
     trap 'hdiutil detach "$tmp/mnt" -quiet 2>/dev/null || true; rm -rf "$tmp"' EXIT
     say "Downloading $(basename "$url")…"
-    curl -fsSL "$url" -o "$tmp/tablo.dmg"
+    curl -fSL --progress-bar "$url" -o "$tmp/tablo.dmg"
     verify_sha "$tmp/tablo.dmg" "$url"
     mkdir -p "$tmp/mnt"
     hdiutil attach "$tmp/tablo.dmg" -nobrowse -quiet -mountpoint "$tmp/mnt"
@@ -81,7 +81,7 @@ case "$os" in
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
     say "Downloading $(basename "$url")…"
-    curl -fsSL "$url" -o "$tmp/tablo.AppImage"
+    curl -fSL --progress-bar "$url" -o "$tmp/tablo.AppImage"
     verify_sha "$tmp/tablo.AppImage" "$url"
     dest="${HOME}/.local/bin"
     mkdir -p "$dest"
