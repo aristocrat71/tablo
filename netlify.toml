@@ -1,0 +1,17 @@
+# Netlify build config for the marketing site in tablo-website/.
+#
+# The build script runs scripts/ensure-root-tsconfig.mjs first, which stubs the
+# repo root's gitignored .svelte-kit/tsconfig.json on a fresh CI clone (Astro's
+# bundler walks up to the root tsconfig and aborts on its missing `extends`
+# target). The stub is only written when absent, so a local `netlify build`
+# never clobbers the real generated file.
+[build]
+  base = "tablo-website"
+  command = "bun run build"
+  # NOTE: in netlify.toml, publish is relative to `base` — so this resolves to
+  # tablo-website/dist (do NOT prefix with tablo-website/ or it doubles).
+  publish = "dist"
+
+[build.environment]
+  # astro 7 / package.json engines require node >= 22.12.
+  NODE_VERSION = "22"
