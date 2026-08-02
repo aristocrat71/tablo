@@ -12,6 +12,43 @@ copy of tablo sees when it checks for updates. A tag with no matching section
 here fails the release before anything is built. Write the entry as you merge,
 not at tag time.
 
+## [2.1.2] - 2026-08-02
+
+2.1.2 hotfixes the windows installer verification step.
+
+### Added
+
+**2.1.0 changelog:**
+- **What's new after an update.** Auto-update used to restart tablo without
+  saying anything. It now announces itself once, and the dashboard shows this
+  release's notes until you dismiss them.
+- **Notification sound.** The waiting toast now plays a soft chime. **On by
+  default** — existing installs will start making a sound after updating. Turn
+  it off under Settings → Notification sound.
+- **Cat animations toggle.** Settings → Cat animations. Off holds the cat on a
+  still pose with a steady glow; the state colour still tells you what's
+  happening.
+- **Automatic updates setting.** On by default. Turning it off doesn't stop
+  tablo looking for releases — it stops it applying them: you get a
+  notification and a one-tap Install button in Settings instead of a silent
+  background upgrade.
+
+### Changed
+
+- The dashboard window is built when you first open it rather than at launch,
+  which drops idle memory by roughly one webview process.
+
+### Fixed
+
+- The panel and the waiting toast no longer slide underneath the macOS Dock.
+  Both are now clamped to the screen's work area instead of the full display,
+  so their lower rows stay visible and clickable.
+- Jump to session resolves from the session registry and re-resolves at click
+  time, so it no longer targets a window that has since moved or closed.
+- Windows releases now publish their `.sha256` checksum sidecars. v2.0.0
+  shipped without them because the workflow's path matcher didn't handle
+  backslash separators, which broke checksum verification in `install.ps1`.
+
 ## [2.1.1] - 2026-08-01
 
 2.1.1 hotfixes a flaky jump condition and false fable context window
