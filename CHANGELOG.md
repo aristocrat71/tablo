@@ -12,9 +12,9 @@ copy of tablo sees when it checks for updates. A tag with no matching section
 here fails the release before anything is built. Write the entry as you merge,
 not at tag time.
 
-## [2.1.2] - 2026-08-02
+## [2.1.3] - 2026-08-02
 
-2.1.2 hotfixes the windows installer verification step.
+2.1.3 hotfixes the windows installer verification step.
 
 ### Added
 
