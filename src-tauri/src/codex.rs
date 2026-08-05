@@ -102,6 +102,13 @@ pub fn ingest(state: &mut FileState, lines: &[String]) {
             Ok(v) => v,
             Err(_) => continue, // malformed / partial line (Step 1.3)
         };
+        // Turn events and agent output are conversation; session_meta /
+        // turn_context are bookkeeping (see scanner::ingest's same guard).
+        if matches!(v.get("type").and_then(|x| x.as_str()), Some("event_msg") | Some("response_item")) {
+            if let Some(ts) = str_field(&v, "timestamp").and_then(crate::scanner::parse_iso_ms) {
+                state.last_convo = state.last_convo.max(ts);
+            }
+        }
         let payload = v.get("payload");
         match v.get("type").and_then(|x| x.as_str()) {
             // Session identity + launch cwd ride the opening meta line.
@@ -364,6 +371,22 @@ pub fn newest_rollout() -> Option<PathBuf> {
 mod tests {
     use super::*;
     use crate::scanner::read_all_lines;
+
+    #[test]
+    fn turn_events_refresh_conversational_activity_meta_does_not() {
+        let mut st = FileState::default();
+        ingest(
+            &mut st,
+            &[r#"{"timestamp":"2026-08-02T07:00:00Z","type":"event_msg","payload":{"type":"task_started"}}"#.into()],
+        );
+        let t0 = st.last_convo;
+        assert!(t0 > 0);
+        ingest(
+            &mut st,
+            &[r#"{"timestamp":"2026-08-02T07:09:00Z","type":"turn_context","payload":{"model":"gpt-5.5"}}"#.into()],
+        );
+        assert_eq!(st.last_convo, t0); // bookkeeping line — clock unmoved
+    }
 
     #[test]
     fn summarize_shell_and_patch() {
