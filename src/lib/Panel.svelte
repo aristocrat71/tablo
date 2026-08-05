@@ -244,8 +244,9 @@
           class="session-pct"
           class:warn={c.session.level === "warn"}
           class:crit={c.session.level === "crit"}
+          class:unresolved={!c.session.ctxResolved}
         >
-          {pct(c.session.pct)}
+          {c.session.ctxResolved ? pct(c.session.pct) : "irresolvable"}
         </span>
       {:else}
         <span class="session-badge ask">WAITING</span>
@@ -261,11 +262,13 @@
     {/if}
 
     {#if c.session}
-      <div class="ctx">
+      <div class="ctx" class:unresolved={!c.session.ctxResolved}>
         <div class="ctx-track">
           <div class="ctx-fill {c.session.level}" style="width:{c.session.pct}%"></div>
         </div>
-        <span class="ctx-cap">{tokens(c.session.used)} / {tokens(c.session.limit)}</span>
+        <span class="ctx-cap"
+          >{tokens(c.session.used)} / {c.session.ctxResolved ? tokens(c.session.limit) : "?"}</span
+        >
       </div>
     {/if}
 
@@ -674,6 +677,16 @@
   .session-pct.crit {
     color: var(--coral);
     text-shadow: 0 0 12px color-mix(in srgb, var(--coral) 55%, transparent);
+  }
+  /* window unknown — no number to show, and never a state color */
+  .session-pct.unresolved {
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--ink-faint);
+  }
+  .ctx.unresolved {
+    opacity: 0.5;
+    filter: grayscale(1);
   }
   /* card footer: jump pinned left, read-only mode badge pinned right */
   .card-foot {

@@ -49,6 +49,11 @@ pub struct SessionView {
     pub mode: String,
     /// "ok" | "warn" | "crit" per the configured thresholds.
     pub level: String,
+    /// Whether the context window (the denominator behind `pct`/`limit`) was
+    /// actually resolved from real signals. False = it's only a configured
+    /// fallback: the UI greys the meter and shows no percentage, and `pct` is
+    /// forced to 0 / `level` to "ok" so a guess can never alarm.
+    pub ctx_resolved: bool,
     /// Last conversational activity (user/agent line, from the line's own
     /// timestamp), ms since epoch; transcript mtime until one is seen.
     pub last_active: i64,
@@ -406,15 +411,17 @@ fn native_extended(model_lower: &str) -> bool {
 /// 2. A `window_hint` from `~/.claude.json` — the project's last-used model, or
 ///    the user's global lean — the reliable on-disk answer for the ambiguous
 ///    sub-standard case.
-/// 3. Otherwise fall back to `default_context_limit`.
-/// All sizes come from config.
+/// 3. Otherwise the window is **unresolved** (`resolved` = false): the returned
+///    limit is only the configured fallback and the UI must not present a
+///    percentage computed from it as fact.
+/// All sizes come from config. Returns (limit, is_ext, resolved).
 fn resolve_limit(
     model: &str,
     used: u64,
     sticky_ext: bool,
     window_hint: Option<bool>,
     cfg: &Config,
-) -> (u64, bool) {
+) -> (u64, bool, bool) {
     let m = model.to_lowercase();
     let marker = cfg
         .extended_window_markers
@@ -422,14 +429,14 @@ fn resolve_limit(
         .any(|mk| !mk.is_empty() && m.contains(&mk.to_lowercase()));
     let certain_ext = sticky_ext || marker || native_extended(&m) || used > cfg.standard_context_limit;
     let is_ext = certain_ext || window_hint == Some(true);
-    let limit = if is_ext {
-        cfg.extended_context_limit
+    let (limit, resolved) = if is_ext {
+        (cfg.extended_context_limit, true)
     } else if window_hint == Some(false) {
-        cfg.standard_context_limit // definitively on the standard window
+        (cfg.standard_context_limit, true) // definitively on the standard window
     } else {
-        cfg.default_context_limit // no signal at all — configured fallback
+        (cfg.default_context_limit, false) // no signal at all — a guess, flagged
     };
-    (limit, is_ext)
+    (limit, is_ext, resolved)
 }
 
 /// Claude Code names each project slug dir after the launch cwd, encoding
@@ -999,10 +1006,11 @@ pub fn scan(
                         .copied();
                     // Per-project record wins; else the user's global lean.
                     let window_hint = project_ext.or(claude_cfg.global_ext);
-                    let (limit, is_ext) = resolve_limit(&st.model, st.used, st.is_1m, window_hint, cfg);
+                    let (limit, is_ext, ctx_resolved) =
+                        resolve_limit(&st.model, st.used, st.is_1m, window_hint, cfg);
                     st.is_1m = is_ext;
                     let st = &*st; // reborrow immutable for the view build
-                    let pct = pct_of(st.used, limit);
+                    let pct = if ctx_resolved { pct_of(st.used, limit) } else { 0.0 };
                     let session_id = if st.session_id.is_empty() {
                         path.file_stem().and_then(|s| s.to_str()).unwrap_or("session").to_string()
                     } else {
@@ -1026,7 +1034,8 @@ pub fn scan(
                         model: st.model.clone(),
                         state: "run".into(), // Phase 4 will surface "ask"
                         mode: display_mode(&st.mode).into(),
-                        level: level_for(pct, cfg).into(),
+                        level: if ctx_resolved { level_for(pct, cfg).into() } else { "ok".into() },
+                        ctx_resolved,
                         last_active: if st.last_convo > 0 { st.last_convo } else { mtime },
                         title: st.title.clone(),
                         activity: st.activity.clone(),
@@ -1055,10 +1064,12 @@ pub fn scan(
                 continue;
             }
             let (project, root) = crate::codex::resolve_project(&st.cwd);
-            // Codex reports the window verbatim; fall back to config only until the
-            // first token_count / task_started lands.
-            let limit = if st.ctx_window > 0 { st.ctx_window } else { cfg.codex_context_limit };
-            let pct = pct_of(st.used, limit);
+            // Codex reports the window verbatim; until the first token_count /
+            // task_started lands it's unresolved (config value = display fallback
+            // only, never presented as a percentage).
+            let ctx_resolved = st.ctx_window > 0;
+            let limit = if ctx_resolved { st.ctx_window } else { cfg.codex_context_limit };
+            let pct = if ctx_resolved { pct_of(st.used, limit) } else { 0.0 };
             let session_id = if st.session_id.is_empty() {
                 crate::codex::session_id_from_path(&path)
                     .unwrap_or_else(|| path.file_stem().and_then(|s| s.to_str()).unwrap_or("session").to_string())
@@ -1077,7 +1088,8 @@ pub fn scan(
                 model: st.model.clone(),
                 state: "run".into(),
                 mode: crate::codex::display_mode(&st.mode).into(),
-                level: level_for(pct, cfg).into(),
+                level: if ctx_resolved { level_for(pct, cfg).into() } else { "ok".into() },
+                ctx_resolved,
                 last_active: if st.last_convo > 0 { st.last_convo } else { mtime },
                 title: st.title.clone(),
                 activity: st.activity.clone(),
@@ -1258,18 +1270,27 @@ mod tests {
         // Fable writes no [1m] marker and ~/.claude.json therefore hints
         // "standard" for its project — with usage still under 200k, the model
         // name alone must pick the 1M window.
-        let (limit, ext) = resolve_limit("claude-fable-5", 170_000, false, Some(false), &cfg);
+        let (limit, ext, resolved) = resolve_limit("claude-fable-5", 170_000, false, Some(false), &cfg);
         assert_eq!(limit, cfg.extended_context_limit);
         assert!(ext);
+        assert!(resolved);
         // A marker-less opt-in model with the same hint stays on the standard
         // window (its 1M variant would carry [1m]).
-        let (limit, ext) = resolve_limit("claude-opus-5", 100_000, false, Some(false), &cfg);
+        let (limit, ext, resolved) = resolve_limit("claude-opus-5", 100_000, false, Some(false), &cfg);
         assert_eq!(limit, cfg.standard_context_limit);
         assert!(!ext);
+        assert!(resolved);
         // The marker path is untouched.
-        let (limit, ext) = resolve_limit("claude-opus-5[1m]", 100_000, false, Some(false), &cfg);
+        let (limit, ext, resolved) = resolve_limit("claude-opus-5[1m]", 100_000, false, Some(false), &cfg);
         assert_eq!(limit, cfg.extended_context_limit);
         assert!(ext);
+        assert!(resolved);
+        // No marker, no hint, sub-standard usage: nothing on disk answers the
+        // question — the window must be flagged unresolved, never guessed as fact.
+        let (limit, ext, resolved) = resolve_limit("claude-opus-5", 100_000, false, None, &cfg);
+        assert_eq!(limit, cfg.default_context_limit);
+        assert!(!ext);
+        assert!(!resolved);
     }
 
     #[test]

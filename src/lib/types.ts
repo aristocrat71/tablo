@@ -18,6 +18,9 @@ export interface SessionView {
   state: SessionState;
   mode: SessionMode; // read-only permission-mode badge
   level: Level;
+  // False = the context window couldn't be resolved from real signals; pct/limit
+  // are fallback-derived and must not be shown — grey the meter instead.
+  ctxResolved: boolean;
   lastActive: number; // ms epoch
   title: string | null; // Claude Code's AI session title (disambiguates rows)
   activity: string; // live one-liner: "editing scanner.rs", "" if unknown
