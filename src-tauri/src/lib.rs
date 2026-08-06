@@ -542,15 +542,29 @@ fn end_drag(app: AppHandle, state: State<'_, AppState>, x: i32, y: i32) -> Resul
 
 ///Allows the rect to not overlap with MacOS dock area
 fn work_area(window: &WebviewWindow) -> Option<(PhysicalPosition<i32>, tauri::PhysicalSize<u32>)> {
-    let mon = window.current_monitor().ok().flatten()?;
+    // A fully off-screen window has no current monitor — fall back to the
+    // primary one so placement can rescue it rather than give up.
+    let mon = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())?;
     let wa = mon.work_area();
     Some((wa.position, wa.size))
 }
 
 fn position_avatar(avatar: &WebviewWindow, cfg: &Config) {
     if let (Some(x), Some(y)) = (cfg.avatar_x, cfg.avatar_y) {
-        let _ = avatar.set_position(LogicalPosition::new(x as f64, y as f64));
-        return;
+        if avatar.set_position(LogicalPosition::new(x as f64, y as f64)).is_ok() {
+            // A restored position can sit on no connected screen (Time Machine
+            // migration to different display geometry, an unplugged monitor).
+            // macOS reports no screen for a fully off-screen window — treat the
+            // saved spot as invalid then and fall through to the default corner
+            // instead of an invisible cat.
+            if avatar.current_monitor().ok().flatten().is_some() {
+                return;
+            }
+        }
     }
     // Default: tucked into the bottom-right of the current monitor's work area,
     if let Some((wpos, wsz)) = work_area(avatar) {
