@@ -157,6 +157,19 @@ pub fn registry_session_ids() -> std::collections::HashSet<String> {
         .collect()
 }
 
+/// Session ids of ALL registry rows, any kind — the claude processes that are
+/// (as far as the registry knows) still running. A clean exit (Ctrl+C) removes
+/// the row, so absence means the session is over. None when the registry dir
+/// doesn't exist (pre-2.1 Claude Code), so the scanner falls back to time-based
+/// presence instead of dropping everything.
+pub fn live_session_ids() -> Option<std::collections::HashSet<String>> {
+    let dir = dirs::home_dir().map(|h| h.join(".claude").join("sessions"))?;
+    if !dir.is_dir() {
+        return None;
+    }
+    Some(read_registry().into_iter().map(|r| r.session_id).collect())
+}
+
 /// `(pid, startedAt ms)` for a session, from the registry.
 fn registry_entry_for(session_id: &str) -> Option<(i32, i64)> {
     read_registry()

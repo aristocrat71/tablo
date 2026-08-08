@@ -573,11 +573,18 @@
         <div class="gauge">
           <div class="lab">
             <span>context</span>
-            <span class="val" class:warn={c.session.level === "warn"} class:crit={c.session.level === "crit"}>
-              {pct(c.session.pct)}
+            <span
+              class="val"
+              class:warn={c.session.level === "warn"}
+              class:crit={c.session.level === "crit"}
+              class:unresolved={!c.session.ctxResolved}
+            >
+              {c.session.ctxResolved ? pct(c.session.pct) : "irresolvable"}
             </span>
           </div>
-          <div class="tk"><i class={c.session.level} style="width:{c.session.pct}%"></i></div>
+          <div class="tk" class:unresolved={!c.session.ctxResolved}>
+            <i class={c.session.level} style="width:{c.session.pct}%"></i>
+          </div>
         </div>
       {/if}
       {#if c.session?.canJump}
@@ -1621,6 +1628,15 @@
   }
   .drow .gauge .lab .val.crit {
     color: var(--coral);
+  }
+  /* window unknown — no number to show, and never a state color */
+  .drow .gauge .lab .val.unresolved {
+    font-weight: 500;
+    color: var(--ink-faint);
+  }
+  .drow .gauge .tk.unresolved {
+    opacity: 0.5;
+    filter: grayscale(1);
   }
   .drow .gauge .tk {
     height: 7px;

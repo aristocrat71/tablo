@@ -49,7 +49,13 @@ pub struct SessionView {
     pub mode: String,
     /// "ok" | "warn" | "crit" per the configured thresholds.
     pub level: String,
-    /// Transcript mtime, ms since epoch.
+    /// Whether the context window (the denominator behind `pct`/`limit`) was
+    /// actually resolved from real signals. False = it's only a configured
+    /// fallback: the UI greys the meter and shows no percentage, and `pct` is
+    /// forced to 0 / `level` to "ok" so a guess can never alarm.
+    pub ctx_resolved: bool,
+    /// Last conversational activity (user/agent line, from the line's own
+    /// timestamp), ms since epoch; transcript mtime until one is seen.
     pub last_active: i64,
     /// Claude Code's AI-generated one-line title for the session (window-render).
     /// Disambiguates same-project sessions; None until Claude Code writes one.
@@ -204,6 +210,46 @@ pub struct FileState {
     /// monotonic sequence source, for the dashboard terminal.
     pub(crate) log: Vec<ActivityEntry>,
     pub(crate) seq: u64,
+    /// Epoch ms of the newest *conversational* line (Claude user/assistant;
+    /// Codex event/response), read from the line's own timestamp. Metadata
+    /// appends (ai-title, mode, permission-mode) don't move it — Claude Code
+    /// batch-flushes those to idle sessions, bumping mtime with no real
+    /// activity, so presence and waiting-clear judge silence by this instead.
+    /// 0 = none seen yet (fall back to mtime).
+    pub(crate) last_convo: i64,
+}
+
+/// Epoch ms from a transcript line's ISO-8601 UTC timestamp
+/// ("2026-08-02T07:43:00.123Z"). Fixed-format — both agents write Zulu; None on
+/// anything else so callers fall back to mtime.
+pub(crate) fn parse_iso_ms(s: &str) -> Option<i64> {
+    let s = s.trim();
+    let b = s.as_bytes();
+    if b.len() < 19 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' || b[13] != b':' || b[16] != b':' {
+        return None;
+    }
+    let num = |r: std::ops::Range<usize>| s.get(r).and_then(|x| x.parse::<i64>().ok());
+    let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
+    let (h, mi, sec) = (num(11..13)?, num(14..16)?, num(17..19)?);
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || sec > 60 {
+        return None;
+    }
+    let mut ms = 0i64;
+    if b.len() > 19 && b[19] == b'.' {
+        let frac: String = s[20..].chars().take_while(|c| c.is_ascii_digit()).collect();
+        let take = frac.len().min(3);
+        if take > 0 {
+            ms = frac[..take].parse::<i64>().ok()? * [100, 10, 1][take - 1];
+        }
+    }
+    // Civil date → days since epoch (Howard Hinnant's days_from_civil).
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = if y2 >= 0 { y2 } else { y2 - 399 } / 400;
+    let yoe = y2 - era * 400;
+    let doy = (153 * ((mo + 9) % 12) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days * 86_400_000 + (h * 3600 + mi * 60 + sec) * 1000 + ms)
 }
 
 pub fn now_ms() -> i64 {
@@ -365,15 +411,17 @@ fn native_extended(model_lower: &str) -> bool {
 /// 2. A `window_hint` from `~/.claude.json` — the project's last-used model, or
 ///    the user's global lean — the reliable on-disk answer for the ambiguous
 ///    sub-standard case.
-/// 3. Otherwise fall back to `default_context_limit`.
-/// All sizes come from config.
+/// 3. Otherwise the window is **unresolved** (`resolved` = false): the returned
+///    limit is only the configured fallback and the UI must not present a
+///    percentage computed from it as fact.
+/// All sizes come from config. Returns (limit, is_ext, resolved).
 fn resolve_limit(
     model: &str,
     used: u64,
     sticky_ext: bool,
     window_hint: Option<bool>,
     cfg: &Config,
-) -> (u64, bool) {
+) -> (u64, bool, bool) {
     let m = model.to_lowercase();
     let marker = cfg
         .extended_window_markers
@@ -381,14 +429,14 @@ fn resolve_limit(
         .any(|mk| !mk.is_empty() && m.contains(&mk.to_lowercase()));
     let certain_ext = sticky_ext || marker || native_extended(&m) || used > cfg.standard_context_limit;
     let is_ext = certain_ext || window_hint == Some(true);
-    let limit = if is_ext {
-        cfg.extended_context_limit
+    let (limit, resolved) = if is_ext {
+        (cfg.extended_context_limit, true)
     } else if window_hint == Some(false) {
-        cfg.standard_context_limit // definitively on the standard window
+        (cfg.standard_context_limit, true) // definitively on the standard window
     } else {
-        cfg.default_context_limit // no signal at all — configured fallback
+        (cfg.default_context_limit, false) // no signal at all — a guess, flagged
     };
-    (limit, is_ext)
+    (limit, is_ext, resolved)
 }
 
 /// Claude Code names each project slug dir after the launch cwd, encoding
@@ -474,6 +522,13 @@ fn ingest(state: &mut FileState, lines: &[String]) {
             Ok(v) => v,
             Err(_) => continue, // malformed/partial line — ignore (Step 1.3)
         };
+        // Only user/assistant lines are conversation; metadata lines (ai-title,
+        // mode, permission-mode…) carry no timestamp and must not refresh it.
+        if matches!(v.get("type").and_then(|x| x.as_str()), Some("user") | Some("assistant")) {
+            if let Some(ts) = v.get("timestamp").and_then(|x| x.as_str()).and_then(parse_iso_ms) {
+                state.last_convo = state.last_convo.max(ts);
+            }
+        }
         // cwd / branch / session id ride along on every event.
         if let Some(cwd) = v.get("cwd").and_then(|x| x.as_str()) {
             if !cwd.is_empty() {
@@ -838,12 +893,17 @@ fn tail_file(
         }
     }
 
+    // Silence is judged by the last *conversational* line when known, not mtime —
+    // Claude Code batch-appends metadata to idle sessions, bumping mtime with no
+    // real input, which must not reset these clocks.
+    let act = if st.last_convo > 0 { st.last_convo } else { mtime };
+
     // Early-cancel guard (see FileState::awaiting_first): a typed prompt with no
     // assistant line yet, and a transcript silent past the grace window, reads as
     // a Ctrl+C before the response — hand back to the user so the avatar drops out
     // of "working". Checked here (not in ingest) precisely because the tell is the
     // *absence* of new lines.
-    if st.awaiting_first && now - mtime > cancel_grace_ms {
+    if st.awaiting_first && now - act > cancel_grace_ms {
         st.activity_kind = "waiting".into();
         st.activity = "cancelled".into();
         st.awaiting_first = false;
@@ -852,8 +912,9 @@ fn tail_file(
     // Dedicated waiting-clear: a finished (waiting-on-you) session the user hasn't
     // returned to leaves the panel sooner than the general active window. It stays
     // in `seen` (tail state retained), so it reappears the instant they submit
-    // again — mtime bumps back under the threshold. Working sessions are untouched.
-    !(st.activity_kind == "waiting" && now - mtime > clear_waiting_ms)
+    // again — the activity clock bumps back under the threshold. Working sessions
+    // are untouched.
+    !(st.activity_kind == "waiting" && now - act > clear_waiting_ms)
 }
 
 /// One full pass: refresh tail state for every active transcript (Claude Code and
@@ -890,6 +951,10 @@ pub fn scan(
     let active_ms = cfg.active_window_secs as i64 * 1000;
     let mut sessions: Vec<SessionView> = Vec::new();
     let mut seen: Vec<PathBuf> = Vec::new();
+    // Claude processes currently running, per the session registry. None when the
+    // registry doesn't exist (pre-2.1 Claude Code) → fall back to time-based
+    // presence only.
+    let live_ids = crate::locate::live_session_ids();
 
     // ---- Claude Code: ~/.claude/projects/<slug>/*.jsonl ----
     if let Some(dir) = claude_dir {
@@ -923,6 +988,13 @@ pub fn scan(
                     }
 
                     let st = files.get_mut(&path).unwrap();
+                    // The mtime gate above is only a cheap pre-filter — once the
+                    // tail is parsed, presence is judged by conversational
+                    // recency, so a metadata flush can't resurrect a session
+                    // whose last real line is outside the window.
+                    if st.last_convo > 0 && now - st.last_convo > active_ms {
+                        continue;
+                    }
                     let slug = pdir.file_name().and_then(|s| s.to_str()).unwrap_or("");
                     let (project, root) = resolve_project(slug, &st.cwd);
                     // Definitive window from ~/.claude.json, keyed by the project
@@ -934,15 +1006,22 @@ pub fn scan(
                         .copied();
                     // Per-project record wins; else the user's global lean.
                     let window_hint = project_ext.or(claude_cfg.global_ext);
-                    let (limit, is_ext) = resolve_limit(&st.model, st.used, st.is_1m, window_hint, cfg);
+                    let (limit, is_ext, ctx_resolved) =
+                        resolve_limit(&st.model, st.used, st.is_1m, window_hint, cfg);
                     st.is_1m = is_ext;
                     let st = &*st; // reborrow immutable for the view build
-                    let pct = pct_of(st.used, limit);
+                    let pct = if ctx_resolved { pct_of(st.used, limit) } else { 0.0 };
                     let session_id = if st.session_id.is_empty() {
                         path.file_stem().and_then(|s| s.to_str()).unwrap_or("session").to_string()
                     } else {
                         st.session_id.clone()
                     };
+                    // The session's claude process is gone (exit / Ctrl+C removes
+                    // its registry row) — the session is over, drop it now rather
+                    // than letting it age out of the window.
+                    if live_ids.as_ref().is_some_and(|ids| !ids.contains(&session_id)) {
+                        continue;
+                    }
 
                     sessions.push(SessionView {
                         id: session_id,
@@ -955,8 +1034,9 @@ pub fn scan(
                         model: st.model.clone(),
                         state: "run".into(), // Phase 4 will surface "ask"
                         mode: display_mode(&st.mode).into(),
-                        level: level_for(pct, cfg).into(),
-                        last_active: mtime,
+                        level: if ctx_resolved { level_for(pct, cfg).into() } else { "ok".into() },
+                        ctx_resolved,
+                        last_active: if st.last_convo > 0 { st.last_convo } else { mtime },
                         title: st.title.clone(),
                         activity: st.activity.clone(),
                         activity_kind: st.activity_kind.clone(),
@@ -979,11 +1059,17 @@ pub fn scan(
                 continue;
             }
             let st = files.get(&path).unwrap();
+            // Same conversational-recency gate as the Claude walk.
+            if st.last_convo > 0 && now - st.last_convo > active_ms {
+                continue;
+            }
             let (project, root) = crate::codex::resolve_project(&st.cwd);
-            // Codex reports the window verbatim; fall back to config only until the
-            // first token_count / task_started lands.
-            let limit = if st.ctx_window > 0 { st.ctx_window } else { cfg.codex_context_limit };
-            let pct = pct_of(st.used, limit);
+            // Codex reports the window verbatim; until the first token_count /
+            // task_started lands it's unresolved (config value = display fallback
+            // only, never presented as a percentage).
+            let ctx_resolved = st.ctx_window > 0;
+            let limit = if ctx_resolved { st.ctx_window } else { cfg.codex_context_limit };
+            let pct = if ctx_resolved { pct_of(st.used, limit) } else { 0.0 };
             let session_id = if st.session_id.is_empty() {
                 crate::codex::session_id_from_path(&path)
                     .unwrap_or_else(|| path.file_stem().and_then(|s| s.to_str()).unwrap_or("session").to_string())
@@ -1002,8 +1088,9 @@ pub fn scan(
                 model: st.model.clone(),
                 state: "run".into(),
                 mode: crate::codex::display_mode(&st.mode).into(),
-                level: level_for(pct, cfg).into(),
-                last_active: mtime,
+                level: if ctx_resolved { level_for(pct, cfg).into() } else { "ok".into() },
+                ctx_resolved,
+                last_active: if st.last_convo > 0 { st.last_convo } else { mtime },
                 title: st.title.clone(),
                 activity: st.activity.clone(),
                 activity_kind: st.activity_kind.clone(),
@@ -1078,6 +1165,47 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    #[test]
+    fn iso_timestamps_parse_to_epoch_ms() {
+        assert_eq!(parse_iso_ms("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(parse_iso_ms("2000-03-01T00:00:00Z"), Some(951_868_800_000));
+        // Fractional seconds, 1–3 digits, scale to ms.
+        let base = parse_iso_ms("2026-08-02T07:43:00Z").unwrap();
+        assert_eq!(parse_iso_ms("2026-08-02T07:43:00.5Z"), Some(base + 500));
+        assert_eq!(parse_iso_ms("2026-08-02T07:43:00.123Z"), Some(base + 123));
+        assert_eq!(parse_iso_ms("junk"), None);
+        assert_eq!(parse_iso_ms(""), None);
+        assert_eq!(parse_iso_ms("2026-13-02T07:43:00Z"), None);
+    }
+
+    #[test]
+    fn metadata_lines_do_not_refresh_conversational_activity() {
+        let mut st = FileState::default();
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","timestamp":"2026-08-02T07:00:00Z","message":{"content":"hi"}}"#.into()],
+        );
+        let t0 = st.last_convo;
+        assert!(t0 > 0);
+        // The batch metadata flush Claude Code appends to idle sessions: bumps
+        // the file's mtime, but must not move the activity clock.
+        ingest(
+            &mut st,
+            &[
+                r#"{"type":"ai-title","aiTitle":"Some title","sessionId":"x"}"#.into(),
+                r#"{"type":"mode","sessionId":"x"}"#.into(),
+                r#"{"type":"permission-mode","permissionMode":"default","sessionId":"x"}"#.into(),
+            ],
+        );
+        assert_eq!(st.last_convo, t0);
+        // A real assistant line moves it forward.
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","timestamp":"2026-08-02T07:05:00Z","message":{"content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"#.into()],
+        );
+        assert_eq!(st.last_convo, t0 + 5 * 60_000);
+    }
+
     /// Smoke test against the real `~/.claude/projects` transcripts. Prints the
     /// computed snapshot so we can eyeball the Phase 1 data path end-to-end.
     #[test]
@@ -1142,18 +1270,27 @@ mod tests {
         // Fable writes no [1m] marker and ~/.claude.json therefore hints
         // "standard" for its project — with usage still under 200k, the model
         // name alone must pick the 1M window.
-        let (limit, ext) = resolve_limit("claude-fable-5", 170_000, false, Some(false), &cfg);
+        let (limit, ext, resolved) = resolve_limit("claude-fable-5", 170_000, false, Some(false), &cfg);
         assert_eq!(limit, cfg.extended_context_limit);
         assert!(ext);
+        assert!(resolved);
         // A marker-less opt-in model with the same hint stays on the standard
         // window (its 1M variant would carry [1m]).
-        let (limit, ext) = resolve_limit("claude-opus-5", 100_000, false, Some(false), &cfg);
+        let (limit, ext, resolved) = resolve_limit("claude-opus-5", 100_000, false, Some(false), &cfg);
         assert_eq!(limit, cfg.standard_context_limit);
         assert!(!ext);
+        assert!(resolved);
         // The marker path is untouched.
-        let (limit, ext) = resolve_limit("claude-opus-5[1m]", 100_000, false, Some(false), &cfg);
+        let (limit, ext, resolved) = resolve_limit("claude-opus-5[1m]", 100_000, false, Some(false), &cfg);
         assert_eq!(limit, cfg.extended_context_limit);
         assert!(ext);
+        assert!(resolved);
+        // No marker, no hint, sub-standard usage: nothing on disk answers the
+        // question — the window must be flagged unresolved, never guessed as fact.
+        let (limit, ext, resolved) = resolve_limit("claude-opus-5", 100_000, false, None, &cfg);
+        assert_eq!(limit, cfg.default_context_limit);
+        assert!(!ext);
+        assert!(!resolved);
     }
 
     #[test]
