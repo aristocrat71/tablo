@@ -1,0 +1,82 @@
+name: warm-cache
+
+# Warms the Rust dep cache on `main`: caches are ref-scoped and release.yml only
+# runs on tags, so without one here every release compiles ~565 crates cold.
+
+on:
+  push:
+    branches: [main]
+  # Actions evicts caches untouched for 7 days.
+  schedule:
+    - cron: "0 3 * * 1,4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-cache
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    strategy:
+      fail-fast: false
+      # Mirrors release.yml — a cache only helps the platform that built it.
+      matrix:
+        include:
+          - platform: macos-latest
+            rust-targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+            cargo-args: "--target aarch64-apple-darwin --target x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            rust-targets: ""
+            cargo-args: ""
+          - platform: windows-latest
+            rust-targets: ""
+            cargo-args: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      # Actions pinned to full commit SHAs, matching release.yml.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      # The only writer; `shared-key` must match release.yml and test-build.yml,
+      # which otherwise key on their own job name and miss this entry.
+      - name: Rust cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: "./src-tauri -> target"
+          shared-key: "tablo-build"
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            libssl-dev \
+            libxdo-dev
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # tauri-build resolves frontendDist (../build) while compiling.
+      - name: Build frontend
+        run: bun run build
+
+      # Deps only — rust-cache strips the workspace crate before saving, so
+      # bundling here would cache nothing extra.
+      - name: Build dependencies
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml ${{ matrix.cargo-args }}
