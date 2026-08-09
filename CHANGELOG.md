@@ -12,6 +12,54 @@ copy of tablo sees when it checks for updates. A tag with no matching section
 here fails the release before anything is built. Write the entry as you merge,
 not at tag time.
 
+## [2.1.5] - 2026-08-09
+
+2.1.5 fixes sessions that lingered after they ended, a cat that could start up
+off-screen, and context meters that showed a percentage they had guessed.
+
+### Added
+
+**2.1.0 changelog:**
+- **What's new after an update.** Auto-update used to restart tablo without
+  saying anything. It now announces itself once, and the dashboard shows this
+  release's notes until you dismiss them.
+- **Notification sound.** The waiting toast now plays a soft chime. **On by
+  default** — existing installs will start making a sound after updating. Turn
+  it off under Settings → Notification sound.
+- **Cat animations toggle.** Settings → Cat animations. Off holds the cat on a
+  still pose with a steady glow; the state colour still tells you what's
+  happening.
+- **Automatic updates setting.** On by default. Turning it off doesn't stop
+  tablo looking for releases — it stops it applying them: you get a
+  notification and a one-tap Install button in Settings instead of a silent
+  background upgrade.
+
+### Changed
+
+- The dashboard window is built when you first open it rather than at launch,
+  which drops idle memory by roughly one webview process.
+
+### Fixed
+
+- Sessions no longer look active when they aren't. Recency is now judged by the
+  last real conversational line rather than the transcript's file time, so the
+  housekeeping writes Claude Code makes to idle sessions stop resurrecting them
+  — and a session whose Claude process has exited drops off immediately instead
+  of aging out.
+- The context meter no longer presents a guessed percentage as fact. When the
+  window size can't be determined, the bar greys out and reads "irresolvable"
+  instead of dividing by a default limit; the raw token count stays visible, and
+  the meter fills in the moment the real window is known. A guessed window can
+  no longer colour the meter or alarm the cat.
+- A saved avatar position that no longer lands on any connected screen — after a
+  migration or unplugging a monitor — falls back to the default corner instead
+  of leaving the cat invisible.
+- The panel and the waiting toast no longer slide underneath the macOS Dock.
+  Both are now clamped to the screen's work area instead of the full display,
+  so their lower rows stay visible and clickable.
+- Jump to session resolves from the session registry and re-resolves at click
+  time, so it no longer targets a window that has since moved or closed.
+
 ## [2.1.4] - 2026-08-02
 
 2.1.4 hotfixes the windows installer verification step and bugged dashboard.
