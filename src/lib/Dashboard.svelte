@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { store } from "./state.svelte";
+  import { store, liveClock } from "./state.svelte";
   import { fade } from "svelte/transition";
-  import { pct, activityMark, terminalStatus } from "./format";
+  import { pct, activityMark, terminalStatus, elapsed } from "./format";
   import {
     prefs,
     byMode,
@@ -55,6 +55,7 @@
   };
 
   let snap = $derived(store.snap);
+  let clock = liveClock(() => snap.sessions.some((s) => s.subagents.length > 0));
 
   // Header tabs: the sessions dashboard vs. the settings pane.
   let view = $state<"dashboard" | "settings">("dashboard");
@@ -593,6 +594,30 @@
         </button>
       {/if}
     </div>
+
+    {#if c.session && c.session.subagents.length > 0}
+      {@const agents = c.session.subagents}
+      <div class="subs">
+        <button class="subs-head" aria-expanded={!prefs.collapseSubagents} onclick={() => toggleCollapse("subagents")}>
+          <span class="subs-caret" class:folded={prefs.collapseSubagents}>&#9662;</span>
+          <span class="subs-count">{agents.length} agent{agents.length > 1 ? "s" : ""}</span>
+          <span class="subs-sep">·</span>
+          <!-- oldest first: the whole fan-out's age -->
+          <span class="subs-age">{elapsed(agents[0].startedAt, clock.now)}</span>
+        </button>
+        {#if !prefs.collapseSubagents}
+          <ul class="subs-list">
+            {#each agents as a (a.id)}
+              <li class="subs-item">
+                <span class="subs-name">{a.name}</span>
+                {#if a.agentType}<span class="subs-type">{a.agentType}</span>{/if}
+                <span class="subs-time">{elapsed(a.startedAt, clock.now)}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+    {/if}
 
     {#if c.session}
       {@render terminal(c.session)}
@@ -1387,6 +1412,65 @@
     text-overflow: ellipsis;
     margin-top: 3px;
   }
+  /* running subagents */
+  .subs {
+    margin-top: 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .subs-head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--amber);
+    font: inherit;
+  }
+  .subs-caret {
+    font-size: 9px;
+    line-height: 1;
+    transition: transform 0.16s var(--ease);
+  }
+  .subs-caret.folded {
+    transform: rotate(-90deg);
+  }
+  .subs-sep,
+  .subs-age {
+    color: var(--ink-faint);
+  }
+  .subs-list {
+    list-style: none;
+    margin: 5px 0 0 4px;
+    padding: 0 0 0 14px;
+    border-left: 1px solid var(--border-soft);
+  }
+  .subs-item {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    color: var(--ink-dim);
+    line-height: 1.8;
+  }
+  .subs-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .subs-type {
+    flex: 1;
+    color: var(--ink-faint);
+    font-size: 10px;
+    opacity: 0.75;
+  }
+  .subs-time {
+    flex: none;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
   /* ===== terminal preview (window-render) — a recessed amber-phosphor screen.
      Colors are fixed dark (a "screen" reads as intentional in both themes). ===== */
   .term {

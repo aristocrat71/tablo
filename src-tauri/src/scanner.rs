@@ -4,7 +4,8 @@
 //! Transcripts live at `~/.claude/projects/<slug>/<session-id>.jsonl`. We only
 //! look at files *directly* inside each project slug dir — the `subagents/`
 //! subdirectory is intentionally skipped, since "agent count" is defined as the
-//! number of active top-level sessions (CLAUDE.md, Avatar state model).
+//! number of active top-level sessions (CLAUDE.md, Avatar state model). Running
+//! subagents come off the *parent's* open `Agent` tool_use blocks (see `Subagent`).
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -26,6 +27,19 @@ pub struct ActivityEntry {
     pub seq: u64,
     pub kind: String,
     pub text: String,
+}
+
+/// A spawned subagent that hasn't returned yet. Claude Code writes the `Agent`
+/// tool_use at spawn and its `tool_result` on return, so an unmatched tool_use in
+/// the parent transcript is a running subagent — no subagent file is ever opened.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Subagent {
+    pub id: String,
+    /// The call's `description`, falling back to its `subagent_type`.
+    pub name: String,
+    pub agent_type: String,
+    pub started_at: i64,
 }
 
 /// One active session, shaped for the webviews (camelCase JSON).
@@ -68,6 +82,8 @@ pub struct SessionView {
     /// Rolling tail of recent activity lines for the dashboard terminal preview
     /// (oldest → newest, capped). Empty until an assistant line lands.
     pub activity_log: Vec<ActivityEntry>,
+    /// Oldest first. Always empty for Codex.
+    pub subagents: Vec<Subagent>,
     /// Whether Tablo knows where this session lives (drives the "jump" button).
     /// Set false by `scan`; the emit path overlays it from the location cache.
     pub can_jump: bool,
@@ -210,6 +226,7 @@ pub struct FileState {
     /// monotonic sequence source, for the dashboard terminal.
     pub(crate) log: Vec<ActivityEntry>,
     pub(crate) seq: u64,
+    pub(crate) subagents: Vec<Subagent>,
     /// Epoch ms of the newest *conversational* line (Claude user/assistant;
     /// Codex event/response), read from the line's own timestamp. Metadata
     /// appends (ai-title, mode, permission-mode) don't move it — Claude Code
@@ -522,10 +539,11 @@ fn ingest(state: &mut FileState, lines: &[String]) {
             Ok(v) => v,
             Err(_) => continue, // malformed/partial line — ignore (Step 1.3)
         };
+        let line_ts = v.get("timestamp").and_then(|x| x.as_str()).and_then(parse_iso_ms);
         // Only user/assistant lines are conversation; metadata lines (ai-title,
         // mode, permission-mode…) carry no timestamp and must not refresh it.
         if matches!(v.get("type").and_then(|x| x.as_str()), Some("user") | Some("assistant")) {
-            if let Some(ts) = v.get("timestamp").and_then(|x| x.as_str()).and_then(parse_iso_ms) {
+            if let Some(ts) = line_ts {
                 state.last_convo = state.last_convo.max(ts);
             }
         }
@@ -562,6 +580,12 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                         state.model = model.to_string();
                     }
                     update_activity(state, msg);
+                    // The Agent tool blocks its turn, so a finished turn means
+                    // every subagent returned — sweep any whose result we missed.
+                    if msg.get("stop_reason").and_then(|x| x.as_str()) == Some("end_turn") {
+                        state.subagents.clear();
+                    }
+                    open_subagents(state, msg, line_ts.unwrap_or(0));
                     // An assistant line confirms the turn is really running, so
                     // the "awaiting first line" cancel-guard no longer applies.
                     state.awaiting_first = false;
@@ -580,6 +604,11 @@ fn ingest(state: &mut FileState, lines: &[String]) {
             // stale "waiting for you" until the next assistant line lands. Tool
             // results (content is a list of tool_result blocks) are not prompts.
             Some("user") => {
+                // A subagent's `tool_result` rides a `user` line, on every finish
+                // path (return, error, tool-level interrupt).
+                if let Some(msg) = v.get("message") {
+                    close_subagents(state, msg);
+                }
                 // The human's own typed prompt gets its own line in the tail.
                 if let Some(text) = typed_prompt_text(&v) {
                     push_log(state, "user", &text);
@@ -593,9 +622,11 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                     state.activity = "interrupted".into();
                     state.activity_kind = "waiting".into();
                     state.awaiting_first = false;
+                    state.subagents.clear();
                 } else if is_user_prompt(v.get("message")) {
                     state.activity = "thinking…".into();
                     state.activity_kind = "working".into();
+                    state.subagents.clear();
                     // Optimistic — not yet confirmed by an assistant line. If the
                     // user Ctrl+C's before the assistant responds, no marker is
                     // written; the cancel-guard downgrades this after a silence.
@@ -603,6 +634,48 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                 }
             }
             _ => {}
+        }
+    }
+}
+
+/// Guard against an unbounded list if a `tool_result` never arrives.
+const SUBAGENT_CAP: usize = 32;
+
+fn open_subagents(state: &mut FileState, msg: &serde_json::Value, started_at: i64) {
+    let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else { return };
+    for b in blocks {
+        if b.get("type").and_then(|t| t.as_str()) != Some("tool_use")
+            || !matches!(b.get("name").and_then(|n| n.as_str()), Some("Task") | Some("Agent"))
+        {
+            continue;
+        }
+        let Some(id) = b.get("id").and_then(|i| i.as_str()).filter(|s| !s.is_empty()) else { continue };
+        if state.subagents.len() >= SUBAGENT_CAP || state.subagents.iter().any(|s| s.id == id) {
+            continue;
+        }
+        let input = b.get("input");
+        let field = |k: &str| input.and_then(|i| arg(i, k)).map(str::to_string);
+        let agent_type = field("subagent_type").unwrap_or_default();
+        let name = field("description")
+            .or_else(|| (!agent_type.is_empty()).then(|| agent_type.clone()))
+            .unwrap_or_else(|| "subagent".into());
+        state.subagents.push(Subagent {
+            id: id.to_string(),
+            name: truncate_activity(&name, ACTIVITY_MAX),
+            agent_type,
+            started_at,
+        });
+    }
+}
+
+fn close_subagents(state: &mut FileState, msg: &serde_json::Value) {
+    let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else { return };
+    for b in blocks {
+        if b.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
+            continue;
+        }
+        if let Some(id) = b.get("tool_use_id").and_then(|i| i.as_str()) {
+            state.subagents.retain(|s| s.id != id);
         }
     }
 }
@@ -1041,6 +1114,7 @@ pub fn scan(
                         activity: st.activity.clone(),
                         activity_kind: st.activity_kind.clone(),
                         activity_log: st.log.clone(),
+                        subagents: st.subagents.clone(),
                         can_jump: false, // overlaid in the emit path from the cache
                         source: "claude".into(),
                     });
@@ -1095,6 +1169,7 @@ pub fn scan(
                 activity: st.activity.clone(),
                 activity_kind: st.activity_kind.clone(),
                 activity_log: st.log.clone(),
+                subagents: Vec::new(), // Codex has no subagent construct
                 can_jump: false, // "jump" is Claude-only for now
                 source: "codex".into(),
             });
@@ -1204,6 +1279,79 @@ mod tests {
             &[r#"{"type":"assistant","timestamp":"2026-08-02T07:05:00Z","message":{"content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"#.into()],
         );
         assert_eq!(st.last_convo, t0 + 5 * 60_000);
+    }
+
+    fn spawn(id: &str, desc: &str, ts: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","timestamp":"{ts}","message":{{"stop_reason":"tool_use","content":[{{"type":"tool_use","id":"{id}","name":"Agent","input":{{"description":"{desc}","subagent_type":"general-purpose"}}}}]}}}}"#
+        )
+    }
+    fn result(id: &str) -> String {
+        format!(
+            r#"{{"type":"user","timestamp":"2026-06-22T08:28:07Z","message":{{"content":[{{"type":"tool_result","tool_use_id":"{id}"}}]}}}}"#
+        )
+    }
+    const END_TURN: &str = r#"{"type":"assistant","timestamp":"2026-06-22T08:41:00Z","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"all done"}]}}"#;
+
+    #[test]
+    fn subagents_open_on_spawn_and_close_on_their_result() {
+        let mut st = FileState::default();
+        ingest(
+            &mut st,
+            &[
+                spawn("toolu_a", "Review server auth", "2026-06-22T08:23:40Z"),
+                spawn("toolu_b", "Review server sync", "2026-06-22T08:23:52Z"),
+            ],
+        );
+        assert_eq!(st.subagents.len(), 2);
+        assert_eq!(st.subagents[0].name, "Review server auth");
+        assert_eq!(st.subagents[0].agent_type, "general-purpose");
+        assert_eq!(st.subagents[0].started_at, parse_iso_ms("2026-06-22T08:23:40Z").unwrap());
+
+        ingest(&mut st, &[result("toolu_a")]);
+        assert_eq!(st.subagents.len(), 1);
+        assert_eq!(st.subagents[0].id, "toolu_b");
+
+        // A re-read of the same spawn line must not double-open it.
+        ingest(&mut st, &[spawn("toolu_b", "Review server sync", "2026-06-22T08:23:52Z")]);
+        assert_eq!(st.subagents.len(), 1);
+    }
+
+    #[test]
+    fn a_finished_turn_sweeps_subagents_whose_result_was_missed() {
+        let mut st = FileState::default();
+        ingest(&mut st, &[spawn("toolu_a", "Review server auth", "2026-06-22T08:23:40Z")]);
+        assert_eq!(st.subagents.len(), 1);
+        ingest(&mut st, &[END_TURN.to_string()]);
+        assert!(st.subagents.is_empty());
+    }
+
+    #[test]
+    fn interrupt_and_new_prompt_clear_running_subagents() {
+        let interrupt = r#"{"type":"user","timestamp":"2026-06-22T08:25:00Z","message":{"content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#;
+        let prompt = r#"{"type":"user","timestamp":"2026-06-22T08:26:00Z","promptSource":"typed","message":{"content":"next thing"}}"#;
+        for closer in [interrupt, prompt] {
+            let mut st = FileState::default();
+            ingest(&mut st, &[spawn("toolu_a", "Review server auth", "2026-06-22T08:23:40Z")]);
+            assert_eq!(st.subagents.len(), 1);
+            ingest(&mut st, &[closer.to_string()]);
+            assert!(st.subagents.is_empty(), "not cleared by: {closer}");
+        }
+    }
+
+    #[test]
+    fn subagent_label_falls_back_to_type_and_the_list_is_capped() {
+        let mut st = FileState::default();
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","timestamp":"2026-06-22T08:23:40Z","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1","name":"Task","input":{"subagent_type":"Explore"}}]}}"#.into()],
+        );
+        assert_eq!(st.subagents[0].name, "Explore");
+
+        for i in 0..SUBAGENT_CAP + 5 {
+            ingest(&mut st, &[spawn(&format!("cap{i}"), "work", "2026-06-22T08:23:40Z")]);
+        }
+        assert_eq!(st.subagents.len(), SUBAGENT_CAP);
     }
 
     /// Smoke test against the real `~/.claude/projects` transcripts. Prints the

@@ -26,8 +26,17 @@ export interface SessionView {
   activity: string; // live one-liner: "editing scanner.rs", "" if unknown
   activityKind: ActivityKind; // UI hint for icon + state suffix
   activityLog: ActivityEntry[]; // rolling tail for the dashboard terminal
+  subagents: Subagent[]; // still running, oldest first
   canJump: boolean; // Tablo knows where this session lives (jump button)
   source: SessionSource; // which agent produced this session
+}
+
+// Mirrors Rust `scanner::Subagent` — a spawned agent still running. Claude-only.
+export interface Subagent {
+  id: string;
+  name: string; // the call's description, else its type
+  agentType: string; // "" if absent
+  startedAt: number; // ms epoch
 }
 
 // Which agent a session belongs to — drives the small source tag on each row.

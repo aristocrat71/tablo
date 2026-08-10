@@ -11,7 +11,7 @@ export type SortMode = "context" | "recent";
 export type StateFilter = "working" | "waiting";
 export type SourceFilter = "claude" | "codex";
 // The two state groups the panel/dashboard can fold away to save scrolling.
-export type CollapseGroup = "working" | "waiting";
+export type CollapseGroup = "working" | "waiting" | "subagents";
 
 const KEY = "tablo.viewPrefs";
 
@@ -38,6 +38,7 @@ interface Prefs {
   // Fold the Working / Waiting groups closed; both expanded by default, shared live across panel + dashboard.
   collapseWorking: boolean;
   collapseWaiting: boolean;
+  collapseSubagents: boolean;
 }
 
 // Bounds for the toast hover time (seconds).
@@ -62,6 +63,7 @@ const DEFAULTS: Prefs = {
   animations: true,
   collapseWorking: false,
   collapseWaiting: false,
+  collapseSubagents: false,
 };
 
 function coerce(raw: unknown): Prefs {
@@ -78,6 +80,7 @@ function coerce(raw: unknown): Prefs {
     animations: p.animations !== false,
     collapseWorking: p.collapseWorking === true,
     collapseWaiting: p.collapseWaiting === true,
+    collapseSubagents: p.collapseSubagents === true,
   };
 }
 
@@ -110,6 +113,7 @@ function persist() {
         animations: prefs.animations,
         collapseWorking: prefs.collapseWorking,
         collapseWaiting: prefs.collapseWaiting,
+        collapseSubagents: prefs.collapseSubagents,
       })
     );
   } catch {
@@ -136,6 +140,7 @@ export function toggleSource(kind: SourceFilter) {
 
 export function toggleCollapse(kind: CollapseGroup) {
   if (kind === "working") prefs.collapseWorking = !prefs.collapseWorking;
+  else if (kind === "subagents") prefs.collapseSubagents = !prefs.collapseSubagents;
   else prefs.collapseWaiting = !prefs.collapseWaiting;
   persist();
 }
@@ -179,6 +184,7 @@ if (browser) {
       prefs.animations = next.animations;
       prefs.collapseWorking = next.collapseWorking;
       prefs.collapseWaiting = next.collapseWaiting;
+      prefs.collapseSubagents = next.collapseSubagents;
     } catch {
       /* ignore malformed cross-window payload */
     }

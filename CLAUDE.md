@@ -79,7 +79,9 @@ The cat's animation is a pure function of the aggregate live state. Define these
 
 Precedence: **alarmed** overrides **running** overrides **idle**. The agent count is displayed in both running and alarmed states.
 
-**"Agent count" definition (resolved):** the count is the number of active **sessions** — distinct recently-modified transcripts under `~/.claude/projects/`. This falls directly out of the active-session detection in Step 1.2, so no extra tracking is needed. (Subagent counting — parsing `Task` spawns within a session — was considered and rejected as overengineered for the avatar; it may resurface as a per-session detail in a later phase.)
+**"Agent count" definition (resolved):** the count is the number of active **sessions** — distinct recently-modified transcripts under `~/.claude/projects/`. This falls directly out of the active-session detection in Step 1.2, so no extra tracking is needed. Subagents are deliberately **not** counted here — a 7-way fan-out is still one session you're watching — but they are surfaced as a per-session detail (see Subagents below).
+
+**Subagents (built).** Running subagents are read off the *parent* transcript: Claude Code writes the `Agent`/`Task` `tool_use` block at spawn and its `tool_result` only on return, so an unmatched tool_use is a live subagent. The panel and dashboard show a foldable "N agents · <age>" line per session listing each agent's `description` and elapsed time. The `subagents/agent-<id>.jsonl` files are never opened — the call's own description is a better label than a live tool line, and a fan-out costs no extra file I/O. Stale entries are swept on `end_turn` (the Agent tool blocks its turn), on interrupt, and on a new prompt.
 
 ---
 
