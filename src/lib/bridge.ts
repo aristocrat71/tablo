@@ -24,6 +24,7 @@ export const setWarnPct = (pct: number) => invoke("set_warn_pct", { pct });
 export const setCancelGraceMins = (mins: number) => invoke("set_cancel_grace_mins", { mins });
 export const setClearWaitingMins = (mins: number) => invoke("set_clear_waiting_mins", { mins });
 export const setWatchCodex = (enabled: boolean) => invoke("set_watch_codex", { enabled });
+export const setWatchOpencode = (enabled: boolean) => invoke("set_watch_opencode", { enabled });
 export const setAerospaceFollow = (enabled: boolean) =>
   invoke("set_aerospace_follow", { enabled });
 export const setTelemetryEnabled = (enabled: boolean) =>

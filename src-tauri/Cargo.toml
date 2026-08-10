@@ -26,6 +26,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 notify = "6"
 dirs = "5"
+# OpenCode keeps its sessions in SQLite (not JSONL), so it needs a real client.
+# `bundled` compiles SQLite in rather than linking the system copy, so the
+# Windows/Linux release builds don't depend on a libsqlite3 being present.
+rusqlite = { version = "0.32", features = ["bundled"] }
 # Tiny synchronous HTTP server for the PreToolUse approval hook (Phase 4).
 tiny_http = "0.12"
 # OS CSPRNG for the per-run loopback IPC secret (already in the tree via tauri).

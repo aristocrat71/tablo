@@ -40,7 +40,7 @@ export interface Subagent {
 }
 
 // Which agent a session belongs to — drives the small source tag on each row.
-export type SessionSource = "claude" | "codex";
+export type SessionSource = "claude" | "codex" | "opencode";
 
 export type ActivityKind = "working" | "waiting" | "thinking" | "";
 
@@ -91,6 +91,7 @@ export interface Snapshot {
   cancelGraceMins: number; // early-cancel grace window (min), echoed for Settings
   clearWaitingMins: number; // waiting-session clear window (min), echoed for Settings
   watchCodex: boolean; // whether Codex sessions are watched, echoed for Settings
+  watchOpencode: boolean; // whether OpenCode sessions are watched, echoed for Settings
   panelShortcutEnabled: boolean; // whether the global panel hotkey is on, echoed for Settings
   aerospaceFollow: boolean; // whether Tablo follows the focused AeroSpace workspace, echoed for Settings
   telemetryEnabled: boolean; // whether anonymous usage pings are on, echoed for Settings
@@ -165,6 +166,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   cancelGraceMins: 3,
   clearWaitingMins: 10,
   watchCodex: true,
+  watchOpencode: true,
   panelShortcutEnabled: true,
   aerospaceFollow: true,
   telemetryEnabled: true,

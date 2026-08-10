@@ -14,7 +14,7 @@
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
-  import { prefs, setSort, byMode, toggleCollapse } from "./prefs.svelte";
+  import { prefs, setSort, byMode, toggleCollapse, sourceShown } from "./prefs.svelte";
   import FilterButton from "./FilterButton.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
@@ -62,8 +62,7 @@
   // Source filter — only when sessions span >1 agent; orphan requests are Claude-side.
   let sources = $derived(new Set(snap.sessions.map((s) => s.source)));
   let sourceFilterActive = $derived(sources.size > 1);
-  const srcVisible = (c: Card) =>
-    !sourceFilterActive || ((c.session?.source ?? "claude") === "codex" ? prefs.showCodex : prefs.showClaude);
+  const srcVisible = (c: Card) => !sourceFilterActive || sourceShown(c.session?.source);
 
   // Sessions past the context warn threshold get pulled into a Critical group,
   // always pinned to the top, ahead of every other state.

@@ -13,6 +13,7 @@
     setAnimations,
     TOAST_SECS_MIN,
     TOAST_SECS_MAX,
+    sourceShown,
   } from "./prefs.svelte";
   import FilterButton from "./FilterButton.svelte";
   import {
@@ -27,6 +28,7 @@
     setCancelGraceMins,
     setClearWaitingMins,
     setWatchCodex,
+    setWatchOpencode,
     setAerospaceFollow,
     setTelemetryEnabled,
     setAutoUpdate,
@@ -93,8 +95,7 @@
   // Source filter — mirrors the Panel; only when sessions span >1 agent.
   let sources = $derived(new Set(snap.sessions.map((s) => s.source)));
   let sourceFilterActive = $derived(sources.size > 1);
-  const srcVisible = (c: Card) =>
-    !sourceFilterActive || ((c.session?.source ?? "claude") === "codex" ? prefs.showCodex : prefs.showClaude);
+  const srcVisible = (c: Card) => !sourceFilterActive || sourceShown(c.session?.source);
 
   // Sessions past the context warn threshold get their own Critical card, pinned
   // above the rest.
@@ -124,6 +125,7 @@
   let cancelGraceMins = $derived(Math.round(snap.cancelGraceMins));
   let clearWaitingMins = $derived(Math.round(snap.clearWaitingMins));
   let watchCodex = $derived(snap.watchCodex);
+  let watchOpencode = $derived(snap.watchOpencode);
   let panelShortcutEnabled = $derived(snap.panelShortcutEnabled);
   let aerospaceFollow = $derived(snap.aerospaceFollow);
   let telemetryEnabled = $derived(snap.telemetryEnabled);
@@ -385,6 +387,7 @@
         {#if codexLoc && watchCodex && jumpSupported}
           {@render toggle("Jump to Codex session (experimental)", "Focus the terminal a Codex session lives in (installs a hook in ~/.codex/hooks.json — Codex asks you to trust it once).", codexLoc.installed, codexLocBusy, toggleCodexLocate)}
         {/if}
+        {@render toggle("Watch OpenCode", "Show OpenCode sessions (~/.local/share/opencode) alongside Claude Code.", watchOpencode, false, () => setWatchOpencode(!watchOpencode))}
       </div>
 
       {@render toggle("Panel shortcut", "Summon the panel from anywhere with Ctrl+Cmd+P — no need to click the widget.", panelShortcutEnabled, false, () => setPanelShortcutEnabled(!panelShortcutEnabled))}

@@ -124,6 +124,8 @@ pub struct Snapshot {
     pub clear_waiting_mins: u64,
     /// Whether Codex sessions are being watched, echoed for the Settings toggle.
     pub watch_codex: bool,
+    /// Whether OpenCode sessions are being watched, echoed for the Settings toggle.
+    pub watch_opencode: bool,
     /// Whether the global panel-summon hotkey is enabled, echoed for the Settings toggle.
     pub panel_shortcut_enabled: bool,
     /// Whether Tablo follows the focused AeroSpace workspace, echoed for the Settings toggle.
@@ -166,6 +168,7 @@ impl Default for Snapshot {
             cancel_grace_mins: 3,
             clear_waiting_mins: 10,
             watch_codex: true,
+            watch_opencode: true,
             panel_shortcut_enabled: true,
             aerospace_follow: true,
             telemetry_enabled: true,
@@ -501,7 +504,7 @@ fn resolve_project(slug: &str, cwd: &str) -> (String, String) {
     (name, path)
 }
 
-fn abbreviate_home(path: &str) -> String {
+pub(crate) fn abbreviate_home(path: &str) -> String {
     if let Some(home) = dirs::home_dir() {
         if let Some(h) = home.to_str() {
             if let Some(rest) = path.strip_prefix(h) {
@@ -512,7 +515,7 @@ fn abbreviate_home(path: &str) -> String {
     path.to_string()
 }
 
-fn level_for(pct: f64, cfg: &Config) -> &'static str {
+pub(crate) fn level_for(pct: f64, cfg: &Config) -> &'static str {
     if pct >= cfg.crit_pct {
         "crit"
     } else if pct >= cfg.warn_pct {
@@ -811,7 +814,7 @@ pub(crate) const ACTIVITY_MAX: usize = 52;
 /// the panel, so it stores a longer line and lets CSS ellipsize the overflow.
 pub(crate) const TERM_LINE_MAX: usize = 120;
 /// Recent-activity lines retained per session for the terminal tail.
-const ACTIVITY_LOG_CAP: usize = 8;
+pub(crate) const ACTIVITY_LOG_CAP: usize = 8;
 
 /// Append one line to the rolling terminal log, skipping an exact repeat of the
 /// last line (a re-emitted message shouldn't duplicate) and capping the buffer.
@@ -1037,6 +1040,7 @@ pub fn scan(
     cfg: &Config,
     files: &mut HashMap<PathBuf, FileState>,
     claude_cfg: &mut ClaudeConfigCache,
+    oc: &mut crate::opencode::State,
 ) -> Snapshot {
     refresh_claude_config(claude_cfg);
     let claude_dir = projects_dir().filter(|d| d.exists());
@@ -1045,12 +1049,14 @@ pub fn scan(
     } else {
         None
     };
-    // Neither agent has any data dir → the friendly "nothing yet" empty state.
-    if claude_dir.is_none() && codex_dir.is_none() {
+    let opencode_db = cfg.watch_opencode && crate::opencode::available();
+    // No agent has any data on disk → the friendly "nothing yet" empty state.
+    if claude_dir.is_none() && codex_dir.is_none() && !opencode_db {
         return Snapshot {
             has_projects_dir: false,
             generated_at: now_ms(),
             watch_codex: cfg.watch_codex,
+            watch_opencode: cfg.watch_opencode,
             panel_shortcut_enabled: cfg.panel_shortcut_enabled,
             aerospace_follow: cfg.aerospace_follow,
             auto_update: cfg.auto_update,
@@ -1215,6 +1221,11 @@ pub fn scan(
         }
     }
 
+    // ---- OpenCode: ~/.local/share/opencode/opencode.db (SQLite, not JSONL) ----
+    if opencode_db {
+        sessions.extend(crate::opencode::collect(cfg, now, active_ms, oc));
+    }
+
     // Drop tail state for files no longer active / removed, so the map can't
     // grow without bound.
     files.retain(|k, _| seen.contains(k));
@@ -1262,6 +1273,7 @@ pub fn scan(
         cancel_grace_mins: cfg.cancel_grace_mins.max(1),
         clear_waiting_mins: cfg.clear_waiting_mins.max(1),
         watch_codex: cfg.watch_codex,
+        watch_opencode: cfg.watch_opencode,
         panel_shortcut_enabled: cfg.panel_shortcut_enabled,
         aerospace_follow: cfg.aerospace_follow,
         telemetry_enabled: cfg.telemetry_enabled,
@@ -1480,7 +1492,7 @@ mod tests {
         let cfg = Config::default();
         let mut files = HashMap::new();
         let mut claude_cfg = ClaudeConfigCache::default();
-        let snap = scan(&cfg, &mut files, &mut claude_cfg);
+        let snap = scan(&cfg, &mut files, &mut claude_cfg, &mut crate::opencode::State::default());
         println!(
             "\nsnapshot: state={} active={} projects={} waiting={} has_dir={}",
             snap.state, snap.agent_count, snap.projects, snap.waiting, snap.has_projects_dir
@@ -1517,7 +1529,7 @@ mod tests {
         cfg.clear_waiting_mins = 60 * 24 * 3650; // don't clear the (finished) old ones
         let mut files = HashMap::new();
         let mut cc = ClaudeConfigCache::default();
-        let snap = scan(&cfg, &mut files, &mut cc);
+        let snap = scan(&cfg, &mut files, &mut cc, &mut crate::opencode::State::default());
         let codex: Vec<_> = snap.sessions.iter().filter(|s| s.source == "codex").collect();
         println!("\ncodex sessions via scan(): {}", codex.len());
         for s in &codex {
@@ -1529,6 +1541,54 @@ mod tests {
             assert!(s.limit > 0, "codex session must have a positive window");
             assert!(s.pct >= 0.0 && s.pct <= 100.0);
         }
+    }
+
+    /// The OpenCode counterpart: the SQLite walk has to land in the same
+    /// `SessionView` shape as the two JSONL ones. Non-asserting on count — a
+    /// machine without OpenCode just prints zero.
+    #[test]
+    fn scan_surfaces_opencode_sessions() {
+        let cfg = Config {
+            active_window_secs: 60 * 60 * 24 * 3650,
+            clear_waiting_mins: 60 * 24 * 3650,
+            cancel_grace_mins: 60 * 24 * 3650, // don't rewrite old turns as cancelled
+            ..Config::default()
+        };
+        let mut files = HashMap::new();
+        let mut cc = ClaudeConfigCache::default();
+        let mut oc = crate::opencode::State::default();
+        let snap = scan(&cfg, &mut files, &mut cc, &mut oc);
+        let oc_sessions: Vec<_> = snap.sessions.iter().filter(|s| s.source == "opencode").collect();
+        println!("\nopencode sessions via scan(): {}", oc_sessions.len());
+        for s in &oc_sessions {
+            println!(
+                "  {:<16} [{}] {:>5}% used={}/{} model={} kind={} jump={}",
+                s.project, s.source, s.pct, s.used, s.limit, s.model, s.activity_kind, s.can_jump
+            );
+            assert!(s.limit > 0, "opencode session must have a positive window");
+            assert!(s.pct >= 0.0 && s.pct <= 100.0);
+            // An unresolved window must never present a percentage or alarm.
+            if !s.ctx_resolved {
+                assert_eq!(s.pct, 0.0);
+                assert_eq!(s.level, "ok");
+            }
+        }
+    }
+
+    /// Turning the setting off must remove OpenCode from the snapshot entirely.
+    #[test]
+    fn watch_opencode_off_yields_no_opencode_sessions() {
+        let cfg = Config {
+            active_window_secs: 60 * 60 * 24 * 3650,
+            watch_opencode: false,
+            ..Config::default()
+        };
+        let mut files = HashMap::new();
+        let mut cc = ClaudeConfigCache::default();
+        let mut oc = crate::opencode::State::default();
+        let snap = scan(&cfg, &mut files, &mut cc, &mut oc);
+        assert!(snap.sessions.iter().all(|s| s.source != "opencode"));
+        assert!(!snap.watch_opencode);
     }
 
     #[test]
