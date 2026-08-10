@@ -127,6 +127,12 @@ Tablo can gate Claude Code tool calls behind a tap:
 - Only mutating tools are intercepted by default
   (`Bash`/`Write`/`Edit`/`MultiEdit`/`NotebookEdit`); read-only tools never pay
   the round-trip.
+- **Only the default permission mode prompts.** If the session is in
+  accept-edits, plan, or bypass mode, you've already said you don't want to be
+  asked per call — Tablo steps aside and Claude Code applies that mode itself.
+  It defers rather than approving, so Tablo can never be more permissive than
+  the mode you picked. The `mode :` badge on each row tells you which sessions
+  will prompt.
 - **Fail-closed:** if you never decide within the timeout (~10 min), it
   **denies**. If Tablo is *down*, the hook fails fast and Claude Code proceeds
   normally — it never hangs.
@@ -187,7 +193,8 @@ terminal-style activity preview (`$ live preview`) of what each agent is doing,
 and the same live approvals. A compact headline shows *active · waiting ·
 projects*. A gear opens an in-window **Settings** pane:
 
-- **Tool approvals** — turn Claude Code approve/deny on or off.
+- **Tool approvals** — turn Claude Code approve/deny on or off (prompts only in
+  the default permission mode).
 - **Jump to Claude session** *(experimental)* — enable/disable the jump buttons
   for Claude sessions.
 - **Watch Codex** / **Jump to Codex session** *(experimental)* — watch Codex CLI

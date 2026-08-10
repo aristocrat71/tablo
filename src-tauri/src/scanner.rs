@@ -528,11 +528,11 @@ pub(crate) fn level_for(pct: f64, cfg: &Config) -> &'static str {
 /// Map Claude Code's raw `permissionMode` to the read-only badge label. Both
 /// "auto" (current name) and "acceptEdits" (older name) are the ⏵⏵ accept-edits
 /// mode. A session with no explicit mode signal reads "normal".
-fn display_mode(raw: &str) -> &'static str {
+pub(crate) fn display_mode(raw: &str) -> &'static str {
     match raw {
         "auto" | "acceptEdits" => "auto",
         "plan" => "plan",
-        "bypassPermissions" => "bypass",
+        "bypassPermissions" | "dontAsk" => "bypass",
         _ => "normal",
     }
 }

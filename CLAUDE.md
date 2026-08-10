@@ -300,6 +300,16 @@ hangs). So: reachable-but-ignored ⇒ deny; unreachable ⇒ defer.
 but editing `~/.claude/settings.json` to actually intercept tools only happens
 when the user flips **approvals on** in the dashboard (`set_hook_enabled`).
 
+**Only the default permission mode prompts.** The `PreToolUse` payload carries
+`permission_mode`, so the server gates on it before registering anything: any mode
+other than `default` (`acceptEdits`/`auto`, `plan`, `bypassPermissions`, `dontAsk`)
+is the user having already opted out of per-call approval, and the hook returns the
+defer response. It **defers, never auto-allows** — returning `allow` would run e.g.
+Bash unprompted under `acceptEdits`, which is strictly more permissive than the mode
+the user chose. Absent field (older Claude Code) ⇒ prompt, as before. The gate reuses
+`scanner::display_mode`, so the `mode :` badge exactly predicts whether a session
+will prompt.
+
 **Scope note:** only mutating tools are intercepted by default
 (`intercept_tools` = Bash/Write/Edit/MultiEdit/NotebookEdit) so read-only tools
 never pay the round-trip. All tunables live in `config::Config`

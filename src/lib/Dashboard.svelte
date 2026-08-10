@@ -375,7 +375,7 @@
 
       <div class="setting-grid">
         {#if hook && approvalsSupported}
-          {@render toggle("Tool approvals", hook.serverUp ? `Intercept ${hook.tools.join(", ")} so you can approve or deny before they run.` : "Approval server not running.", hook.installed, busy, toggleApprovals)}
+          {@render toggle("Tool approvals", hook.serverUp ? `Intercept ${hook.tools.join(", ")} so you can approve or deny before they run. Only sessions in the default permission mode are asked — accept-edits, plan and bypass are left to Claude Code.` : "Approval server not running.", hook.installed, busy, toggleApprovals)}
         {/if}
         {#if loc && jumpSupported}
           {@render toggle("Jump to Claude session (experimental)", "Focus the terminal window a session lives in (reads its tmux pane / terminal app).", loc.installed, locBusy, toggleLocate)}
