@@ -29,9 +29,8 @@ pub struct ActivityEntry {
     pub text: String,
 }
 
-/// A spawned subagent that hasn't returned yet. Claude Code writes the `Agent`
-/// tool_use at spawn and its `tool_result` on return, so an unmatched tool_use in
-/// the parent transcript is a running subagent — no subagent file is ever opened.
+/// A spawned subagent that hasn't returned yet. Read off the parent transcript's
+/// open `Agent` tool_use — no subagent file is ever opened.
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Subagent {
@@ -40,6 +39,9 @@ pub struct Subagent {
     pub name: String,
     pub agent_type: String,
     pub started_at: i64,
+    /// Outlives its turn, so only its task-notification closes it.
+    #[serde(skip)]
+    pub is_async: bool,
 }
 
 /// One active session, shaped for the webviews (camelCase JSON).
@@ -568,6 +570,11 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                 state.mode = pm.to_string();
             }
         }
+        // For an async agent this is the only close signal.
+        let note = task_notification(&v);
+        if let Some(id) = note.and_then(|n| xml_tag(n, "tool-use-id")) {
+            state.subagents.retain(|s| s.id != id);
+        }
         match v.get("type").and_then(|x| x.as_str()) {
             // Context occupancy comes from the *latest* assistant usage block;
             // the same line also updates the live activity preview.
@@ -580,10 +587,9 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                         state.model = model.to_string();
                     }
                     update_activity(state, msg);
-                    // The Agent tool blocks its turn, so a finished turn means
-                    // every subagent returned — sweep any whose result we missed.
+                    // A sync Agent blocks its turn, so end_turn means it returned.
                     if msg.get("stop_reason").and_then(|x| x.as_str()) == Some("end_turn") {
-                        state.subagents.clear();
+                        state.subagents.retain(|s| s.is_async);
                     }
                     open_subagents(state, msg, line_ts.unwrap_or(0));
                     // An assistant line confirms the turn is really running, so
@@ -604,11 +610,7 @@ fn ingest(state: &mut FileState, lines: &[String]) {
             // stale "waiting for you" until the next assistant line lands. Tool
             // results (content is a list of tool_result blocks) are not prompts.
             Some("user") => {
-                // A subagent's `tool_result` rides a `user` line, on every finish
-                // path (return, error, tool-level interrupt).
-                if let Some(msg) = v.get("message") {
-                    close_subagents(state, msg);
-                }
+                close_subagents(state, &v);
                 // The human's own typed prompt gets its own line in the tail.
                 if let Some(text) = typed_prompt_text(&v) {
                     push_log(state, "user", &text);
@@ -622,11 +624,11 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                     state.activity = "interrupted".into();
                     state.activity_kind = "waiting".into();
                     state.awaiting_first = false;
-                    state.subagents.clear();
-                } else if is_user_prompt(v.get("message")) {
+                    state.subagents.retain(|s| s.is_async);
+                } else if note.is_none() && is_user_prompt(v.get("message")) {
                     state.activity = "thinking…".into();
                     state.activity_kind = "working".into();
-                    state.subagents.clear();
+                    state.subagents.retain(|s| s.is_async);
                     // Optimistic — not yet confirmed by an assistant line. If the
                     // user Ctrl+C's before the assistant responds, no marker is
                     // written; the cancel-guard downgrades this after a silence.
@@ -636,6 +638,23 @@ fn ingest(state: &mut FileState, lines: &[String]) {
             _ => {}
         }
     }
+}
+
+/// The `<task-notification>` payload. Claude Code picks one of three line shapes
+/// depending on when the agent finished, so all three must be handled.
+fn task_notification(v: &serde_json::Value) -> Option<&str> {
+    let text = match v.get("type").and_then(|t| t.as_str())? {
+        "attachment" => v.pointer("/attachment/prompt")?.as_str()?,
+        "queue-operation" => v.get("content")?.as_str()?,
+        "user" => v.pointer("/message/content")?.as_str()?,
+        _ => return None,
+    };
+    text.trim_start().starts_with("<task-notification>").then_some(text)
+}
+
+fn xml_tag<'a>(s: &'a str, tag: &str) -> Option<&'a str> {
+    let rest = &s[s.find(&format!("<{tag}>"))? + tag.len() + 2..];
+    Some(rest[..rest.find(&format!("</{tag}>"))?].trim())
 }
 
 /// Guard against an unbounded list if a `tool_result` never arrives.
@@ -664,17 +683,26 @@ fn open_subagents(state: &mut FileState, msg: &serde_json::Value, started_at: i6
             name: truncate_activity(&name, ACTIVITY_MAX),
             agent_type,
             started_at,
+            is_async: false,
         });
     }
 }
 
-fn close_subagents(state: &mut FileState, msg: &serde_json::Value) {
-    let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else { return };
+/// An async spawn's `tool_result` is a launch receipt, not a return — flag those
+/// instead of closing them.
+fn close_subagents(state: &mut FileState, v: &serde_json::Value) {
+    let launched = v.pointer("/toolUseResult/status").and_then(|x| x.as_str()) == Some("async_launched");
+    let Some(blocks) = v.pointer("/message/content").and_then(|c| c.as_array()) else { return };
     for b in blocks {
         if b.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
             continue;
         }
-        if let Some(id) = b.get("tool_use_id").and_then(|i| i.as_str()) {
+        let Some(id) = b.get("tool_use_id").and_then(|i| i.as_str()) else { continue };
+        if launched {
+            if let Some(sub) = state.subagents.iter_mut().find(|s| s.id == id) {
+                sub.is_async = true;
+            }
+        } else {
             state.subagents.retain(|s| s.id != id);
         }
     }
@@ -971,6 +999,17 @@ fn tail_file(
     // real input, which must not reset these clocks.
     let act = if st.last_convo > 0 { st.last_convo } else { mtime };
 
+    // Async subagents outlive their turn, so the last line can read finished
+    // while work continues. Must precede the guards below, which would undo this.
+    if !st.subagents.is_empty() {
+        if st.activity_kind == "waiting" || st.activity.is_empty() {
+            let n = st.subagents.len();
+            st.activity = format!("{n} agent{} running", if n == 1 { "" } else { "s" });
+        }
+        st.activity_kind = "working".into();
+        st.awaiting_first = false;
+    }
+
     // Early-cancel guard (see FileState::awaiting_first): a typed prompt with no
     // assistant line yet, and a transcript silent past the grace window, reads as
     // a Ctrl+C before the response — hand back to the user so the avatar drops out
@@ -1169,7 +1208,7 @@ pub fn scan(
                 activity: st.activity.clone(),
                 activity_kind: st.activity_kind.clone(),
                 activity_log: st.log.clone(),
-                subagents: Vec::new(), // Codex has no subagent construct
+                subagents: Vec::new(),
                 can_jump: false, // "jump" is Claude-only for now
                 source: "codex".into(),
             });
@@ -1315,6 +1354,86 @@ mod tests {
         // A re-read of the same spawn line must not double-open it.
         ingest(&mut st, &[spawn("toolu_b", "Review server sync", "2026-06-22T08:23:52Z")]);
         assert_eq!(st.subagents.len(), 1);
+    }
+
+    /// Line shapes taken verbatim from a real async fan-out.
+    #[test]
+    fn async_subagents_survive_the_launch_receipt_and_the_turn() {
+        let receipt = r#"{"type":"user","timestamp":"2026-08-10T09:27:42.640Z","toolUseResult":{"agentId":"a9a0","status":"async_launched","isAsync":true},"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_a","content":[{"type":"text","text":"Async agent launched successfully."}]}]}}"#;
+        let done = r#"{"type":"attachment","timestamp":"2026-08-10T09:27:52.989Z","attachment":{"type":"queued_command","commandMode":"task-notification","prompt":"<task-notification>\n<task-id>a9a0</task-id>\n<tool-use-id>toolu_a</tool-use-id>\n<status>completed</status>\n</task-notification>"}}"#;
+
+        let mut st = FileState::default();
+        ingest(&mut st, &[spawn("toolu_a", "subagent 1", "2026-08-10T09:27:40Z")]);
+        assert_eq!(st.subagents.len(), 1);
+
+        ingest(&mut st, &[receipt.to_string()]);
+        assert_eq!(st.subagents.len(), 1);
+        assert!(st.subagents[0].is_async);
+
+        ingest(&mut st, &[END_TURN.to_string()]);
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","timestamp":"2026-08-10T09:28:00Z","promptSource":"typed","message":{"content":"next"}}"#.into()],
+        );
+        assert_eq!(st.subagents.len(), 1);
+
+        ingest(&mut st, &[done.to_string()]);
+        assert!(st.subagents.is_empty());
+    }
+
+    /// Handling only one shape left agents stuck "running" forever.
+    #[test]
+    fn every_task_notification_shape_closes_its_subagent() {
+        let blob = "<task-notification>\\n<task-id>aca4</task-id>\\n<tool-use-id>toolu_a</tool-use-id>\\n<status>completed</status>\\n</task-notification>";
+        let shapes = [
+            format!(r#"{{"type":"attachment","timestamp":"2026-08-10T09:36:32Z","attachment":{{"commandMode":"task-notification","prompt":"{blob}"}}}}"#),
+            format!(r#"{{"type":"queue-operation","timestamp":"2026-08-10T09:36:06Z","operation":"enqueue","content":"{blob}"}}"#),
+            format!(r#"{{"type":"user","timestamp":"2026-08-10T09:36:06Z","promptSource":"system","origin":{{"kind":"task-notification"}},"message":{{"content":"{blob}"}}}}"#),
+        ];
+        for shape in shapes {
+            let mut st = FileState::default();
+            ingest(&mut st, &[spawn("toolu_a", "Read Rust backend", "2026-08-10T09:34:59Z")]);
+            assert_eq!(st.subagents.len(), 1);
+            ingest(&mut st, std::slice::from_ref(&shape));
+            assert!(st.subagents.is_empty(), "not closed by: {shape}");
+        }
+    }
+
+    /// Treating one as a prompt armed the early-cancel guard.
+    #[test]
+    fn a_task_notification_is_not_a_typed_prompt() {
+        let note = r#"{"type":"user","timestamp":"2026-08-10T09:36:06Z","promptSource":"system","origin":{"kind":"task-notification"},"message":{"content":"<task-notification>\n<tool-use-id>toolu_zz</tool-use-id>\n</task-notification>"}}"#;
+        let mut st = FileState::default();
+        ingest(&mut st, &[note.to_string()]);
+        assert!(!st.awaiting_first, "a system notification must not arm the cancel guard");
+        assert!(st.log.is_empty(), "it must not land in the activity log");
+    }
+
+    /// Otherwise an async fan-out shows idle and ages out of the panel.
+    #[test]
+    fn live_subagents_keep_the_session_working() {
+        let dir = std::env::temp_dir().join(format!("tablo-subagent-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        let lines = [
+            spawn("toolu_a", "Read Rust backend", "2026-08-10T09:34:59Z"),
+            r#"{"type":"user","timestamp":"2026-08-10T09:35:01Z","toolUseResult":{"status":"async_launched","isAsync":true},"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_a"}]}}"#.into(),
+            END_TURN.to_string(),
+        ];
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+
+        let cfg = Config::default();
+        let mut files = HashMap::new();
+        let size = std::fs::metadata(&path).unwrap().len();
+        let now = parse_iso_ms("2026-08-10T12:00:00Z").unwrap();
+        let keep = tail_file(&path, size, now, now, Source::Claude, &mut files, &cfg);
+
+        let st = &files[&path];
+        assert_eq!(st.activity_kind, "working", "a live fan-out must read as working");
+        assert_eq!(st.activity, "1 agent running");
+        assert!(keep, "a session with live subagents must not age out");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -1602,3 +1721,5 @@ mod tests {
         assert!(!st.awaiting_first, "an interrupt disarms the guard too");
     }
 }
+
+

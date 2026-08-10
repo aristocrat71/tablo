@@ -34,8 +34,7 @@ export function pct(n: number): string {
   return `${Math.round(n)}%`;
 }
 
-// "42s" / "4m12s" / "1h05m". Clamped at 0 so transcript-vs-local clock skew
-// can't render a negative age.
+// "42s" / "4m12s" / "1h05m". Clamped so clock skew can't render a negative age.
 export function elapsed(sinceMs: number, nowMs: number): string {
   const secs = Math.max(0, Math.floor((nowMs - sinceMs) / 1000));
   if (secs < 60) return `${secs}s`;
