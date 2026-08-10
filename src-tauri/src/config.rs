@@ -45,6 +45,15 @@ pub struct Config {
     /// almost always arrives first, so this rarely applies.
     pub codex_context_limit: u64,
 
+    // ---- OpenCode support ----
+    /// Also watch OpenCode sessions (`~/.local/share/opencode/opencode.db`).
+    /// Default on; turn it off in Settings to watch Claude Code only.
+    pub watch_opencode: bool,
+    /// Fallback context window for an OpenCode session whose model isn't in the
+    /// cached models.dev catalog. Only a display floor — a session using it is
+    /// marked unresolved, so it never shows a percentage or raises an alarm.
+    pub opencode_context_limit: u64,
+
     // ---- AeroSpace (macOS tiling WM) ----
     /// Follow the focused AeroSpace workspace so the widget survives workspace
     /// switches (AeroSpace emulates its own workspaces and ignores the native
@@ -131,6 +140,8 @@ impl Default for Config {
             clear_waiting_mins: 10,
             watch_codex: true,
             codex_context_limit: 256_000,
+            watch_opencode: true,
+            opencode_context_limit: 200_000,
             aerospace_follow: true,
             default_context_limit: 200_000,
             standard_context_limit: 200_000,

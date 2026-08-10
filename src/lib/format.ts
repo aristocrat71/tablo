@@ -34,6 +34,15 @@ export function pct(n: number): string {
   return `${Math.round(n)}%`;
 }
 
+// "42s" / "4m12s" / "1h05m". Clamped so clock skew can't render a negative age.
+export function elapsed(sinceMs: number, nowMs: number): string {
+  const secs = Math.max(0, Math.floor((nowMs - sinceMs) / 1000));
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return mins < 60 ? `${mins}m${pad(secs % 60)}s` : `${Math.floor(mins / 60)}h${pad(mins % 60)}m`;
+}
+
 // Friendly label for the raw account tier from ~/.claude.json, e.g.
 // "default_claude_max_5x" -> "Max 5×". Strips the vendor prefix, turns the
 // "_5x" suffix into "5×", title-cases the rest, and falls back gracefully for

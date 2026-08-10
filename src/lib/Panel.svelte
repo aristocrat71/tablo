@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { store } from "./state.svelte";
+  import { store, liveClock } from "./state.svelte";
   import { openDashboard, resolvePermission, jumpToSession, hidePanel } from "./bridge";
-  import { tokens, pct } from "./format";
+  import { tokens, pct, elapsed } from "./format";
 
   // Esc collapses the panel (matches tap-away). The webview persists across
   // show/hide, so binding once on mount covers every open.
@@ -14,7 +14,7 @@
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
-  import { prefs, setSort, byMode, toggleCollapse } from "./prefs.svelte";
+  import { prefs, setSort, byMode, toggleCollapse, sourceShown } from "./prefs.svelte";
   import FilterButton from "./FilterButton.svelte";
   import type { SessionView, PermDecision, PendingRequest } from "./types";
 
@@ -62,8 +62,7 @@
   // Source filter — only when sessions span >1 agent; orphan requests are Claude-side.
   let sources = $derived(new Set(snap.sessions.map((s) => s.source)));
   let sourceFilterActive = $derived(sources.size > 1);
-  const srcVisible = (c: Card) =>
-    !sourceFilterActive || ((c.session?.source ?? "claude") === "codex" ? prefs.showCodex : prefs.showClaude);
+  const srcVisible = (c: Card) => !sourceFilterActive || sourceShown(c.session?.source);
 
   // Sessions past the context warn threshold get pulled into a Critical group,
   // always pinned to the top, ahead of every other state.
@@ -106,6 +105,8 @@
 
   // Warn threshold (%), shown in the Critical group header (live from the snapshot).
   let warnPct = $derived(Math.round(snap.warnPct));
+
+  let clock = liveClock(() => snap.sessions.some((s) => s.subagents.length > 0));
 
   function decide(id: string, decision: PermDecision) {
     resolvePermission(id, decision);
@@ -258,6 +259,33 @@
       <div class="session-activity {c.session.activityKind}">
         <span class="act-dot"></span>
         <span class="act-text">{c.session.activity}</span>
+      </div>
+    {/if}
+
+    {#if c.session && c.session.subagents.length > 0}
+      {@const agents = c.session.subagents}
+      <div class="subs">
+        <button
+          class="subs-head"
+          aria-expanded={!prefs.collapseSubagents}
+          onclick={() => toggleCollapse("subagents")}
+        >
+          <span class="subs-caret" class:folded={prefs.collapseSubagents}>&#9662;</span>
+          <span class="subs-count">{agents.length} agent{agents.length > 1 ? "s" : ""}</span>
+          <span class="subs-sep">·</span>
+          <!-- oldest first: the whole fan-out's age -->
+          <span class="subs-age">{elapsed(agents[0].startedAt, clock.now)}</span>
+        </button>
+        {#if !prefs.collapseSubagents}
+          <ul class="subs-list">
+            {#each agents as a (a.id)}
+              <li class="subs-item">
+                <span class="subs-name" title={a.agentType || a.name}>{a.name}</span>
+                <span class="subs-time">{elapsed(a.startedAt, clock.now)}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </div>
     {/if}
 
@@ -799,6 +827,63 @@
     50% {
       opacity: 1;
     }
+  }
+
+  /* running subagents */
+  .subs {
+    margin-top: 4px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+  }
+  .subs-head {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--amber);
+    font: inherit;
+    text-align: left;
+  }
+  .subs-caret {
+    font-size: 8px;
+    line-height: 1;
+    transition: transform 0.16s var(--ease);
+  }
+  .subs-caret.folded {
+    transform: rotate(-90deg);
+  }
+  .subs-sep,
+  .subs-age {
+    color: var(--ink-faint);
+  }
+  .subs-list {
+    list-style: none;
+    margin: 3px 0 0;
+    padding: 0 0 0 12px;
+    border-left: 1px solid var(--border-soft);
+    margin-left: 3px;
+  }
+  .subs-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--ink-dim);
+    line-height: 1.65;
+  }
+  .subs-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .subs-time {
+    flex: none;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
   }
 
   .ctx {

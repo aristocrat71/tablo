@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Popover with the state (waiting/working) + source (claude/codex) filters,
+  // Popover with the state (waiting/working) + source (claude/codex/opencode) filters,
   // shared by the panel and dashboard toolbars. Drives the shared `prefs` store.
   import { prefs, toggleFilter, toggleSource } from "./prefs.svelte";
 
@@ -12,7 +12,8 @@
     (prefs.showWaiting ? 0 : 1) +
       (prefs.showWorking ? 0 : 1) +
       (showSource && !prefs.showClaude ? 1 : 0) +
-      (showSource && !prefs.showCodex ? 1 : 0),
+      (showSource && !prefs.showCodex ? 1 : 0) +
+      (showSource && !prefs.showOpencode ? 1 : 0),
   );
 
   // Dismiss on outside-click / Esc, bound only while open. Capture phase so Esc
@@ -53,6 +54,9 @@
         </button>
         <button class="item" class:off={!prefs.showCodex} role="menuitemcheckbox" aria-checked={prefs.showCodex} onclick={() => toggleSource("codex")}>
           <span class="led src"></span>codex
+        </button>
+        <button class="item" class:off={!prefs.showOpencode} role="menuitemcheckbox" aria-checked={prefs.showOpencode} onclick={() => toggleSource("opencode")}>
+          <span class="led src"></span>opencode
         </button>
       {/if}
     </div>

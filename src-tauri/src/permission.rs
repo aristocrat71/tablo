@@ -222,11 +222,27 @@ fn handle_request(app: &AppHandle, mut request: tiny_http::Request) {
 /// resolves it in the widget or the wait elapses. On timeout we fail **closed**
 /// (deny) — the user chose a long window with auto-deny. (Tablo being *down* is
 /// a different case: the hook's curl fails before reaching here and defers.)
+/// Whether Tablo owns the approval decision in this permission mode. Only the
+/// default mode prompts: `acceptEdits`/`auto`, `plan`, `bypassPermissions` and
+/// `dontAsk` all mean the user already chose not to be asked per call, so the
+/// hook defers (`{}`) and Claude Code applies that mode itself — deferring, not
+/// auto-allowing, so Tablo can never be more permissive than the chosen mode.
+/// An absent field (older Claude Code) keeps the previous always-prompt behavior.
+pub(crate) fn prompts_in_mode(raw_mode: &str) -> bool {
+    raw_mode.is_empty() || crate::scanner::display_mode(raw_mode) == "normal"
+}
+
 fn wait_for_decision(app: &AppHandle, body: &str) -> PermDecision {
     let parsed: Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(_) => return PermDecision::Ask, // malformed — don't gate the tool
     };
+    // Any non-default mode is the user having already said "stop asking me", so
+    // Tablo steps aside before registering anything.
+    let mode = parsed.get("permission_mode").and_then(|v| v.as_str()).unwrap_or("");
+    if !prompts_in_mode(mode) {
+        return PermDecision::Ask;
+    }
     let tool = parsed.get("tool_name").and_then(|v| v.as_str()).unwrap_or("tool");
     let cwd = parsed.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
     let session_id = parsed
@@ -700,6 +716,28 @@ mod tests {
         apply_uninstall_event(&mut root, "SessionStart", SCRIPT);
         apply_uninstall_event(&mut root, "UserPromptSubmit", SCRIPT);
         assert!(root.get("hooks").is_none(), "empty hooks pruned");
+    }
+
+    #[test]
+    fn only_the_default_mode_prompts() {
+        assert!(prompts_in_mode("default"));
+        // Every "stop asking me" mode hands the decision back to Claude Code.
+        for m in ["acceptEdits", "auto", "plan", "bypassPermissions", "dontAsk"] {
+            assert!(!prompts_in_mode(m), "{m} must not raise a tablo prompt");
+        }
+        // Absent field (older Claude Code) keeps the previous behavior.
+        assert!(prompts_in_mode(""));
+        // An unknown future mode is treated as default rather than silently skipped.
+        assert!(prompts_in_mode("someNewMode"));
+    }
+
+    /// The skip must produce the defer response, never an approval — deferring
+    /// keeps Claude Code's own flow (acceptEdits still gates Bash), whereas
+    /// auto-allowing would be strictly more permissive than the chosen mode.
+    #[test]
+    fn deferring_is_not_approving() {
+        assert_eq!(PermDecision::Ask.hook_json(), "{}");
+        assert!(PermDecision::Allow.hook_json().contains("\"allow\""));
     }
 
     #[test]

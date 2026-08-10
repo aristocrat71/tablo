@@ -9,9 +9,9 @@ import type { SessionView } from "./types";
 
 export type SortMode = "context" | "recent";
 export type StateFilter = "working" | "waiting";
-export type SourceFilter = "claude" | "codex";
+export type SourceFilter = "claude" | "codex" | "opencode";
 // The two state groups the panel/dashboard can fold away to save scrolling.
-export type CollapseGroup = "working" | "waiting";
+export type CollapseGroup = "working" | "waiting" | "subagents";
 
 const KEY = "tablo.viewPrefs";
 
@@ -25,6 +25,7 @@ interface Prefs {
   // when sessions from more than one source are present.
   showClaude: boolean;
   showCodex: boolean;
+  showOpencode: boolean;
   // Toast when a session finishes working and starts waiting on you. Default on.
   notifyOnWaiting: boolean;
   // How long that toast stays on screen, in seconds. Default 4.
@@ -38,6 +39,7 @@ interface Prefs {
   // Fold the Working / Waiting groups closed; both expanded by default, shared live across panel + dashboard.
   collapseWorking: boolean;
   collapseWaiting: boolean;
+  collapseSubagents: boolean;
 }
 
 // Bounds for the toast hover time (seconds).
@@ -56,12 +58,14 @@ const DEFAULTS: Prefs = {
   showWaiting: true,
   showClaude: true,
   showCodex: true,
+  showOpencode: true,
   notifyOnWaiting: true,
   waitingToastSecs: 4,
   notifySound: true,
   animations: true,
   collapseWorking: false,
   collapseWaiting: false,
+  collapseSubagents: false,
 };
 
 function coerce(raw: unknown): Prefs {
@@ -72,12 +76,14 @@ function coerce(raw: unknown): Prefs {
     showWaiting: p.showWaiting !== false,
     showClaude: p.showClaude !== false,
     showCodex: p.showCodex !== false,
+    showOpencode: p.showOpencode !== false,
     notifyOnWaiting: p.notifyOnWaiting !== false,
     waitingToastSecs: p.waitingToastSecs == null ? 4 : clampSecs(p.waitingToastSecs),
     notifySound: p.notifySound !== false,
     animations: p.animations !== false,
     collapseWorking: p.collapseWorking === true,
     collapseWaiting: p.collapseWaiting === true,
+    collapseSubagents: p.collapseSubagents === true,
   };
 }
 
@@ -104,12 +110,14 @@ function persist() {
         showWaiting: prefs.showWaiting,
         showClaude: prefs.showClaude,
         showCodex: prefs.showCodex,
+        showOpencode: prefs.showOpencode,
         notifyOnWaiting: prefs.notifyOnWaiting,
         waitingToastSecs: prefs.waitingToastSecs,
         notifySound: prefs.notifySound,
         animations: prefs.animations,
         collapseWorking: prefs.collapseWorking,
         collapseWaiting: prefs.collapseWaiting,
+        collapseSubagents: prefs.collapseSubagents,
       })
     );
   } catch {
@@ -128,14 +136,24 @@ export function toggleFilter(kind: StateFilter) {
   persist();
 }
 
+/// Whether a session's agent passes the source filter. Unknown sources read as
+/// Claude, matching the pre-multi-source default.
+export function sourceShown(source: string | undefined) {
+  if (source === "codex") return prefs.showCodex;
+  if (source === "opencode") return prefs.showOpencode;
+  return prefs.showClaude;
+}
+
 export function toggleSource(kind: SourceFilter) {
   if (kind === "claude") prefs.showClaude = !prefs.showClaude;
-  else prefs.showCodex = !prefs.showCodex;
+  else if (kind === "codex") prefs.showCodex = !prefs.showCodex;
+  else prefs.showOpencode = !prefs.showOpencode;
   persist();
 }
 
 export function toggleCollapse(kind: CollapseGroup) {
   if (kind === "working") prefs.collapseWorking = !prefs.collapseWorking;
+  else if (kind === "subagents") prefs.collapseSubagents = !prefs.collapseSubagents;
   else prefs.collapseWaiting = !prefs.collapseWaiting;
   persist();
 }
@@ -173,12 +191,14 @@ if (browser) {
       prefs.showWaiting = next.showWaiting;
       prefs.showClaude = next.showClaude;
       prefs.showCodex = next.showCodex;
+      prefs.showOpencode = next.showOpencode;
       prefs.notifyOnWaiting = next.notifyOnWaiting;
       prefs.waitingToastSecs = next.waitingToastSecs;
       prefs.notifySound = next.notifySound;
       prefs.animations = next.animations;
       prefs.collapseWorking = next.collapseWorking;
       prefs.collapseWaiting = next.collapseWaiting;
+      prefs.collapseSubagents = next.collapseSubagents;
     } catch {
       /* ignore malformed cross-window payload */
     }

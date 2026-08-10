@@ -27,6 +27,18 @@ export function toggleTheme() {
   setThemeMode(store.config.theme === "dark" ? "light" : "dark");
 }
 
+// Ticks only while `needed()` holds, so an idle surface has no interval at all.
+export function liveClock(needed: () => boolean) {
+  const clock = $state({ now: Date.now() });
+  $effect(() => {
+    if (!needed()) return;
+    clock.now = Date.now();
+    const timer = setInterval(() => (clock.now = Date.now()), 1000);
+    return () => clearInterval(timer);
+  });
+  return clock;
+}
+
 let started = false;
 
 export async function initStore() {

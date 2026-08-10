@@ -27,6 +27,7 @@ mod codex;
 mod codex_locate;
 mod config;
 mod locate;
+mod opencode;
 mod permission;
 mod scanner;
 mod whatsnew;
@@ -74,6 +75,8 @@ pub(crate) struct AppState {
     files: Mutex<HashMap<PathBuf, FileState>>,
     /// Cached per-project window map from `~/.claude.json`.
     claude_cfg: Mutex<ClaudeConfigCache>,
+    /// OpenCode's model catalog + last DB read, kept across scans.
+    opencode: Mutex<opencode::State>,
     /// Last emitted level per session id, for one-shot warning notifications.
     prev_levels: Mutex<HashMap<String, String>>,
     /// Last seen activity kind per session id (perm/working/thinking/waiting/""),
@@ -190,6 +193,17 @@ fn set_watch_codex(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
     {
         let mut cfg = state.config.lock().unwrap();
         cfg.watch_codex = enabled;
+        cfg.save(&state.config_dir);
+    }
+    recompute_and_emit(&app);
+}
+
+/// Toggle whether OpenCode sessions are watched alongside Claude Code.
+#[tauri::command]
+fn set_watch_opencode(app: AppHandle, state: State<'_, AppState>, enabled: bool) {
+    {
+        let mut cfg = state.config.lock().unwrap();
+        cfg.watch_opencode = enabled;
         cfg.save(&state.config_dir);
     }
     recompute_and_emit(&app);
@@ -695,7 +709,8 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
     let mut snap = {
         let mut files = state.files.lock().unwrap();
         let mut claude_cfg = state.claude_cfg.lock().unwrap();
-        scanner::scan(&cfg, &mut files, &mut claude_cfg)
+        let mut oc = state.opencode.lock().unwrap();
+        scanner::scan(&cfg, &mut files, &mut claude_cfg, &mut oc)
     };
 
     // Overlay pending approvals: they drive the "waiting" count and force the
@@ -718,10 +733,11 @@ pub(crate) fn recompute_and_emit(app: &AppHandle) {
         let registry = locate::registry_session_ids();
         let locs = state.session_locations.lock().unwrap();
         for s in &mut snap.sessions {
-            s.can_jump = if s.source == "codex" {
-                codex_on && locs.contains_key(&s.id)
-            } else {
-                claude_on && (locs.contains_key(&s.id) || registry.contains(&s.id))
+            s.can_jump = match s.source.as_str() {
+                "codex" => codex_on && locs.contains_key(&s.id),
+                // OpenCode reports no process or hook location — nothing to jump to.
+                "opencode" => false,
+                _ => claude_on && (locs.contains_key(&s.id) || registry.contains(&s.id)),
             };
         }
     }
@@ -1161,6 +1177,7 @@ pub fn run() {
                 snapshot: Mutex::new(Snapshot::default()),
                 files: Mutex::new(HashMap::new()),
                 claude_cfg: Mutex::new(ClaudeConfigCache::default()),
+                opencode: Mutex::new(opencode::State::default()),
                 prev_levels: Mutex::new(HashMap::new()),
                 prev_activity: Mutex::new(HashMap::new()),
                 dragging: AtomicBool::new(false),
@@ -1251,6 +1268,7 @@ pub fn run() {
             set_cancel_grace_mins,
             set_clear_waiting_mins,
             set_watch_codex,
+            set_watch_opencode,
             set_aerospace_follow,
             set_telemetry_enabled,
             set_auto_update,

@@ -79,7 +79,9 @@ The cat's animation is a pure function of the aggregate live state. Define these
 
 Precedence: **alarmed** overrides **running** overrides **idle**. The agent count is displayed in both running and alarmed states.
 
-**"Agent count" definition (resolved):** the count is the number of active **sessions** — distinct recently-modified transcripts under `~/.claude/projects/`. This falls directly out of the active-session detection in Step 1.2, so no extra tracking is needed. (Subagent counting — parsing `Task` spawns within a session — was considered and rejected as overengineered for the avatar; it may resurface as a per-session detail in a later phase.)
+**"Agent count" definition (resolved):** the count is the number of active **sessions** — distinct recently-modified transcripts under `~/.claude/projects/`. This falls directly out of the active-session detection in Step 1.2, so no extra tracking is needed. Subagents are deliberately **not** counted here — a 7-way fan-out is still one session you're watching — but they are surfaced as a per-session detail (see Subagents below).
+
+**Subagents (built).** Running subagents are read off the *parent* transcript: Claude Code writes the `Agent`/`Task` `tool_use` block at spawn and its `tool_result` only on return, so an unmatched tool_use is a live subagent. The panel and dashboard show a foldable "N agents · <age>" line per session listing each agent's `description` and elapsed time. The `subagents/agent-<id>.jsonl` files are never opened — the call's own description is a better label than a live tool line, and a fan-out costs no extra file I/O. Stale entries are swept on `end_turn` (the Agent tool blocks its turn), on interrupt, and on a new prompt.
 
 ---
 
@@ -297,6 +299,16 @@ hangs). So: reachable-but-ignored ⇒ deny; unreachable ⇒ defer.
 **Consent:** the hook script is written on launch (Tablo's own dir, harmless),
 but editing `~/.claude/settings.json` to actually intercept tools only happens
 when the user flips **approvals on** in the dashboard (`set_hook_enabled`).
+
+**Only the default permission mode prompts.** The `PreToolUse` payload carries
+`permission_mode`, so the server gates on it before registering anything: any mode
+other than `default` (`acceptEdits`/`auto`, `plan`, `bypassPermissions`, `dontAsk`)
+is the user having already opted out of per-call approval, and the hook returns the
+defer response. It **defers, never auto-allows** — returning `allow` would run e.g.
+Bash unprompted under `acceptEdits`, which is strictly more permissive than the mode
+the user chose. Absent field (older Claude Code) ⇒ prompt, as before. The gate reuses
+`scanner::display_mode`, so the `mode :` badge exactly predicts whether a session
+will prompt.
 
 **Scope note:** only mutating tools are intercepted by default
 (`intercept_tools` = Bash/Write/Edit/MultiEdit/NotebookEdit) so read-only tools

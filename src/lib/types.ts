@@ -26,12 +26,21 @@ export interface SessionView {
   activity: string; // live one-liner: "editing scanner.rs", "" if unknown
   activityKind: ActivityKind; // UI hint for icon + state suffix
   activityLog: ActivityEntry[]; // rolling tail for the dashboard terminal
+  subagents: Subagent[]; // still running, oldest first
   canJump: boolean; // Tablo knows where this session lives (jump button)
   source: SessionSource; // which agent produced this session
 }
 
+// Mirrors Rust `scanner::Subagent` — a spawned agent still running. Claude-only.
+export interface Subagent {
+  id: string;
+  name: string; // the call's description, else its type
+  agentType: string; // "" if absent
+  startedAt: number; // ms epoch
+}
+
 // Which agent a session belongs to — drives the small source tag on each row.
-export type SessionSource = "claude" | "codex";
+export type SessionSource = "claude" | "codex" | "opencode";
 
 export type ActivityKind = "working" | "waiting" | "thinking" | "";
 
@@ -82,6 +91,7 @@ export interface Snapshot {
   cancelGraceMins: number; // early-cancel grace window (min), echoed for Settings
   clearWaitingMins: number; // waiting-session clear window (min), echoed for Settings
   watchCodex: boolean; // whether Codex sessions are watched, echoed for Settings
+  watchOpencode: boolean; // whether OpenCode sessions are watched, echoed for Settings
   panelShortcutEnabled: boolean; // whether the global panel hotkey is on, echoed for Settings
   aerospaceFollow: boolean; // whether Tablo follows the focused AeroSpace workspace, echoed for Settings
   telemetryEnabled: boolean; // whether anonymous usage pings are on, echoed for Settings
@@ -156,6 +166,7 @@ export const EMPTY_SNAPSHOT: Snapshot = {
   cancelGraceMins: 3,
   clearWaitingMins: 10,
   watchCodex: true,
+  watchOpencode: true,
   panelShortcutEnabled: true,
   aerospaceFollow: true,
   telemetryEnabled: true,

@@ -1,7 +1,7 @@
 # tablo
 
-A tiny floating cat that watches your coding agents — **Claude Code and OpenAI
-Codex** — from a corner of your screen. Tablo reflects live activity through a
+A tiny floating cat that watches your coding agents — **Claude Code, OpenAI
+Codex, and OpenCode** — from a corner of your screen. Tablo reflects live activity through a
 small animated cat and a soft colored glow: it **sleeps and breathes sage** when
 idle, **trots and pulses amber** while agents are working, and turns **shocked
 and flushes coral** when a session needs your input or its context window crosses
@@ -90,22 +90,31 @@ In the **panel**, sessions group by state, most urgent first:
 Each row shows the project, an optional AI-generated session title, a live
 one-line activity ("editing scanner.rs", "running cargo check", "waiting for
 you") with a colored status dot, a read-only permission-mode badge, the agent
-source (**claude** / **codex**), and a segmented-LED context bar with the raw
+source (**claude** / **codex** / **opencode**), and a segmented-LED context bar with the raw
 token count — colored sage → amber → coral by threshold. Filter chips toggle the
 Waiting / Working groups when more than one session is active.
 
-## Two agents, one cat
+## Three agents, one cat
 
-Tablo watches both **Claude Code** (`~/.claude/projects/`) and **OpenAI Codex**
-(`~/.codex/sessions/`) sessions, side by side in the same avatar count, panel,
-and dashboard. A small neutral **`claude` / `codex` tag** on each row marks which
-agent it came from. Codex support is on by default and can be switched off in
+Tablo watches **Claude Code** (`~/.claude/projects/`), **OpenAI Codex**
+(`~/.codex/sessions/`), and **OpenCode** (`~/.local/share/opencode/`) sessions
+side by side in the same avatar count, panel, and dashboard. A small neutral
+**`claude` / `codex` / `opencode` tag** on each row marks which agent it came
+from. Codex and OpenCode are on by default and can each be switched off in
 Settings.
 
 For Claude sessions, Tablo auto-detects each session's context window (the
 standard window vs. the 1M-token beta) from on-disk signals — no manual toggle;
 the per-session `used / limit` readout shows what was detected. Codex reports its
-window directly, so it's always exact.
+window directly, so it's always exact. OpenCode's window comes from the
+models.dev catalog it caches locally, which covers essentially every model it can
+run; a model missing from that catalog shows a greyed meter rather than a guess.
+
+OpenCode stores its sessions in SQLite rather than JSONL, so Tablo reads them
+read-only and re-queries only when the database actually changes. Its
+`task`-tool child sessions appear as subagents on the parent row, the same as
+Claude Code's. Jump and tool approvals are **not** available for OpenCode — it
+exposes neither a process registry nor a hook file to carry them.
 
 ## Permissions — approve / deny
 
@@ -118,6 +127,12 @@ Tablo can gate Claude Code tool calls behind a tap:
 - Only mutating tools are intercepted by default
   (`Bash`/`Write`/`Edit`/`MultiEdit`/`NotebookEdit`); read-only tools never pay
   the round-trip.
+- **Only the default permission mode prompts.** If the session is in
+  accept-edits, plan, or bypass mode, you've already said you don't want to be
+  asked per call — Tablo steps aside and Claude Code applies that mode itself.
+  It defers rather than approving, so Tablo can never be more permissive than
+  the mode you picked. The `mode :` badge on each row tells you which sessions
+  will prompt.
 - **Fail-closed:** if you never decide within the timeout (~10 min), it
   **denies**. If Tablo is *down*, the hook fails fast and Claude Code proceeds
   normally — it never hangs.
@@ -157,10 +172,12 @@ Across platforms, the tmux pane-switch works everywhere (including WSL); the GUI
 window-raise is macOS-only, so on Linux and Windows jump still switches the tmux
 pane but doesn't raise the window, and Wayland stays a no-op.
 
-**Both agents jump.** The jump logic is shared and agent-agnostic. Claude jump is
-on by default; **Codex jump is opt-in** in Settings (it installs a hook into
-`~/.codex/hooks.json`, which Codex asks you to trust once). The two paths are
-fully independent.
+**Claude and Codex jump.** The jump logic is shared and agent-agnostic. Claude
+jump is on by default; **Codex jump is opt-in** in Settings (it installs a hook
+into `~/.codex/hooks.json`, which Codex asks you to trust once). The two paths
+are fully independent. **OpenCode sessions show no jump button** — OpenCode
+records neither the session's process nor a hook file, so there is nothing to
+locate its terminal by.
 
 ## Notifications
 
@@ -176,12 +193,14 @@ terminal-style activity preview (`$ live preview`) of what each agent is doing,
 and the same live approvals. A compact headline shows *active · waiting ·
 projects*. A gear opens an in-window **Settings** pane:
 
-- **Tool approvals** — turn Claude Code approve/deny on or off.
+- **Tool approvals** — turn Claude Code approve/deny on or off (prompts only in
+  the default permission mode).
 - **Jump to Claude session** *(experimental)* — enable/disable the jump buttons
   for Claude sessions.
 - **Watch Codex** / **Jump to Codex session** *(experimental)* — watch Codex CLI
   sessions (on by default), and enable jump for them (opt-in; Codex asks you to
   trust the hook once).
+- **Watch OpenCode** — watch OpenCode sessions (on by default).
 - **Panel shortcut** — summon the panel from anywhere with **Ctrl+Cmd+P**.
 - **Follow AeroSpace workspace** — keep the widget with you across AeroSpace
   workspace switches (appears only when AeroSpace is detected — see below).
@@ -211,7 +230,7 @@ LED-style dots.
 
 ## Privacy
 
-Tablo reads your local Claude Code / Codex transcripts and never sends their
+Tablo reads your local Claude Code / Codex / OpenCode sessions and never sends their
 contents anywhere. The one thing it reports off your machine is **anonymous usage
 stats** (via [Aptabase](https://aptabase.com)) — a launch/heartbeat ping so active
 users can be counted. No session content, file paths, prompts, or tokens; only

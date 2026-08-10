@@ -4,7 +4,8 @@
 //! Transcripts live at `~/.claude/projects/<slug>/<session-id>.jsonl`. We only
 //! look at files *directly* inside each project slug dir — the `subagents/`
 //! subdirectory is intentionally skipped, since "agent count" is defined as the
-//! number of active top-level sessions (CLAUDE.md, Avatar state model).
+//! number of active top-level sessions (CLAUDE.md, Avatar state model). Running
+//! subagents come off the *parent's* open `Agent` tool_use blocks (see `Subagent`).
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -26,6 +27,21 @@ pub struct ActivityEntry {
     pub seq: u64,
     pub kind: String,
     pub text: String,
+}
+
+/// A spawned subagent that hasn't returned yet. Read off the parent transcript's
+/// open `Agent` tool_use — no subagent file is ever opened.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Subagent {
+    pub id: String,
+    /// The call's `description`, falling back to its `subagent_type`.
+    pub name: String,
+    pub agent_type: String,
+    pub started_at: i64,
+    /// Outlives its turn, so only its task-notification closes it.
+    #[serde(skip)]
+    pub is_async: bool,
 }
 
 /// One active session, shaped for the webviews (camelCase JSON).
@@ -68,6 +84,8 @@ pub struct SessionView {
     /// Rolling tail of recent activity lines for the dashboard terminal preview
     /// (oldest → newest, capped). Empty until an assistant line lands.
     pub activity_log: Vec<ActivityEntry>,
+    /// Oldest first. Always empty for Codex.
+    pub subagents: Vec<Subagent>,
     /// Whether Tablo knows where this session lives (drives the "jump" button).
     /// Set false by `scan`; the emit path overlays it from the location cache.
     pub can_jump: bool,
@@ -106,6 +124,8 @@ pub struct Snapshot {
     pub clear_waiting_mins: u64,
     /// Whether Codex sessions are being watched, echoed for the Settings toggle.
     pub watch_codex: bool,
+    /// Whether OpenCode sessions are being watched, echoed for the Settings toggle.
+    pub watch_opencode: bool,
     /// Whether the global panel-summon hotkey is enabled, echoed for the Settings toggle.
     pub panel_shortcut_enabled: bool,
     /// Whether Tablo follows the focused AeroSpace workspace, echoed for the Settings toggle.
@@ -148,6 +168,7 @@ impl Default for Snapshot {
             cancel_grace_mins: 3,
             clear_waiting_mins: 10,
             watch_codex: true,
+            watch_opencode: true,
             panel_shortcut_enabled: true,
             aerospace_follow: true,
             telemetry_enabled: true,
@@ -210,6 +231,7 @@ pub struct FileState {
     /// monotonic sequence source, for the dashboard terminal.
     pub(crate) log: Vec<ActivityEntry>,
     pub(crate) seq: u64,
+    pub(crate) subagents: Vec<Subagent>,
     /// Epoch ms of the newest *conversational* line (Claude user/assistant;
     /// Codex event/response), read from the line's own timestamp. Metadata
     /// appends (ai-title, mode, permission-mode) don't move it — Claude Code
@@ -482,7 +504,7 @@ fn resolve_project(slug: &str, cwd: &str) -> (String, String) {
     (name, path)
 }
 
-fn abbreviate_home(path: &str) -> String {
+pub(crate) fn abbreviate_home(path: &str) -> String {
     if let Some(home) = dirs::home_dir() {
         if let Some(h) = home.to_str() {
             if let Some(rest) = path.strip_prefix(h) {
@@ -493,7 +515,7 @@ fn abbreviate_home(path: &str) -> String {
     path.to_string()
 }
 
-fn level_for(pct: f64, cfg: &Config) -> &'static str {
+pub(crate) fn level_for(pct: f64, cfg: &Config) -> &'static str {
     if pct >= cfg.crit_pct {
         "crit"
     } else if pct >= cfg.warn_pct {
@@ -506,11 +528,11 @@ fn level_for(pct: f64, cfg: &Config) -> &'static str {
 /// Map Claude Code's raw `permissionMode` to the read-only badge label. Both
 /// "auto" (current name) and "acceptEdits" (older name) are the ⏵⏵ accept-edits
 /// mode. A session with no explicit mode signal reads "normal".
-fn display_mode(raw: &str) -> &'static str {
+pub(crate) fn display_mode(raw: &str) -> &'static str {
     match raw {
         "auto" | "acceptEdits" => "auto",
         "plan" => "plan",
-        "bypassPermissions" => "bypass",
+        "bypassPermissions" | "dontAsk" => "bypass",
         _ => "normal",
     }
 }
@@ -522,10 +544,11 @@ fn ingest(state: &mut FileState, lines: &[String]) {
             Ok(v) => v,
             Err(_) => continue, // malformed/partial line — ignore (Step 1.3)
         };
+        let line_ts = v.get("timestamp").and_then(|x| x.as_str()).and_then(parse_iso_ms);
         // Only user/assistant lines are conversation; metadata lines (ai-title,
         // mode, permission-mode…) carry no timestamp and must not refresh it.
         if matches!(v.get("type").and_then(|x| x.as_str()), Some("user") | Some("assistant")) {
-            if let Some(ts) = v.get("timestamp").and_then(|x| x.as_str()).and_then(parse_iso_ms) {
+            if let Some(ts) = line_ts {
                 state.last_convo = state.last_convo.max(ts);
             }
         }
@@ -550,6 +573,11 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                 state.mode = pm.to_string();
             }
         }
+        // For an async agent this is the only close signal.
+        let note = task_notification(&v);
+        if let Some(id) = note.and_then(|n| xml_tag(n, "tool-use-id")) {
+            state.subagents.retain(|s| s.id != id);
+        }
         match v.get("type").and_then(|x| x.as_str()) {
             // Context occupancy comes from the *latest* assistant usage block;
             // the same line also updates the live activity preview.
@@ -562,6 +590,11 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                         state.model = model.to_string();
                     }
                     update_activity(state, msg);
+                    // A sync Agent blocks its turn, so end_turn means it returned.
+                    if msg.get("stop_reason").and_then(|x| x.as_str()) == Some("end_turn") {
+                        state.subagents.retain(|s| s.is_async);
+                    }
+                    open_subagents(state, msg, line_ts.unwrap_or(0));
                     // An assistant line confirms the turn is really running, so
                     // the "awaiting first line" cancel-guard no longer applies.
                     state.awaiting_first = false;
@@ -580,6 +613,7 @@ fn ingest(state: &mut FileState, lines: &[String]) {
             // stale "waiting for you" until the next assistant line lands. Tool
             // results (content is a list of tool_result blocks) are not prompts.
             Some("user") => {
+                close_subagents(state, &v);
                 // The human's own typed prompt gets its own line in the tail.
                 if let Some(text) = typed_prompt_text(&v) {
                     push_log(state, "user", &text);
@@ -593,9 +627,11 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                     state.activity = "interrupted".into();
                     state.activity_kind = "waiting".into();
                     state.awaiting_first = false;
-                } else if is_user_prompt(v.get("message")) {
+                    state.subagents.retain(|s| s.is_async);
+                } else if note.is_none() && is_user_prompt(v.get("message")) {
                     state.activity = "thinking…".into();
                     state.activity_kind = "working".into();
+                    state.subagents.retain(|s| s.is_async);
                     // Optimistic — not yet confirmed by an assistant line. If the
                     // user Ctrl+C's before the assistant responds, no marker is
                     // written; the cancel-guard downgrades this after a silence.
@@ -603,6 +639,74 @@ fn ingest(state: &mut FileState, lines: &[String]) {
                 }
             }
             _ => {}
+        }
+    }
+}
+
+/// The `<task-notification>` payload. Claude Code picks one of three line shapes
+/// depending on when the agent finished, so all three must be handled.
+fn task_notification(v: &serde_json::Value) -> Option<&str> {
+    let text = match v.get("type").and_then(|t| t.as_str())? {
+        "attachment" => v.pointer("/attachment/prompt")?.as_str()?,
+        "queue-operation" => v.get("content")?.as_str()?,
+        "user" => v.pointer("/message/content")?.as_str()?,
+        _ => return None,
+    };
+    text.trim_start().starts_with("<task-notification>").then_some(text)
+}
+
+fn xml_tag<'a>(s: &'a str, tag: &str) -> Option<&'a str> {
+    let rest = &s[s.find(&format!("<{tag}>"))? + tag.len() + 2..];
+    Some(rest[..rest.find(&format!("</{tag}>"))?].trim())
+}
+
+/// Guard against an unbounded list if a `tool_result` never arrives.
+const SUBAGENT_CAP: usize = 32;
+
+fn open_subagents(state: &mut FileState, msg: &serde_json::Value, started_at: i64) {
+    let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else { return };
+    for b in blocks {
+        if b.get("type").and_then(|t| t.as_str()) != Some("tool_use")
+            || !matches!(b.get("name").and_then(|n| n.as_str()), Some("Task") | Some("Agent"))
+        {
+            continue;
+        }
+        let Some(id) = b.get("id").and_then(|i| i.as_str()).filter(|s| !s.is_empty()) else { continue };
+        if state.subagents.len() >= SUBAGENT_CAP || state.subagents.iter().any(|s| s.id == id) {
+            continue;
+        }
+        let input = b.get("input");
+        let field = |k: &str| input.and_then(|i| arg(i, k)).map(str::to_string);
+        let agent_type = field("subagent_type").unwrap_or_default();
+        let name = field("description")
+            .or_else(|| (!agent_type.is_empty()).then(|| agent_type.clone()))
+            .unwrap_or_else(|| "subagent".into());
+        state.subagents.push(Subagent {
+            id: id.to_string(),
+            name: truncate_activity(&name, ACTIVITY_MAX),
+            agent_type,
+            started_at,
+            is_async: false,
+        });
+    }
+}
+
+/// An async spawn's `tool_result` is a launch receipt, not a return — flag those
+/// instead of closing them.
+fn close_subagents(state: &mut FileState, v: &serde_json::Value) {
+    let launched = v.pointer("/toolUseResult/status").and_then(|x| x.as_str()) == Some("async_launched");
+    let Some(blocks) = v.pointer("/message/content").and_then(|c| c.as_array()) else { return };
+    for b in blocks {
+        if b.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
+            continue;
+        }
+        let Some(id) = b.get("tool_use_id").and_then(|i| i.as_str()) else { continue };
+        if launched {
+            if let Some(sub) = state.subagents.iter_mut().find(|s| s.id == id) {
+                sub.is_async = true;
+            }
+        } else {
+            state.subagents.retain(|s| s.id != id);
         }
     }
 }
@@ -710,7 +814,7 @@ pub(crate) const ACTIVITY_MAX: usize = 52;
 /// the panel, so it stores a longer line and lets CSS ellipsize the overflow.
 pub(crate) const TERM_LINE_MAX: usize = 120;
 /// Recent-activity lines retained per session for the terminal tail.
-const ACTIVITY_LOG_CAP: usize = 8;
+pub(crate) const ACTIVITY_LOG_CAP: usize = 8;
 
 /// Append one line to the rolling terminal log, skipping an exact repeat of the
 /// last line (a re-emitted message shouldn't duplicate) and capping the buffer.
@@ -898,6 +1002,17 @@ fn tail_file(
     // real input, which must not reset these clocks.
     let act = if st.last_convo > 0 { st.last_convo } else { mtime };
 
+    // Async subagents outlive their turn, so the last line can read finished
+    // while work continues. Must precede the guards below, which would undo this.
+    if !st.subagents.is_empty() {
+        if st.activity_kind == "waiting" || st.activity.is_empty() {
+            let n = st.subagents.len();
+            st.activity = format!("{n} agent{} running", if n == 1 { "" } else { "s" });
+        }
+        st.activity_kind = "working".into();
+        st.awaiting_first = false;
+    }
+
     // Early-cancel guard (see FileState::awaiting_first): a typed prompt with no
     // assistant line yet, and a transcript silent past the grace window, reads as
     // a Ctrl+C before the response — hand back to the user so the avatar drops out
@@ -925,6 +1040,7 @@ pub fn scan(
     cfg: &Config,
     files: &mut HashMap<PathBuf, FileState>,
     claude_cfg: &mut ClaudeConfigCache,
+    oc: &mut crate::opencode::State,
 ) -> Snapshot {
     refresh_claude_config(claude_cfg);
     let claude_dir = projects_dir().filter(|d| d.exists());
@@ -933,12 +1049,14 @@ pub fn scan(
     } else {
         None
     };
-    // Neither agent has any data dir → the friendly "nothing yet" empty state.
-    if claude_dir.is_none() && codex_dir.is_none() {
+    let opencode_db = cfg.watch_opencode && crate::opencode::available();
+    // No agent has any data on disk → the friendly "nothing yet" empty state.
+    if claude_dir.is_none() && codex_dir.is_none() && !opencode_db {
         return Snapshot {
             has_projects_dir: false,
             generated_at: now_ms(),
             watch_codex: cfg.watch_codex,
+            watch_opencode: cfg.watch_opencode,
             panel_shortcut_enabled: cfg.panel_shortcut_enabled,
             aerospace_follow: cfg.aerospace_follow,
             auto_update: cfg.auto_update,
@@ -1041,6 +1159,7 @@ pub fn scan(
                         activity: st.activity.clone(),
                         activity_kind: st.activity_kind.clone(),
                         activity_log: st.log.clone(),
+                        subagents: st.subagents.clone(),
                         can_jump: false, // overlaid in the emit path from the cache
                         source: "claude".into(),
                     });
@@ -1095,10 +1214,16 @@ pub fn scan(
                 activity: st.activity.clone(),
                 activity_kind: st.activity_kind.clone(),
                 activity_log: st.log.clone(),
+                subagents: Vec::new(),
                 can_jump: false, // "jump" is Claude-only for now
                 source: "codex".into(),
             });
         }
+    }
+
+    // ---- OpenCode: ~/.local/share/opencode/opencode.db (SQLite, not JSONL) ----
+    if opencode_db {
+        sessions.extend(crate::opencode::collect(cfg, now, active_ms, oc));
     }
 
     // Drop tail state for files no longer active / removed, so the map can't
@@ -1148,6 +1273,7 @@ pub fn scan(
         cancel_grace_mins: cfg.cancel_grace_mins.max(1),
         clear_waiting_mins: cfg.clear_waiting_mins.max(1),
         watch_codex: cfg.watch_codex,
+        watch_opencode: cfg.watch_opencode,
         panel_shortcut_enabled: cfg.panel_shortcut_enabled,
         aerospace_follow: cfg.aerospace_follow,
         telemetry_enabled: cfg.telemetry_enabled,
@@ -1206,6 +1332,159 @@ mod tests {
         assert_eq!(st.last_convo, t0 + 5 * 60_000);
     }
 
+    fn spawn(id: &str, desc: &str, ts: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","timestamp":"{ts}","message":{{"stop_reason":"tool_use","content":[{{"type":"tool_use","id":"{id}","name":"Agent","input":{{"description":"{desc}","subagent_type":"general-purpose"}}}}]}}}}"#
+        )
+    }
+    fn result(id: &str) -> String {
+        format!(
+            r#"{{"type":"user","timestamp":"2026-06-22T08:28:07Z","message":{{"content":[{{"type":"tool_result","tool_use_id":"{id}"}}]}}}}"#
+        )
+    }
+    const END_TURN: &str = r#"{"type":"assistant","timestamp":"2026-06-22T08:41:00Z","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"all done"}]}}"#;
+
+    #[test]
+    fn subagents_open_on_spawn_and_close_on_their_result() {
+        let mut st = FileState::default();
+        ingest(
+            &mut st,
+            &[
+                spawn("toolu_a", "Review server auth", "2026-06-22T08:23:40Z"),
+                spawn("toolu_b", "Review server sync", "2026-06-22T08:23:52Z"),
+            ],
+        );
+        assert_eq!(st.subagents.len(), 2);
+        assert_eq!(st.subagents[0].name, "Review server auth");
+        assert_eq!(st.subagents[0].agent_type, "general-purpose");
+        assert_eq!(st.subagents[0].started_at, parse_iso_ms("2026-06-22T08:23:40Z").unwrap());
+
+        ingest(&mut st, &[result("toolu_a")]);
+        assert_eq!(st.subagents.len(), 1);
+        assert_eq!(st.subagents[0].id, "toolu_b");
+
+        // A re-read of the same spawn line must not double-open it.
+        ingest(&mut st, &[spawn("toolu_b", "Review server sync", "2026-06-22T08:23:52Z")]);
+        assert_eq!(st.subagents.len(), 1);
+    }
+
+    /// Line shapes taken verbatim from a real async fan-out.
+    #[test]
+    fn async_subagents_survive_the_launch_receipt_and_the_turn() {
+        let receipt = r#"{"type":"user","timestamp":"2026-08-10T09:27:42.640Z","toolUseResult":{"agentId":"a9a0","status":"async_launched","isAsync":true},"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_a","content":[{"type":"text","text":"Async agent launched successfully."}]}]}}"#;
+        let done = r#"{"type":"attachment","timestamp":"2026-08-10T09:27:52.989Z","attachment":{"type":"queued_command","commandMode":"task-notification","prompt":"<task-notification>\n<task-id>a9a0</task-id>\n<tool-use-id>toolu_a</tool-use-id>\n<status>completed</status>\n</task-notification>"}}"#;
+
+        let mut st = FileState::default();
+        ingest(&mut st, &[spawn("toolu_a", "subagent 1", "2026-08-10T09:27:40Z")]);
+        assert_eq!(st.subagents.len(), 1);
+
+        ingest(&mut st, &[receipt.to_string()]);
+        assert_eq!(st.subagents.len(), 1);
+        assert!(st.subagents[0].is_async);
+
+        ingest(&mut st, &[END_TURN.to_string()]);
+        ingest(
+            &mut st,
+            &[r#"{"type":"user","timestamp":"2026-08-10T09:28:00Z","promptSource":"typed","message":{"content":"next"}}"#.into()],
+        );
+        assert_eq!(st.subagents.len(), 1);
+
+        ingest(&mut st, &[done.to_string()]);
+        assert!(st.subagents.is_empty());
+    }
+
+    /// Handling only one shape left agents stuck "running" forever.
+    #[test]
+    fn every_task_notification_shape_closes_its_subagent() {
+        let blob = "<task-notification>\\n<task-id>aca4</task-id>\\n<tool-use-id>toolu_a</tool-use-id>\\n<status>completed</status>\\n</task-notification>";
+        let shapes = [
+            format!(r#"{{"type":"attachment","timestamp":"2026-08-10T09:36:32Z","attachment":{{"commandMode":"task-notification","prompt":"{blob}"}}}}"#),
+            format!(r#"{{"type":"queue-operation","timestamp":"2026-08-10T09:36:06Z","operation":"enqueue","content":"{blob}"}}"#),
+            format!(r#"{{"type":"user","timestamp":"2026-08-10T09:36:06Z","promptSource":"system","origin":{{"kind":"task-notification"}},"message":{{"content":"{blob}"}}}}"#),
+        ];
+        for shape in shapes {
+            let mut st = FileState::default();
+            ingest(&mut st, &[spawn("toolu_a", "Read Rust backend", "2026-08-10T09:34:59Z")]);
+            assert_eq!(st.subagents.len(), 1);
+            ingest(&mut st, std::slice::from_ref(&shape));
+            assert!(st.subagents.is_empty(), "not closed by: {shape}");
+        }
+    }
+
+    /// Treating one as a prompt armed the early-cancel guard.
+    #[test]
+    fn a_task_notification_is_not_a_typed_prompt() {
+        let note = r#"{"type":"user","timestamp":"2026-08-10T09:36:06Z","promptSource":"system","origin":{"kind":"task-notification"},"message":{"content":"<task-notification>\n<tool-use-id>toolu_zz</tool-use-id>\n</task-notification>"}}"#;
+        let mut st = FileState::default();
+        ingest(&mut st, &[note.to_string()]);
+        assert!(!st.awaiting_first, "a system notification must not arm the cancel guard");
+        assert!(st.log.is_empty(), "it must not land in the activity log");
+    }
+
+    /// Otherwise an async fan-out shows idle and ages out of the panel.
+    #[test]
+    fn live_subagents_keep_the_session_working() {
+        let dir = std::env::temp_dir().join(format!("tablo-subagent-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        let lines = [
+            spawn("toolu_a", "Read Rust backend", "2026-08-10T09:34:59Z"),
+            r#"{"type":"user","timestamp":"2026-08-10T09:35:01Z","toolUseResult":{"status":"async_launched","isAsync":true},"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_a"}]}}"#.into(),
+            END_TURN.to_string(),
+        ];
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+
+        let cfg = Config::default();
+        let mut files = HashMap::new();
+        let size = std::fs::metadata(&path).unwrap().len();
+        let now = parse_iso_ms("2026-08-10T12:00:00Z").unwrap();
+        let keep = tail_file(&path, size, now, now, Source::Claude, &mut files, &cfg);
+
+        let st = &files[&path];
+        assert_eq!(st.activity_kind, "working", "a live fan-out must read as working");
+        assert_eq!(st.activity, "1 agent running");
+        assert!(keep, "a session with live subagents must not age out");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_finished_turn_sweeps_subagents_whose_result_was_missed() {
+        let mut st = FileState::default();
+        ingest(&mut st, &[spawn("toolu_a", "Review server auth", "2026-06-22T08:23:40Z")]);
+        assert_eq!(st.subagents.len(), 1);
+        ingest(&mut st, &[END_TURN.to_string()]);
+        assert!(st.subagents.is_empty());
+    }
+
+    #[test]
+    fn interrupt_and_new_prompt_clear_running_subagents() {
+        let interrupt = r#"{"type":"user","timestamp":"2026-06-22T08:25:00Z","message":{"content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#;
+        let prompt = r#"{"type":"user","timestamp":"2026-06-22T08:26:00Z","promptSource":"typed","message":{"content":"next thing"}}"#;
+        for closer in [interrupt, prompt] {
+            let mut st = FileState::default();
+            ingest(&mut st, &[spawn("toolu_a", "Review server auth", "2026-06-22T08:23:40Z")]);
+            assert_eq!(st.subagents.len(), 1);
+            ingest(&mut st, &[closer.to_string()]);
+            assert!(st.subagents.is_empty(), "not cleared by: {closer}");
+        }
+    }
+
+    #[test]
+    fn subagent_label_falls_back_to_type_and_the_list_is_capped() {
+        let mut st = FileState::default();
+        ingest(
+            &mut st,
+            &[r#"{"type":"assistant","timestamp":"2026-06-22T08:23:40Z","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1","name":"Task","input":{"subagent_type":"Explore"}}]}}"#.into()],
+        );
+        assert_eq!(st.subagents[0].name, "Explore");
+
+        for i in 0..SUBAGENT_CAP + 5 {
+            ingest(&mut st, &[spawn(&format!("cap{i}"), "work", "2026-06-22T08:23:40Z")]);
+        }
+        assert_eq!(st.subagents.len(), SUBAGENT_CAP);
+    }
+
     /// Smoke test against the real `~/.claude/projects` transcripts. Prints the
     /// computed snapshot so we can eyeball the Phase 1 data path end-to-end.
     #[test]
@@ -1213,7 +1492,7 @@ mod tests {
         let cfg = Config::default();
         let mut files = HashMap::new();
         let mut claude_cfg = ClaudeConfigCache::default();
-        let snap = scan(&cfg, &mut files, &mut claude_cfg);
+        let snap = scan(&cfg, &mut files, &mut claude_cfg, &mut crate::opencode::State::default());
         println!(
             "\nsnapshot: state={} active={} projects={} waiting={} has_dir={}",
             snap.state, snap.agent_count, snap.projects, snap.waiting, snap.has_projects_dir
@@ -1250,7 +1529,7 @@ mod tests {
         cfg.clear_waiting_mins = 60 * 24 * 3650; // don't clear the (finished) old ones
         let mut files = HashMap::new();
         let mut cc = ClaudeConfigCache::default();
-        let snap = scan(&cfg, &mut files, &mut cc);
+        let snap = scan(&cfg, &mut files, &mut cc, &mut crate::opencode::State::default());
         let codex: Vec<_> = snap.sessions.iter().filter(|s| s.source == "codex").collect();
         println!("\ncodex sessions via scan(): {}", codex.len());
         for s in &codex {
@@ -1262,6 +1541,54 @@ mod tests {
             assert!(s.limit > 0, "codex session must have a positive window");
             assert!(s.pct >= 0.0 && s.pct <= 100.0);
         }
+    }
+
+    /// The OpenCode counterpart: the SQLite walk has to land in the same
+    /// `SessionView` shape as the two JSONL ones. Non-asserting on count — a
+    /// machine without OpenCode just prints zero.
+    #[test]
+    fn scan_surfaces_opencode_sessions() {
+        let cfg = Config {
+            active_window_secs: 60 * 60 * 24 * 3650,
+            clear_waiting_mins: 60 * 24 * 3650,
+            cancel_grace_mins: 60 * 24 * 3650, // don't rewrite old turns as cancelled
+            ..Config::default()
+        };
+        let mut files = HashMap::new();
+        let mut cc = ClaudeConfigCache::default();
+        let mut oc = crate::opencode::State::default();
+        let snap = scan(&cfg, &mut files, &mut cc, &mut oc);
+        let oc_sessions: Vec<_> = snap.sessions.iter().filter(|s| s.source == "opencode").collect();
+        println!("\nopencode sessions via scan(): {}", oc_sessions.len());
+        for s in &oc_sessions {
+            println!(
+                "  {:<16} [{}] {:>5}% used={}/{} model={} kind={} jump={}",
+                s.project, s.source, s.pct, s.used, s.limit, s.model, s.activity_kind, s.can_jump
+            );
+            assert!(s.limit > 0, "opencode session must have a positive window");
+            assert!(s.pct >= 0.0 && s.pct <= 100.0);
+            // An unresolved window must never present a percentage or alarm.
+            if !s.ctx_resolved {
+                assert_eq!(s.pct, 0.0);
+                assert_eq!(s.level, "ok");
+            }
+        }
+    }
+
+    /// Turning the setting off must remove OpenCode from the snapshot entirely.
+    #[test]
+    fn watch_opencode_off_yields_no_opencode_sessions() {
+        let cfg = Config {
+            active_window_secs: 60 * 60 * 24 * 3650,
+            watch_opencode: false,
+            ..Config::default()
+        };
+        let mut files = HashMap::new();
+        let mut cc = ClaudeConfigCache::default();
+        let mut oc = crate::opencode::State::default();
+        let snap = scan(&cfg, &mut files, &mut cc, &mut oc);
+        assert!(snap.sessions.iter().all(|s| s.source != "opencode"));
+        assert!(!snap.watch_opencode);
     }
 
     #[test]
@@ -1454,3 +1781,5 @@ mod tests {
         assert!(!st.awaiting_first, "an interrupt disarms the guard too");
     }
 }
+
+
