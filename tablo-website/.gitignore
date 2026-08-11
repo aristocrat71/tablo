@@ -25,3 +25,6 @@ pnpm-debug.log*
 
 # agent scaffolding (local only)
 CLAUDE.md
+
+# wrangler local state
+.wrangler/
