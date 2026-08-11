@@ -117,15 +117,6 @@ jobs:
         with:
           targets: ${{ matrix.rust-targets }}
 
-      # Read-only: a save here lands in this tag's scope, which no later run can
-      # read. warm-cache.yml writes it on main; `shared-key` must match.
-      - name: Rust cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
-        with:
-          workspaces: "./src-tauri -> target"
-          shared-key: "tablo-build"
-          save-if: false
-
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
