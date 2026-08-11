@@ -8,7 +8,7 @@ import InstallDeck from "../components/InstallDeck.astro";
 // runtime cost — the boot stays fast). Falls back if the fetch fails / times out.
 const LATEST_JSON =
   "https://github.com/unravel-team/tablo/releases/latest/download/latest.json";
-let appVersion = "1.0.1";
+let appVersion = "2.1.5";
 try {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 5000);
