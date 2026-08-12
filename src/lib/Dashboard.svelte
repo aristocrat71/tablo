@@ -24,6 +24,8 @@
     setLocateEnabled,
     jumpToSession,
     hideDashboard,
+    takeOpenSettings,
+    onOpenSettings,
     setWarnPct,
     setCancelGraceMins,
     setClearWaitingMins,
@@ -153,6 +155,8 @@
     locateStatus().then((s) => (loc = s)).catch(() => {});
     codexLocateStatus().then((s) => (codexLoc = s)).catch(() => {});
     getVersion().then((v) => (version = v)).catch(() => {});
+    takeOpenSettings().then((s) => s && (view = "settings")).catch(() => {});
+    onOpenSettings(() => (view = "settings")).catch(() => {});
     // Esc closes the dashboard window (it hides, so it can reopen later) and
     // returns Tablo to a switcher-hidden widget.
     const onKey = (e: KeyboardEvent) => {

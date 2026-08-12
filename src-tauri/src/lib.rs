@@ -112,6 +112,8 @@ pub(crate) struct AppState {
     available_update: Mutex<Option<String>>,
     /// Release notes for the running build, set at launch and cleared on dismiss.
     whats_new: Mutex<Option<whatsnew::ReleaseNotes>>,
+    /// Tray → Settings: a fresh dashboard pulls this on mount (an event would race its load).
+    open_settings: AtomicBool,
 }
 
 #[derive(Serialize)]
@@ -516,6 +518,12 @@ async fn open_dashboard(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn hide_dashboard(app: AppHandle) {
     close_dashboard_impl(&app);
+}
+
+/// One-shot: did tray → Settings ask the dashboard to open on the settings pane?
+#[tauri::command]
+fn take_open_settings(state: State<'_, AppState>) -> bool {
+    state.open_settings.swap(false, Ordering::Relaxed)
 }
 
 /// Begin an avatar drag: pin it interactive and report its current logical
@@ -943,9 +951,10 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let toggle = MenuItem::with_id(app, "toggle_widget", "Hide widget", true, None::<&str>)?;
     let dashboard = MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit tablo", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&toggle, &dashboard, &sep, &quit])?;
+    let menu = Menu::with_items(app, &[&toggle, &dashboard, &settings, &sep, &quit])?;
 
     let toggle_item = toggle.clone();
     let mut builder = TrayIconBuilder::with_id("tablo-tray")
@@ -956,6 +965,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "toggle_widget" => toggle_widget(app, &toggle_item),
             "dashboard" => {
                 // Tray handlers run on the main thread too — same deadlock risk.
+                tauri::async_runtime::spawn(open_dashboard(app.clone()));
+            }
+            "settings" => {
+                if app.get_webview_window("dashboard").is_some() {
+                    let _ = app.emit("open-settings", ());
+                } else {
+                    app.state::<AppState>().open_settings.store(true, Ordering::Relaxed);
+                }
                 tauri::async_runtime::spawn(open_dashboard(app.clone()));
             }
             "quit" => app.exit(0),
@@ -1192,6 +1209,7 @@ pub fn run() {
                 session_locations: Mutex::new(HashMap::new()),
                 available_update: Mutex::new(None),
                 whats_new: Mutex::new(whats_new),
+                open_settings: AtomicBool::new(false),
             });
 
             // Bind the loopback server FIRST. Only if we actually own the port do
@@ -1279,6 +1297,7 @@ pub fn run() {
             hide_panel,
             open_dashboard,
             hide_dashboard,
+            take_open_settings,
             show_toast,
             hide_toast,
             begin_drag,
