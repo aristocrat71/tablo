@@ -12,6 +12,55 @@ copy of tablo sees when it checks for updates. A tag with no matching section
 here fails the release before anything is built. Write the entry as you merge,
 not at tag time.
 
+## [2.2.0] - 2026-08-11
+
+2.2.0 adds a third agent — **OpenCode** — shows the **subagents** each session
+has running, stops tool approvals from asking you twice when you've already
+picked a permission mode that says don't ask, and calms the cat down a few
+seconds after an alarm instead of leaving it shocked all day.
+
+### Added
+
+- **OpenCode support.** Tablo now watches **OpenCode** sessions
+  (`~/.local/share/opencode`) alongside Claude Code and Codex — same avatar
+  count, same panel and dashboard, with a neutral `opencode` tag on each row.
+  On by default; turn it off under Settings → Watch OpenCode. The context
+  window comes from the models.dev catalog OpenCode caches locally, so it's
+  exact for essentially every model it can run; a model missing from that
+  catalog shows a greyed meter rather than a guessed percentage. OpenCode keeps
+  its sessions in SQLite rather than JSONL, so tablo reads the database
+  read-only and only re-reads when it actually changes. Jump and tool approvals
+  are **not** available for OpenCode — it exposes neither a process registry nor
+  a hook file to carry them.
+- **Running subagents, per session.** When a session fans out, its row grows a
+  foldable **"N agents · <age>"** line in both the panel and the dashboard,
+  listing each running agent by its description with its own elapsed time. The
+  line disappears as the agents return. Fold state is shared across both
+  windows. Subagents are read off the session's own transcript — no extra files
+  are opened, so a 7-way fan-out costs nothing extra — and they don't inflate
+  the cat's count: a fan-out is still one session you're watching. Agents that
+  keep running past the end of their turn stay listed until they actually report
+  back. OpenCode's `task` child sessions appear the same way.
+
+### Changed
+
+- **Tool approvals only prompt in the default permission mode.** If a session is
+  in accept-edits/auto, plan, or bypass mode, you've already said you don't want
+  to be asked per call — tablo now steps aside and lets Claude Code apply that
+  mode itself, instead of prompting you again in the widget. It defers rather
+  than approving, so tablo can never be more permissive than the mode you
+  picked, and the `mode :` badge on each row tells you exactly which sessions
+  will prompt.
+
+### Fixed
+
+- **The shocked cat no longer stays shocked.** An alarm — context past the warn
+  threshold or a pending tool approval — used to pin the startled sprite for as
+  long as the condition lasted, which could be all afternoon. Now the cat
+  startles for a few seconds, then goes back to trotting or sleeping while a
+  coral `!` hexagon floats at its left edge until the alarm clears. A new
+  permission request re-startles it, so a fresh ask never slips by silently.
+
 ## [2.1.5] - 2026-08-09
 
 2.1.5 fixes sessions that lingered after they ended, a cat that could start up

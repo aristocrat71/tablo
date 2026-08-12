@@ -44,6 +44,7 @@ export const openDashboard = () => invoke("open_dashboard");
 export const hideCurrentWindow = () => getCurrentWindow().hide();
 // Dashboard Esc: hide + drop Tablo back out of the Dock / Cmd+Tab switcher.
 export const hideDashboard = () => invoke("hide_dashboard");
+export const takeOpenSettings = () => invoke<boolean>("take_open_settings");
 // Toast window: position next to the avatar + reveal / hide after its animation.
 export const showToast = () => invoke("show_toast");
 export const hideToast = () => invoke("hide_toast");
@@ -87,4 +88,9 @@ export function onTheme(cb: (theme: string) => void): Promise<UnlistenFn> {
 export type WaitingSession = { id: string; project: string; title: string | null; canJump: boolean };
 export function onSessionWaiting(cb: (sessions: WaitingSession[]) => void): Promise<UnlistenFn> {
   return listen<WaitingSession[]>("session-waiting", (e) => cb(e.payload));
+}
+
+// Tray → Settings while the dashboard is already open.
+export function onOpenSettings(cb: () => void): Promise<UnlistenFn> {
+  return listen("open-settings", () => cb());
 }
