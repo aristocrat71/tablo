@@ -15,8 +15,9 @@ not at tag time.
 ## [2.2.0] - 2026-08-11
 
 2.2.0 adds a third agent — **OpenCode** — shows the **subagents** each session
-has running, and stops tool approvals from asking you twice when you've already
-picked a permission mode that says don't ask.
+has running, stops tool approvals from asking you twice when you've already
+picked a permission mode that says don't ask, and calms the cat down a few
+seconds after an alarm instead of leaving it shocked all day.
 
 ### Added
 
@@ -50,6 +51,15 @@ picked a permission mode that says don't ask.
   than approving, so tablo can never be more permissive than the mode you
   picked, and the `mode :` badge on each row tells you exactly which sessions
   will prompt.
+
+### Fixed
+
+- **The shocked cat no longer stays shocked.** An alarm — context past the warn
+  threshold or a pending tool approval — used to pin the startled sprite for as
+  long as the condition lasted, which could be all afternoon. Now the cat
+  startles for a few seconds, then goes back to trotting or sleeping while a
+  coral `!` hexagon floats at its left edge until the alarm clears. A new
+  permission request re-startles it, so a fresh ask never slips by silently.
 
 ## [2.1.5] - 2026-08-09
 
