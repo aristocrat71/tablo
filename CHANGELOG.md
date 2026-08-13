@@ -57,9 +57,10 @@ seconds after an alarm instead of leaving it shocked all day.
 - **The shocked cat no longer stays shocked.** An alarm — context past the warn
   threshold or a pending tool approval — used to pin the startled sprite for as
   long as the condition lasted, which could be all afternoon. Now the cat
-  startles for a few seconds, then goes back to trotting or sleeping while a
-  coral `!` hexagon floats at its left edge until the alarm clears. A new
-  permission request re-startles it, so a fresh ask never slips by silently.
+  startles for a few seconds, then goes back to trotting or sleeping; the count
+  pips carry the ongoing alert, with the permission count sharpened into a
+  hard-edged triangle at the cat's bottom-right. A new permission request
+  re-startles the cat, so a fresh ask never slips by silently.
 
 ## [2.1.5] - 2026-08-09
 

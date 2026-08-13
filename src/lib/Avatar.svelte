@@ -21,8 +21,7 @@
     store.snap.sessions.filter((x) => !pendingIds.has(x.id) && x.activityKind !== "waiting").length,
   );
 
-  // Alarm startles the cat for a beat (re-startles on a new permission), then
-  // a floating "!" pip carries the alert while the sprite falls back to trot/sleep.
+  // Alarm startles the cat briefly, then it falls back to trot/sleep; a new permission re-startles.
   const SHOCK_MS = 7000;
   let shocked = $state(false);
   let shockTimer: ReturnType<typeof setTimeout> | undefined;
@@ -168,15 +167,12 @@
       <!-- alarmed → shocked cat (portrait box; sits bolt upright) -->
       <div class="sprite shocked" aria-hidden="true"></div>
     {/if}
-    {#if s === "alarmed" && !shocked}
-      <span class="alert-pip" aria-hidden="true">!</span>
-    {/if}
     <div class="badges">
-      {#if permCount > 0}<span class="badge perm">{permCount}</span>{/if}
       {#if waitCount > 0}<span class="badge wait">{waitCount}</span>{/if}
       {#if workCount > 0}<span class="badge work">{workCount}</span>{/if}
     </div>
   </div>
+  {#if permCount > 0}<span class="badge perm">{permCount}</span>{/if}
 </div>
 
 <style>
@@ -375,45 +371,6 @@
     filter: drop-shadow(0 0 16px color-mix(in srgb, var(--coral) 78%, transparent));
   }
 
-  /* post-startle alert: coral hex "!" pip off the cat's left edge while the alarm
-     persists. clip-path would clip the glow, so pseudos draw the hex: rim + fill. */
-  .alert-pip {
-    position: absolute;
-    top: 50%;
-    left: -18px;
-    translate: 0 -50%;
-    width: 20px;
-    height: 23px;
-    display: grid;
-    place-items: center;
-    font: 700 13px var(--font-mono);
-    color: #fff;
-    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--coral) 75%, transparent));
-    animation: pip-pulse 1.2s var(--ease) infinite;
-    z-index: 3;
-  }
-  .alert-pip::before,
-  .alert-pip::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    background: var(--bg-inset);
-    z-index: -1;
-  }
-  .alert-pip::after {
-    inset: 1.5px;
-    background: var(--coral);
-  }
-  @keyframes pip-pulse {
-    50% {
-      opacity: 0.55;
-    }
-  }
-  .tablo-wrap.still .alert-pip {
-    animation: none;
-  }
-
   /* count pips — float off the top-right edge, stacked: permission (red),
      waiting (green), working (amber), each shown only when its count > 0 */
   .badges {
@@ -437,9 +394,21 @@
     place-items: center;
     border: 1px solid var(--bg-inset);
   }
+  /* window-anchored so pose swaps don't move it; padding drops the count into the wide half */
   .badge.perm {
+    position: absolute;
+    bottom: 26px;
+    right: 9px;
+    z-index: 3;
+    width: 24px;
+    height: 21px;
+    padding: 8px 0 0;
+    border: 0;
+    border-radius: 0;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
     background: var(--coral);
     color: #fff;
+    font-size: 10px;
   }
   .badge.wait {
     background: var(--sage);
