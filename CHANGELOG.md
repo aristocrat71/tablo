@@ -12,7 +12,7 @@ copy of tablo sees when it checks for updates. A tag with no matching section
 here fails the release before anything is built. Write the entry as you merge,
 not at tag time.
 
-## [2.2.0] - 2026-08-11
+## [2.2.0] - 2026-08-15
 
 2.2.0 adds a third agent — **OpenCode** — shows the **subagents** each session
 has running, stops tool approvals from asking you twice when you've already
@@ -41,6 +41,10 @@ seconds after an alarm instead of leaving it shocked all day.
   the cat's count: a fan-out is still one session you're watching. Agents that
   keep running past the end of their turn stay listed until they actually report
   back. OpenCode's `task` child sessions appear the same way.
+- **Settings in the menu-bar menu.** The tray menu now carries a **Settings**
+  item next to Show/Hide widget and Dashboard, so preferences are one click away
+  whether or not the dashboard is already up — it opens straight to the settings
+  pane, and switches an already-open dashboard over to it.
 
 ### Changed
 
