@@ -12,6 +12,44 @@ copy of tablo sees when it checks for updates. A tag with no matching section
 here fails the release before anything is built. Write the entry as you merge,
 not at tag time.
 
+## [2.2.1] - 2026-08-17
+
+2.2.1 fixes the cat's caution pip, which only ever counted tool approvals and
+left a context-window warning invisible on the widget. Everything else below
+shipped in 2.2.0 and is repeated here for anyone updating straight from 2.1.x.
+
+### Added
+
+- **OpenCode support.** Tablo watches **OpenCode** sessions alongside Claude
+  Code and Codex — same avatar count, same panel and dashboard, with an
+  `opencode` tag on each row. On by default (Settings → Watch OpenCode). Jump
+  and tool approvals aren't available for OpenCode.
+- **Running subagents, per session.** When a session fans out, its row grows a
+  foldable **"N agents · <age>"** line listing each running agent and how long
+  it's been going. It clears as they return, and doesn't inflate the cat's
+  count — a fan-out is still one session you're watching.
+- **Settings in the menu-bar menu.** The tray menu now carries a **Settings**
+  item next to Show/Hide widget and Dashboard.
+
+### Changed
+
+- **Tool approvals only prompt in the default permission mode.** In
+  accept-edits/auto, plan, or bypass mode you've already said you don't want to
+  be asked per call, so tablo steps aside instead of asking you again. The
+  `mode :` badge on each row shows which sessions will prompt.
+
+### Fixed
+
+- **The caution pip now covers context warnings, not just approvals.** The red
+  triangle at the cat's bottom-right counted pending approvals only, so once the
+  cat had calmed down from its startle, a session past the warn threshold left
+  no mark on the widget. It now counts every session wanting attention and stays
+  up until the alarm clears.
+- **The shocked cat no longer stays shocked.** An alarm used to pin the startled
+  sprite for as long as it lasted, which could be all afternoon. The cat now
+  startles for a few seconds, then goes back to trotting or sleeping while the
+  count pips carry the alert. A new permission request re-startles it.
+
 ## [2.2.0] - 2026-08-15
 
 2.2.0 adds a third agent — **OpenCode** — shows the **subagents** each session

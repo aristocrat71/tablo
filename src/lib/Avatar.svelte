@@ -13,7 +13,13 @@
   // permission request counts only as "permission" (matches the panel's grouping:
   // Permission Request / Waiting / Working). Each pip shows only when its count > 0.
   let pendingIds = $derived(new Set(store.snap.pending.map((p) => p.sessionId)));
-  let permCount = $derived(pendingIds.size);
+  // Caution pip: the panel's two coral groups (pending approval, context past warn%), per session.
+  let attnCount = $derived(
+    new Set([
+      ...pendingIds,
+      ...store.snap.sessions.filter((x) => x.level !== "ok").map((x) => x.id),
+    ]).size,
+  );
   let waitCount = $derived(
     store.snap.sessions.filter((x) => !pendingIds.has(x.id) && x.activityKind === "waiting").length,
   );
@@ -172,7 +178,7 @@
       {#if workCount > 0}<span class="badge work">{workCount}</span>{/if}
     </div>
   </div>
-  {#if permCount > 0}<span class="badge perm">{permCount}</span>{/if}
+  {#if attnCount > 0}<span class="badge attn">{attnCount}</span>{/if}
 </div>
 
 <style>
@@ -371,7 +377,7 @@
     filter: drop-shadow(0 0 16px color-mix(in srgb, var(--coral) 78%, transparent));
   }
 
-  /* count pips — float off the top-right edge, stacked: permission (red),
+  /* count pips — float off the top-right edge, stacked: caution (red),
      waiting (green), working (amber), each shown only when its count > 0 */
   .badges {
     position: absolute;
@@ -395,7 +401,7 @@
     border: 1px solid var(--bg-inset);
   }
   /* window-anchored so pose swaps don't move it; padding drops the count into the wide half */
-  .badge.perm {
+  .badge.attn {
     position: absolute;
     bottom: 26px;
     right: 9px;
